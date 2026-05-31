@@ -1,0 +1,4 @@
+test_output/
+test_phone/
+__pycache__/
+*.pyc
