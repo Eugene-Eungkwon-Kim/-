@@ -5,7 +5,7 @@ import logging
 
 from sqlalchemy import func, select
 
-from app.db.database import SessionLocal, create_tables
+from app.db.database import SessionLocal, init_db as create_tables
 from app.db.models import Complex, Transaction
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

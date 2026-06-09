@@ -10,7 +10,7 @@ import logging
 import time
 
 from app.config import settings
-from app.db.database import create_tables
+from app.db.database import init_db as create_tables
 from app.db.ingest import ingest_transactions
 from app.integrations.korea_api import KoreaLandAPI
 

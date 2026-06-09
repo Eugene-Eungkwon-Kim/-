@@ -5,7 +5,7 @@ import logging
 
 from sqlalchemy import select
 
-from app.db.database import SessionLocal, create_tables
+from app.db.database import SessionLocal, init_db as create_tables
 from app.db.mapping import PropertyMapper
 from app.db.models import Property
 

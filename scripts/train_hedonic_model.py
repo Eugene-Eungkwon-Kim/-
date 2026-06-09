@@ -10,7 +10,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from app.db.database import SessionLocal, create_tables
+from app.db.database import SessionLocal, init_db as create_tables
 from app.db.models import Transaction
 from app.ml.hedonic import HedhonicPriceModel
 
