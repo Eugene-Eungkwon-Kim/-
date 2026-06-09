@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from app.api.routes import router
+from app.api.routes_v2 import router_v2
 from app.db.database import init_db
 
 app = FastAPI(
@@ -9,6 +10,7 @@ app = FastAPI(
 )
 
 app.include_router(router, prefix="/api/v1")
+app.include_router(router_v2)
 
 
 @app.on_event("startup")
