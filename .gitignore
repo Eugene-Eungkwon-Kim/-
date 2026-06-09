@@ -2,3 +2,12 @@ test_output/
 test_phone/
 __pycache__/
 *.pyc
+
+# AVM Project - Data and generated files
+avm_project/data/raw/
+avm_project/data/processed/
+avm_project/output/
+avm_project/models/
+*.csv
+*.pkl
+*.joblib
