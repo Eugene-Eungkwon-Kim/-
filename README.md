@@ -1,69 +1,95 @@
-# 휴대폰 파일 정리 스크립트
+# NPL AVM 시스템
 
-휴대폰에서 내보낸 파일을 **종류별 + 날짜별**로 자동 분류하고, 파일명을 정리하며, 중복 파일을 제거합니다.
+NPL(부실채권) 담보자산 자동평가모델(AVM) — DB 구축 + REST API
 
-## 기능
+## 프로젝트 구조
 
-| 기능 | 설명 |
-|------|------|
-| 종류별 분류 | 사진, 동영상, 음악, 문서, 압축파일, APK, 기타 |
-| 날짜별 분류 | `카테고리/YYYY/MM/` 구조로 정리 |
-| 파일명 정리 | `YYYYMMDD_HHMMSS_원본이름.확장자` 형식으로 통일 |
-| 중복 제거 | MD5 해시로 동일 파일 감지 후 자동 삭제 |
-| EXIF 날짜 | 사진의 실제 촬영일 기준 정렬 (Pillow 설치 시) |
+```
+avm_project/
+├── app/
+│   ├── main.py                  FastAPI 앱 진입점
+│   ├── db/
+│   │   ├── models.py            SQLAlchemy ORM 모델
+│   │   ├── database.py          DB 연결/세션
+│   │   └── ingest.py            파싱데이터 → DB 저장
+│   ├── parsers/
+│   │   ├── base_parser.py       파서 기반 클래스 + 데이터클래스
+│   │   ├── ibk_parser.py        IBK Data Disk 파서
+│   │   └── loader.py            금융기관 자동감지 + 파일탐색
+│   ├── avm/
+│   │   └── engine.py            AVM 추정 엔진 + 낙찰가율 통계
+│   └── api/
+│       └── routes.py            FastAPI 라우터 (4개 엔드포인트)
+├── scripts/
+│   ├── ingest_all.py            전체 데이터 DB 적재 스크립트
+│   └── run_server.bat           서버 실행 배치파일
+├── data/
+│   └── npl_avm.db               SQLite DB (자동 생성)
+└── requirements.txt
+```
 
-## 설치
+## DB 테이블 구조
+
+| 테이블 | 내용 |
+|--------|------|
+| deals | 딜 정보 (IBK 2025-1, KB 2025-3Q 등) |
+| debtors | 차주 정보 |
+| properties | 담보물건 (주소, 면적, 근저당, 선순위부담) |
+| appraisals | 감정평가 이력 (감정가, 기관, 일자) |
+| auctions | 경매 이력 (낙찰가, 유찰회수, 결과) |
+
+## 설치 및 실행
 
 ```bash
-# Python 3.10 이상 필요
-pip install Pillow   # 선택 사항 (EXIF 날짜 사용 시)
+# 패키지 설치
+pip install -r requirements.txt
+
+# IBK 데이터 DB 적재
+python scripts/ingest_all.py --institution IBK
+
+# 전체 적재
+python scripts/ingest_all.py
+
+# API 서버 실행
+scripts\run_server.bat
+# 또는
+uvicorn app.main:app --reload --port 8000
 ```
 
-## 사용법
+## API 엔드포인트
 
-```bash
-python organize.py <원본폴더> <대상폴더>
+| 메서드 | 경로 | 설명 |
+|--------|------|------|
+| POST | /api/v1/avm/estimate | AVM 감정가 추정 |
+| GET | /api/v1/precedents | 유사 물건 전례 조회 |
+| GET | /api/v1/auction-stats | 낙찰가율 통계 |
+| GET | /api/v1/properties/{serial} | 물건 상세 조회 |
+
+Swagger UI: http://localhost:8000/docs
+
+## AVM 추정 요청 예시
+
+```json
+POST /api/v1/avm/estimate
+{
+  "address_sido": "경기도",
+  "address_sigungu": "화성시",
+  "property_type": "창고",
+  "land_area": 10000,
+  "building_area": 8000
+}
 ```
 
-### 예시
+## 파서 추가 방법 (금융기관별)
 
-```bash
-# 미리보기 (실제 파일 변경 없음)
-python organize.py /Volumes/Phone/DCIM ./정리된파일 --dry-run
+1. `app/parsers/` 에 `kb_parser.py` 등 추가 (IBKParser 참고)
+2. `app/parsers/loader.py` 의 `PARSER_MAP` 에 등록
 
-# 실제 정리 실행
-python organize.py /Volumes/Phone/DCIM ./정리된파일
-```
+## 향후 개발 계획
 
-## 결과 구조
-
-```
-정리된파일/
-├── 사진/
-│   ├── 2024/
-│   │   ├── 01/
-│   │   │   ├── 20240115_143022_IMG_1234.jpg
-│   │   │   └── 20240120_090500_photo.heic
-│   │   └── 03/
-│   └── 2025/
-├── 동영상/
-│   └── 2025/
-│       └── 05/
-├── 음악/
-├── 문서/
-├── 압축파일/
-├── APK/
-└── 기타/
-```
-
-## 옵션
-
-| 옵션 | 설명 |
-|------|------|
-| `--dry-run` | 미리보기 모드 (파일 실제 변경 없음) |
-
-## 주의사항
-
-- 원본 파일은 **이동**됩니다 (복사 후 삭제). 중요한 파일은 미리 백업하세요.
-- 중복 파일은 해시 비교로 판별하며, 원본을 남기고 나머지를 **삭제**합니다.
-- `--dry-run` 옵션으로 먼저 결과를 확인하는 것을 권장합니다.
+- [ ] KB, MG, 우리FNI 파서 추가
+- [ ] PDF 감정평가서 OCR 파싱 (비교사례 추출)
+- [ ] 헤도닉 회귀모델 고도화 (sklearn)
+- [ ] 시점수정계수 적용 (지가변동률, KB시세변화)
+- [ ] PostgreSQL 이관 (운영 환경)
+- [ ] 인증 (API Key)
