@@ -1,4 +1,5 @@
 test_output/
 test_phone/
+migration_output/
 __pycache__/
 *.pyc
