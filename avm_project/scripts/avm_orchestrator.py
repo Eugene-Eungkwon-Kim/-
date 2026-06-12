@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from datetime import datetime
 import traceback
+import pandas as pd
 
 # 프로젝트 루트 경로 설정
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -118,52 +119,57 @@ class AVMOrchestrator:
 
         try:
             preprocessor = DataPreprocessor(
-                data_dir=str(self.data_dir),
+                data_dir=str(self.raw_data_dir),
                 output_dir=str(self.results_dir)
             )
 
-            # 데이터 로드
+            # 데이터 로드 - 파일 전체 경로로 직접 로드
             if input_file:
                 logger.info(f"Loading data from: {input_file}")
-                df = preprocessor.load_data(str(input_file))
+                df = pd.read_csv(input_file)
+                preprocessor.raw_data = df
             else:
                 # 가장 최근의 CSV 찾기
                 csv_files = list(self.raw_data_dir.glob('*.csv'))
                 if csv_files:
-                    input_file = sorted(csv_files)[-1]
-                    logger.info(f"Using latest data file: {input_file.name}")
-                    df = preprocessor.load_data(str(input_file))
+                    input_file_path = sorted(csv_files)[-1]
+                    logger.info(f"Using latest data file: {input_file_path.name}")
+                    df = pd.read_csv(input_file_path)
+                    preprocessor.raw_data = df
                 else:
                     logger.error("❌ 데이터 파일을 찾을 수 없음")
                     return None
 
             # 데이터 탐색
             logger.info("Exploring data statistics...")
-            preprocessor.explore_data(df)
+            preprocessor.explore_data()
 
             # 결측값 처리
             logger.info("Handling missing values...")
-            df = preprocessor.handle_missing_values(df)
+            preprocessor.handle_missing_values()
 
             # 이상값 탐지
             logger.info("Detecting outliers...")
-            outlier_info = preprocessor.detect_outliers(df)
-            logger.info(f"   Outliers detected: {outlier_info['count']} ({outlier_info['percentage']:.1f}%)")
+            outlier_info = preprocessor.detect_outliers()
+            total_outliers = sum(info['count'] for info in outlier_info.values())
+            total_percentage = (total_outliers / len(preprocessor.processed_data)) * 100
+            logger.info(f"   Outliers detected: {total_outliers} ({total_percentage:.1f}%)")
 
             # 정규화
             logger.info("Normalizing data...")
-            df = preprocessor.normalize_data(df)
+            preprocessor.normalize_data()
 
             # 피처 엔지니어링
             logger.info("Engineering features...")
-            df = preprocessor.feature_engineering(df)
+            preprocessor.feature_engineering()
 
+            df = preprocessor.processed_data
             logger.info(f"✅ 전처리 완료: {len(df)}개 × {len(df.columns)}개 컬럼")
 
             # 전처리된 데이터 저장
-            output_file = self.processed_data_dir / f'processed_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
-            preprocessor.save_processed_data(df, str(output_file))
-            logger.info(f"   저장 위치: {output_file.name}")
+            output_file = f'processed_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+            preprocessor.save_processed_data(output_file)
+            logger.info(f"   저장 위치: {output_file}")
 
             return df
 
@@ -180,53 +186,72 @@ class AVMOrchestrator:
 
         try:
             developer = AVMModelDeveloper(
-                model_dir=str(self.models_dir)
+                models_dir=str(self.models_dir),
+                output_dir=str(self.results_dir)
             )
 
-            # 데이터 준비
+            # 데이터 준비 - final_sale_price가 타겟 컬럼 (없으면 마지막 컬럼 사용)
             logger.info("Preparing data for training...")
-            X, y = developer.prepare_data(df)
+            target_col = 'final_sale_price' if 'final_sale_price' in df.columns else df.columns[-1]
 
-            if X is None or y is None:
-                logger.error("❌ 데이터 준비 실패")
-                return None
+            # 숫자형 컬럼만 선택 (범주형 변수 제거)
+            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+            if target_col not in numeric_cols:
+                numeric_cols.append(target_col)
 
-            logger.info(f"   Training set size: {len(X)} samples × {X.shape[1]} features")
+            df_numeric = df[numeric_cols].copy()
+            logger.info(f"Using {len(numeric_cols)} numeric columns for modeling")
+
+            X_train, X_test, y_train, y_test = developer.prepare_data(
+                df_numeric,
+                target_col=target_col,
+                test_size=0.2
+            )
+
+            logger.info(f"   Training set: {len(X_train)} samples × {X_train.shape[1]} features")
+            logger.info(f"   Test set: {len(X_test)} samples")
 
             results = {}
 
-            # 모델별 학습
+            # 모델별 학습 및 평가
             models_to_train = [
-                ('Linear Regression', developer.train_linear_regression),
-                ('Decision Tree', developer.train_decision_tree),
-                ('Random Forest', developer.train_random_forest),
-                ('Gradient Boosting', developer.train_gradient_boosting)
+                ('linear_regression', developer.train_linear_regression),
+                ('decision_tree', developer.train_decision_tree),
+                ('random_forest', developer.train_random_forest),
+                ('gradient_boosting', developer.train_gradient_boosting)
             ]
 
-            for model_name, train_func in models_to_train:
+            for model_key, train_func in models_to_train:
                 try:
-                    logger.info(f"\n  Training {model_name}...")
-                    model, metrics = train_func(X, y)
-                    results[model_name] = {
+                    logger.info(f"\n  Training {model_key}...")
+                    model = train_func(X_train, y_train)
+
+                    # 모델 평가
+                    metrics = developer.evaluate_model(model, X_test, y_test, model_key)
+
+                    results[model_key] = {
                         'model': model,
                         'metrics': metrics
                     }
-                    logger.info(f"  ✅ {model_name} - R²: {metrics.get('r2_score', 0):.4f}, RMSE: {metrics.get('rmse', 0):.2f}")
+                    logger.info(f"  ✅ {model_key} - R²: {metrics.get('r2', 0):.4f}, RMSE: {metrics.get('rmse', 0):.2f}")
                 except Exception as e:
-                    logger.error(f"  ❌ {model_name} 학습 실패: {e}")
+                    logger.error(f"  ❌ {model_key} 학습 실패: {e}")
 
             if results:
                 logger.info(f"\n✅ 모델 학습 완료: {len(results)}개 모델 학습됨")
 
-                # 최고 성능 모델 저장
-                best_model = max(results.items(), key=lambda x: x[1]['metrics'].get('r2_score', 0))
-                logger.info(f"   최고 성능 모델: {best_model[0]} (R²: {best_model[1]['metrics'].get('r2_score', 0):.4f})")
+                # 최고 성능 모델 찾기
+                best_model_key = max(results.keys(), key=lambda k: results[k]['metrics'].get('r2', 0))
+                best_score = results[best_model_key]['metrics'].get('r2', 0)
+                logger.info(f"   최고 성능 모델: {best_model_key} (R²: {best_score:.4f})")
 
                 # 모든 모델 저장
-                for model_name, result in results.items():
-                    model_file = self.models_dir / f'{model_name.lower().replace(" ", "_")}_{timestamp}.pkl'
-                    developer.save_model(result['model'], str(model_file))
-                    logger.info(f"   저장: {model_file.name}")
+                for model_key, result in results.items():
+                    try:
+                        developer.save_model(result['model'], f'{model_key}_{timestamp}')
+                        logger.info(f"   저장: {model_key}_{timestamp}.pkl")
+                    except Exception as e:
+                        logger.warning(f"   모델 저장 실패 ({model_key}): {e}")
 
                 return results
             else:
@@ -265,7 +290,9 @@ class AVMOrchestrator:
         if train_result:
             report['model_training']['results'] = {}
             for model_name, result in train_result.items():
-                report['model_training']['results'][model_name] = result['metrics']
+                # 메트릭스를 JSON 직렬화 가능한 형식으로 변환
+                metrics = {k: v for k, v in result['metrics'].items() if not callable(v)}
+                report['model_training']['results'][model_name] = metrics
 
         # 리포트 저장
         report_file = self.results_dir / f'orchestration_report_{timestamp}.json'
