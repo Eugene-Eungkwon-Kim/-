@@ -1,0 +1,34 @@
+# 핵심 API 서버
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-dotenv==1.0.1
+
+# DB / ORM
+sqlalchemy==2.0.35
+alembic==1.13.3
+
+# 데이터 처리
+pandas==2.2.3
+numpy==2.1.2
+openpyxl==3.1.5
+
+# 모델 (직렬화)
+scikit-learn==1.5.2
+
+# 스키마 / 검증
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# HTTP 클라이언트
+httpx==0.27.2
+requests==2.32.3
+
+# 데이터 수집
+aiohttp==3.10.5
+aiohttp-retry==2.8.3
+beautifulsoup4==4.12.3
+lxml==5.3.0
+tqdm==4.66.5
+
+# 테스트
+pytest==8.3.3

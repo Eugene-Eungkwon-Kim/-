@@ -1,0 +1,636 @@
+openapi: 3.0.0
+
+info:
+  title: NPL AVM (자동감정가) API
+  description: |
+    Non-Performing Loans 기반 부동산 자동 감정 시스템
+
+    ## 주요 기능
+    - 단일 물건 감정가 추정
+    - 배치 감정 (100건 이상)
+    - 비교사례 자동 매칭
+    - 실시간 시장 데이터 반영
+
+    ## 인증
+    API 키 기반 인증 (헤더에 `X-API-Key` 포함)
+
+    ## SLA
+    - p95 응답시간: < 500ms
+    - 가용성: 99.9%
+    - 모델 R²: ≥ 0.85
+  version: 1.0.0
+  contact:
+    name: NPL AVM Support
+    email: support@npl-avm.example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.npl-avm.example.com/api/v1
+    description: Production
+  - url: https://staging-api.npl-avm.example.com/api/v1
+    description: Staging
+  - url: http://localhost:8000/api/v1
+    description: Development
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: 헬스 체크
+      description: API 서버 가용성 확인
+      operationId: healthCheck
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: 정상
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unavailable]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    example: "1.0.0"
+              example:
+                status: healthy
+                timestamp: "2026-06-09T10:30:00Z"
+                version: "1.0.0"
+
+  /ready:
+    get:
+      summary: 준비 상태 확인
+      description: 모델과 데이터 로드 완료 확인
+      operationId: readinessCheck
+      tags:
+        - System
+      security: []
+      responses:
+        '200':
+          description: 모든 준비 완료
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ready:
+                    type: boolean
+                  checks:
+                    type: object
+                    properties:
+                      model_loaded:
+                        type: boolean
+                      database_connected:
+                        type: boolean
+                      external_api_reachable:
+                        type: boolean
+              example:
+                ready: true
+                checks:
+                  model_loaded: true
+                  database_connected: true
+                  external_api_reachable: true
+        '503':
+          description: 준비 미완료
+
+  /estimate:
+    post:
+      summary: 단일 물건 감정가 추정
+      description: |
+        부동산 물건 정보를 기반으로 감정가를 추정합니다.
+
+        ### 특성 (Features)
+        - land_area_sqm: 토지면적 (㎡)
+        - building_area_sqm: 건물면적 (㎡)
+        - building_age: 건물 연령 (년)
+        - floor_number: 층수
+        - property_type: 물건 유형 (아파트, 주택, 오피스 등)
+        - location_sido: 시도 (서울, 경기 등)
+        - location_sigungu: 시군구 (강남구 등)
+
+        ### 응답
+        - estimated_price: 추정 감정가
+        - price_per_sqm: 단위면적당 감정가
+        - confidence_score: 신뢰도 (0-1)
+        - comparable_properties: 비교사례 5건
+      operationId: estimateProperty
+      tags:
+        - Estimation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstimationRequest'
+            example:
+              land_area_sqm: 125.5
+              building_area_sqm: 95.3
+              building_age: 5
+              floor_number: 15
+              property_type: 아파트
+              location_sido: 서울
+              location_sigungu: 강남구
+      responses:
+        '200':
+          description: 감정가 추정 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimationResponse'
+              example:
+                estimated_price: 850000000
+                price_per_sqm: 8921053
+                confidence_score: 0.87
+                confidence_interval:
+                  lower_bound: 765000000
+                  upper_bound: 935000000
+                comparable_properties:
+                  - id: "prop_001"
+                    address: "서울 강남구 테헤란로 123"
+                    price: 820000000
+                    price_per_sqm: 8600000
+                    similarity_score: 0.92
+                    transaction_date: "2026-03-15"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /batch-estimate:
+    post:
+      summary: 배치 감정 (100건 이상)
+      description: |
+        대량의 물건에 대한 감정가를 일괄 추정합니다.
+
+        ### 특징
+        - 최대 1,000건까지 한 번에 요청 가능
+        - 비동기 처리 (Job 기반)
+        - 완료 후 콜백 또는 조회를 통해 결과 수신
+      operationId: batchEstimate
+      tags:
+        - Estimation
+      parameters:
+        - name: callback_url
+          in: query
+          description: 완료 후 결과를 전송할 콜백 URL (선택)
+          schema:
+            type: string
+            format: uri
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                properties:
+                  type: array
+                  maxItems: 1000
+                  items:
+                    $ref: '#/components/schemas/EstimationRequest'
+            example:
+              properties:
+                - land_area_sqm: 125.5
+                  building_area_sqm: 95.3
+                  building_age: 5
+                  property_type: 아파트
+                  location_sido: 서울
+                - land_area_sqm: 250.0
+                  building_area_sqm: 180.0
+                  building_age: 10
+                  property_type: 주택
+                  location_sido: 경기
+      responses:
+        '202':
+          description: 배치 처리 수락
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [queued, processing, completed, failed]
+                  created_at:
+                    type: string
+                    format: date-time
+                  estimated_completion_time:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /batch-estimate/{job_id}:
+    get:
+      summary: 배치 처리 결과 조회
+      description: 배치 감정 작업의 진행 상황 및 결과를 조회합니다.
+      operationId: getBatchEstimateResult
+      tags:
+        - Estimation
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 처리 결과
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                  status:
+                    type: string
+                    enum: [queued, processing, completed, failed]
+                  progress:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EstimationResponse'
+                  error_message:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /compare:
+    post:
+      summary: 비교사례 조회
+      description: |
+        특정 물건과 유사한 비교사례를 자동으로 매칭하여 조회합니다.
+
+        ### 매칭 기준
+        - 물건 유형 (동일)
+        - 위치 (지역 내)
+        - 건물 연령 (±5년)
+        - 면적 (±10%)
+      operationId: getComparableProperties
+      tags:
+        - Analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                property_id:
+                  type: string
+                  description: 조회할 물건 ID
+                count:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 5
+                date_range:
+                  type: object
+                  properties:
+                    from:
+                      type: string
+                      format: date
+                    to:
+                      type: string
+                      format: date
+      responses:
+        '200':
+          description: 비교사례 목록
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  property_id:
+                    type: string
+                  comparable_properties:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ComparableProperty'
+
+  /metrics:
+    get:
+      summary: 모델 성능 지표
+      description: 현재 배포된 모델의 성능 지표를 조회합니다.
+      operationId: getModelMetrics
+      tags:
+        - Monitoring
+      responses:
+        '200':
+          description: 모델 성능 지표
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model_name:
+                    type: string
+                    example: "XGBoost (Tuned)"
+                  r2_score:
+                    type: number
+                    minimum: 0
+                    maximum: 1
+                    example: 0.8721
+                  rmse:
+                    type: number
+                    example: 446812893
+                  mae:
+                    type: number
+                    example: 226196156
+                  mape:
+                    type: number
+                    example: 19.56
+                  sample_count:
+                    type: integer
+                    example: 248
+                  created_at:
+                    type: string
+                    format: date-time
+                  last_updated:
+                    type: string
+                    format: date-time
+
+  /models:
+    get:
+      summary: 배포된 모델 목록
+      description: 배포 가능한 모든 모델 정보를 조회합니다.
+      operationId: listModels
+      tags:
+        - Monitoring
+      responses:
+        '200':
+          description: 모델 목록
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_model:
+                    type: string
+                    example: "advanced_best"
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        r2_score:
+                          type: number
+                        status:
+                          type: string
+                          enum: [active, available, deprecated]
+                        created_at:
+                          type: string
+                          format: date-time
+
+components:
+  schemas:
+    EstimationRequest:
+      type: object
+      required:
+        - land_area_sqm
+        - building_area_sqm
+        - building_age
+        - property_type
+        - location_sido
+      properties:
+        land_area_sqm:
+          type: number
+          minimum: 0
+          description: 토지면적 (㎡)
+          example: 125.5
+        building_area_sqm:
+          type: number
+          minimum: 0
+          description: 건물면적 (㎡)
+          example: 95.3
+        building_age:
+          type: integer
+          minimum: 0
+          maximum: 200
+          description: 건물 연령 (년)
+          example: 5
+        floor_number:
+          type: integer
+          minimum: -5
+          maximum: 100
+          description: 층수 (옵션)
+          example: 15
+        property_type:
+          type: string
+          description: 물건 유형
+          enum:
+            - 아파트
+            - 주택
+            - 오피스
+            - 상업
+            - 공업
+            - 토지
+          example: 아파트
+        location_sido:
+          type: string
+          description: 시도
+          example: 서울
+        location_sigungu:
+          type: string
+          description: 시군구 (선택)
+          example: 강남구
+        location_dong:
+          type: string
+          description: 동 (선택)
+          example: 신사동
+
+    EstimationResponse:
+      type: object
+      properties:
+        estimated_price:
+          type: integer
+          description: 추정 감정가 (원)
+          example: 850000000
+        price_per_sqm:
+          type: integer
+          description: 단위면적당 감정가 (원/㎡)
+          example: 8921053
+        confidence_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: 신뢰도
+          example: 0.87
+        confidence_interval:
+          type: object
+          properties:
+            lower_bound:
+              type: integer
+              example: 765000000
+            upper_bound:
+              type: integer
+              example: 935000000
+        comparable_properties:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/ComparableProperty'
+        model_metadata:
+          type: object
+          properties:
+            model_name:
+              type: string
+              example: "XGBoost (Tuned)"
+            r2_score:
+              type: number
+              example: 0.8721
+            prediction_time_ms:
+              type: integer
+              example: 45
+
+    ComparableProperty:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "prop_001"
+        address:
+          type: string
+          example: "서울 강남구 테헤란로 123"
+        price:
+          type: integer
+          example: 820000000
+        price_per_sqm:
+          type: integer
+          example: 8600000
+        similarity_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          example: 0.92
+        transaction_date:
+          type: string
+          format: date
+          example: "2026-03-15"
+        building_age:
+          type: integer
+          example: 5
+        land_area_sqm:
+          type: number
+          example: 120.0
+
+  responses:
+    BadRequest:
+      description: 잘못된 요청
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error_code:
+                type: string
+                example: "INVALID_REQUEST"
+              message:
+                type: string
+                example: "필수 필드가 누락되었습니다"
+              details:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field:
+                      type: string
+                    issue:
+                      type: string
+
+    Unauthorized:
+      description: 인증 실패
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error_code:
+                type: string
+                example: "UNAUTHORIZED"
+              message:
+                type: string
+                example: "API 키가 유효하지 않습니다"
+
+    NotFound:
+      description: 리소스 없음
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error_code:
+                type: string
+                example: "NOT_FOUND"
+              message:
+                type: string
+                example: "해당 job을 찾을 수 없습니다"
+
+    TooManyRequests:
+      description: 요청 제한 초과
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error_code:
+                type: string
+                example: "RATE_LIMIT_EXCEEDED"
+              message:
+                type: string
+                example: "요청 제한을 초과했습니다"
+              retry_after:
+                type: integer
+                description: 재시도 시간 (초)
+                example: 60
+
+    InternalServerError:
+      description: 서버 오류
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error_code:
+                type: string
+                example: "INTERNAL_SERVER_ERROR"
+              message:
+                type: string
+                example: "서버 오류가 발생했습니다"
+              request_id:
+                type: string
+                example: "req_abc123"
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API 키 인증 (헤더에 포함)

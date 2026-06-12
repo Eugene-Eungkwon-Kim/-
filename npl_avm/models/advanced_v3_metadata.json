@@ -1,0 +1,20 @@
+{
+  "model_name": "XGBoost Extreme Tuning",
+  "r2_train": 0.9968763898595095,
+  "r2_test": 0.9161296469259603,
+  "rmse": 361807480.4856468,
+  "mae": 216029529.06,
+  "mape": 17.771759403350707,
+  "within_3pct": 14.0,
+  "improvement_vs_phase2": 1.7882405966492918,
+  "total_features": 24,
+  "hyperparameters": {
+    "colsample_bytree": 0.8,
+    "learning_rate": 0.1,
+    "max_depth": 3.0,
+    "reg_lambda": 1.0,
+    "subsample": 0.5
+  },
+  "created_at": "2026-06-11T12:28:59.843672",
+  "version": "v3_extreme_tuning"
+}

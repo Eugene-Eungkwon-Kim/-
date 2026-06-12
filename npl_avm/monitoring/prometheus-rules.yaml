@@ -1,0 +1,238 @@
+# Prometheus Alert Rules for NPL AVM
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+
+data:
+  npl-avm-rules.yaml: |
+    groups:
+    - name: npl_avm_alerts
+      interval: 30s
+      rules:
+
+      # ===== 가용성 및 성능 =====
+
+      - alert: HighErrorRate
+        expr: |
+          (sum(rate(npl_avm_request_total{status=~"5.."}[5m])) by (job)) /
+          (sum(rate(npl_avm_request_total[5m])) by (job)) > 0.01
+        for: 2m
+        annotations:
+          summary: "높은 에러율 감지"
+          description: |
+            에러율이 1% 이상입니다
+            현재: {{ $value | humanizePercentage }}
+          severity: critical
+
+      - alert: HighResponseLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(npl_avm_request_duration_seconds_bucket[5m])) by (le)
+          ) > 0.5
+        for: 3m
+        annotations:
+          summary: "높은 응답시간 (p95 > 500ms)"
+          description: |
+            p95 응답시간이 목표를 초과했습니다
+            현재: {{ $value | humanize }}s
+          severity: warning
+
+      - alert: LowAvailability
+        expr: |
+          (count(kube_pod_status_phase{pod=~"npl-avm.*", phase="Running"})
+          /
+          count(kube_pod_status_phase{pod=~"npl-avm.*"})) < 0.95
+        for: 2m
+        annotations:
+          summary: "낮은 가용성"
+          description: |
+            가용성이 95% 미만입니다
+            현재: {{ $value | humanizePercentage }}
+          severity: critical
+
+      # ===== 리소스 사용량 =====
+
+      - alert: HighMemoryUsage
+        expr: |
+          (sum(container_memory_usage_bytes{pod=~"npl-avm.*"}) by (pod)
+          /
+          sum(container_spec_memory_limit_bytes{pod=~"npl-avm.*"}) by (pod)) > 0.85
+        for: 5m
+        annotations:
+          summary: "높은 메모리 사용량"
+          description: |
+            메모리 사용률이 85% 이상입니다
+            현재: {{ $value | humanizePercentage }}
+          severity: warning
+
+      - alert: HighCPUUsage
+        expr: |
+          (sum(rate(container_cpu_usage_seconds_total{pod=~"npl-avm.*"}[5m])) by (pod)
+          /
+          sum(container_spec_cpu_quota{pod=~"npl-avm.*"}) by (pod)) > 0.8
+        for: 5m
+        annotations:
+          summary: "높은 CPU 사용량"
+          description: |
+            CPU 사용률이 80% 이상입니다
+            현재: {{ $value | humanizePercentage }}
+          severity: warning
+
+      - alert: PodMemoryOOMKill
+        expr: |
+          increase(kube_pod_container_last_terminated_reason{reason="OOMKilled"}[1h]) > 0
+        for: 1m
+        annotations:
+          summary: "Pod OOM Kill 감지"
+          description: |
+            Pod이 메모리 부족으로 재시작되었습니다
+            Pod: {{ $labels.pod }}
+          severity: critical
+
+      # ===== 모델 성능 =====
+
+      - alert: ModelPerformanceDegradation
+        expr: npl_avm_model_r2_score < 0.85
+        for: 10m
+        annotations:
+          summary: "모델 성능 저하"
+          description: |
+            모델 R² 점수가 목표(0.85) 미만입니다
+            현재: {{ $value | humanizePercentage }}
+          severity: warning
+
+      - alert: PredictionLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(npl_avm_prediction_latency_seconds_bucket[5m])) by (le)
+          ) > 2
+        for: 3m
+        annotations:
+          summary: "예측 응답시간 높음"
+          description: |
+            p95 예측 시간이 2초를 초과했습니다
+            현재: {{ $value | humanize }}s
+          severity: warning
+
+      - alert: PredictionAccuracyDrift
+        expr: |
+          abs(npl_avm_prediction_error_mean - npl_avm_prediction_error_baseline) > 0.2
+        for: 1h
+        annotations:
+          summary: "예측 정확도 편차"
+          description: |
+            예측 오차가 기준점에서 크게 벗어났습니다
+            현재: {{ $value }}
+          severity: warning
+
+      # ===== 배포 상태 =====
+
+      - alert: DeploymentReplicasMismatch
+        expr: |
+          kube_deployment_spec_replicas{deployment="npl-avm"}
+          !=
+          kube_deployment_status_replicas_available{deployment="npl-avm"}
+        for: 10m
+        annotations:
+          summary: "배포 replica 불일치"
+          description: |
+            배포된 replica 수가 요청된 수와 일치하지 않습니다
+            요청: {{ $value }}
+          severity: warning
+
+      - alert: ContainerRestartingTooOften
+        expr: |
+          rate(kube_pod_container_status_restarts_total{pod=~"npl-avm.*"}[15m]) > 0.1
+        for: 5m
+        annotations:
+          summary: "Pod 재시작 빈도 높음"
+          description: |
+            Pod이 자주 재시작되고 있습니다
+            Pod: {{ $labels.pod }}
+          severity: warning
+
+      # ===== 외부 서비스 =====
+
+      - alert: ExternalAPILatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(npl_avm_external_api_duration_seconds_bucket[5m])) by (le, api)
+          ) > 3
+        for: 5m
+        annotations:
+          summary: "외부 API 응답시간 높음"
+          description: |
+            {{ $labels.api }} API 응답시간이 높습니다
+            현재: {{ $value | humanize }}s
+          severity: warning
+
+      - alert: ExternalAPIError
+        expr: |
+          (sum(rate(npl_avm_external_api_error_total[5m])) by (api))
+          /
+          (sum(rate(npl_avm_external_api_total[5m])) by (api)) > 0.05
+        for: 3m
+        annotations:
+          summary: "외부 API 에러율 높음"
+          description: |
+            {{ $labels.api }} API 에러율이 5% 이상입니다
+            현재: {{ $value | humanizePercentage }}
+          severity: warning
+
+      # ===== 데이터베이스 =====
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          npl_avm_db_connection_pool_used / npl_avm_db_connection_pool_max > 0.9
+        for: 2m
+        annotations:
+          summary: "DB 연결 풀 거의 소진"
+          description: |
+            DB 연결 풀 사용률이 90% 이상입니다
+            현재: {{ $value | humanizePercentage }}
+          severity: critical
+
+      - alert: DatabaseQueryLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(npl_avm_db_query_duration_seconds_bucket[5m])) by (le)
+          ) > 1
+        for: 5m
+        annotations:
+          summary: "DB 쿼리 응답시간 높음"
+          description: |
+            p95 쿼리 응답시간이 1초를 초과했습니다
+            현재: {{ $value | humanize }}s
+          severity: warning
+
+      # ===== SLA 준수 =====
+
+      - alert: SLAViolation
+        expr: |
+          (
+            (sum(rate(npl_avm_request_total{status=~"5.."}[5m]))) /
+            (sum(rate(npl_avm_request_total[5m])))
+          ) > 0.001
+        for: 5m
+        annotations:
+          summary: "SLA 위반: 에러율"
+          description: |
+            에러율이 SLA 기준(0.1%)을 초과했습니다
+            현재: {{ $value | humanizePercentage }}
+          severity: critical
+
+      - alert: LatencySLAViolation
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(npl_avm_request_duration_seconds_bucket[5m])) by (le)
+          ) > 0.5
+        for: 5m
+        annotations:
+          summary: "SLA 위반: 응답시간"
+          description: |
+            응답시간이 SLA 기준(500ms)을 초과했습니다
+            현재: {{ $value | humanize }}s
+          severity: critical

@@ -1,0 +1,25 @@
+{
+  "version": "v2_optimized_15_features",
+  "r2_score": 0.9020881733238154,
+  "rmse": 390922693.67546403,
+  "mape": 20.00570947540087,
+  "improvement_from_phase2": -0.44570947540087147,
+  "features_count": 15,
+  "features": [
+    "is_premium",
+    "is_mid",
+    "is_budget",
+    "location_score",
+    "is_spring",
+    "is_active_market",
+    "location_size_interaction",
+    "price_per_sqm",
+    "location_code",
+    "unit_price_py",
+    "is_modern",
+    "land_area_sqm",
+    "building_age",
+    "is_gangnam",
+    "market_activity"
+  ]
+}
