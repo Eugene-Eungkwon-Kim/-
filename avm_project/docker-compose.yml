@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  avm-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: avm-api-server
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=info
+    volumes:
+      - ./avm_project/models:/app/avm_project/models:ro
+      - ./avm_project/data:/app/avm_project/data:ro
+      - ./avm_project/logs:/app/avm_project/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - avm-network
+    labels:
+      - "com.avm.description=AVM REST API Server"
+      - "com.avm.version=1.0.0"
+
+networks:
+  avm-network:
+    driver: bridge
