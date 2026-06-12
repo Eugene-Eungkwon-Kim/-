@@ -20,6 +20,25 @@ from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import json
 
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+
+try:
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    TENSORFLOW_AVAILABLE = True
+except ImportError:
+    TENSORFLOW_AVAILABLE = False
+
 # 로깅 설정
 logging.basicConfig(
     level=logging.INFO,
@@ -301,6 +320,125 @@ class AVMModelDeveloper:
 
         logger.info(f"평가 결과 저장: {output_path}")
         return str(output_path)
+
+    def train_xgboost(self, X_train: np.ndarray, y_train: np.ndarray,
+                     n_estimators: int = 100,
+                     learning_rate: float = 0.1,
+                     max_depth: int = 6) -> object:
+        """
+        XGBoost 모델 학습
+
+        Args:
+            X_train: 훈련 특성
+            y_train: 훈련 타겟
+            n_estimators: 부스팅 단계 수
+            learning_rate: 학습률
+            max_depth: 최대 깊이
+
+        Returns:
+            학습된 모델
+        """
+        if not XGBOOST_AVAILABLE:
+            logger.error("XGBoost가 설치되지 않았습니다. pip install xgboost를 실행하세요.")
+            return None
+
+        logger.info("XGBoost 모델 학습 시작")
+        model = xgb.XGBRegressor(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            max_depth=max_depth,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=0
+        )
+        model.fit(X_train, y_train)
+        self.models['xgboost'] = model
+        logger.info("XGBoost 모델 학습 완료")
+        return model
+
+    def train_lightgbm(self, X_train: np.ndarray, y_train: np.ndarray,
+                      n_estimators: int = 100,
+                      learning_rate: float = 0.1,
+                      num_leaves: int = 31) -> object:
+        """
+        LightGBM 모델 학습
+
+        Args:
+            X_train: 훈련 특성
+            y_train: 훈련 타겟
+            n_estimators: 부스팅 단계 수
+            learning_rate: 학습률
+            num_leaves: 리프 노드 수
+
+        Returns:
+            학습된 모델
+        """
+        if not LIGHTGBM_AVAILABLE:
+            logger.error("LightGBM이 설치되지 않았습니다. pip install lightgbm을 실행하세요.")
+            return None
+
+        logger.info("LightGBM 모델 학습 시작")
+        model = lgb.LGBMRegressor(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            num_leaves=num_leaves,
+            random_state=42,
+            n_jobs=-1,
+            verbose=-1
+        )
+        model.fit(X_train, y_train)
+        self.models['lightgbm'] = model
+        logger.info("LightGBM 모델 학습 완료")
+        return model
+
+    def train_neural_network(self, X_train: np.ndarray, y_train: np.ndarray,
+                            epochs: int = 100,
+                            batch_size: int = 32) -> object:
+        """
+        신경망(Neural Network) 모델 학습
+
+        Args:
+            X_train: 훈련 특성
+            y_train: 훈련 타겟
+            epochs: 에포크 수
+            batch_size: 배치 크기
+
+        Returns:
+            학습된 모델
+        """
+        if not TENSORFLOW_AVAILABLE:
+            logger.error("TensorFlow가 설치되지 않았습니다. pip install tensorflow를 실행하세요.")
+            return None
+
+        logger.info("신경망 모델 학습 시작")
+
+        input_dim = X_train.shape[1]
+        model = keras.Sequential([
+            layers.Dense(128, activation='relu', input_dim=input_dim),
+            layers.Dropout(0.2),
+            layers.Dense(64, activation='relu'),
+            layers.Dropout(0.2),
+            layers.Dense(32, activation='relu'),
+            layers.Dense(1)
+        ])
+
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+            loss='mse',
+            metrics=['mae']
+        )
+
+        model.fit(
+            X_train, y_train,
+            epochs=epochs,
+            batch_size=batch_size,
+            validation_split=0.2,
+            verbose=0
+        )
+
+        self.models['neural_network'] = model
+        logger.info("신경망 모델 학습 완료")
+        return model
 
 
 def main():

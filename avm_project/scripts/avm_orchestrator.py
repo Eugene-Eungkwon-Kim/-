@@ -218,7 +218,10 @@ class AVMOrchestrator:
                 ('linear_regression', developer.train_linear_regression),
                 ('decision_tree', developer.train_decision_tree),
                 ('random_forest', developer.train_random_forest),
-                ('gradient_boosting', developer.train_gradient_boosting)
+                ('gradient_boosting', developer.train_gradient_boosting),
+                ('xgboost', developer.train_xgboost),
+                ('lightgbm', developer.train_lightgbm),
+                ('neural_network', developer.train_neural_network)
             ]
 
             for model_key, train_func in models_to_train:
