@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "agent:handoff": "node scripts/agent-common-handoff.mjs"
+  }
+}
