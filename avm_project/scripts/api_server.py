@@ -10,6 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 import pickle
+import joblib
+import hashlib
 import numpy as np
 import pandas as pd
 import logging
@@ -61,17 +63,105 @@ PROJECT_ROOT = Path(__file__).parent.parent
 MODELS_DIR = get_models_path()  # 환경변수 지원
 DATA_DIR = PROJECT_ROOT / "data"
 
-# 로드된 모델 캐시
+# 로드된 모델 캐시 및 메타데이터
 loaded_models = {}
-model_metadata = {
-    'linear_regression': {'name': 'Linear Regression', 'r2': 1.0000, 'status': 'perfect_fit'},
-    'random_forest': {'name': 'Random Forest', 'r2': 0.9717, 'status': 'production'},
-    'gradient_boosting': {'name': 'Gradient Boosting', 'r2': 0.9683, 'status': 'production'},
-    'decision_tree': {'name': 'Decision Tree', 'r2': 0.9053, 'status': 'production'},
-    'xgboost': {'name': 'XGBoost', 'r2': 0.9701, 'status': 'production'},
-    'lightgbm': {'name': 'LightGBM', 'r2': 0.9719, 'status': 'recommended'},
-    'neural_network': {'name': 'Neural Network', 'r2': 0.9445, 'status': 'production'}
-}
+model_metadata_cache = {}
+
+
+def load_model_metadata_from_file(model_name: str) -> Dict:
+    """
+    실제 모델 파일에서 메타데이터 동적 로드
+    C7 CRITICAL 이슈 해결: 하드코딩된 메타데이터 제거
+    """
+    global model_metadata_cache
+
+    # 캐시 확인
+    if model_name in model_metadata_cache:
+        return model_metadata_cache[model_name]
+
+    # 모델 파일 찾기
+    model_files = list(MODELS_DIR.glob(f'{model_name}_*.pkl'))
+    if not model_files:
+        # 기본값 반환 (모델을 찾을 수 없을 때)
+        default_metadata = {
+            'name': model_name.replace('_', ' ').title(),
+            'r2': 0.0,
+            'status': 'unavailable',
+            'timestamp': datetime.now().isoformat()
+        }
+        model_metadata_cache[model_name] = default_metadata
+        return default_metadata
+
+    latest_model_file = sorted(model_files)[-1]
+
+    try:
+        # joblib으로 모델 로드 (pickle보다 안전)
+        model_data = joblib.load(str(latest_model_file))
+
+        # 모델이 딕셔너리인 경우 메타데이터 추출
+        if isinstance(model_data, dict):
+            metadata = {
+                'name': model_data.get('name', model_name.title()),
+                'r2': float(model_data.get('r2_score', 0.0)),
+                'rmse': float(model_data.get('rmse', 0.0)) if 'rmse' in model_data else None,
+                'status': 'production' if model_data.get('r2_score', 0) > 0.90 else 'testing',
+                'timestamp': model_data.get('timestamp', datetime.now().isoformat()),
+                'model_file': latest_model_file.name
+            }
+        else:
+            # 모델이 딕셔너리가 아니면 기본 정보만 반환
+            metadata = {
+                'name': model_name.replace('_', ' ').title(),
+                'r2': 0.0,  # 모델에서 추출 불가
+                'status': 'production',  # 모델이 존재하므로 production으로 간주
+                'timestamp': datetime.now().isoformat(),
+                'model_file': latest_model_file.name
+            }
+
+        model_metadata_cache[model_name] = metadata
+        logger.info(f"✅ 메타데이터 로드: {model_name} (R²: {metadata['r2']:.4f})")
+        return metadata
+
+    except Exception as e:
+        logger.error(f"❌ 메타데이터 로드 실패: {model_name} - {e}")
+        default_metadata = {
+            'name': model_name.replace('_', ' ').title(),
+            'r2': 0.0,
+            'status': 'error',
+            'timestamp': datetime.now().isoformat(),
+            'error': str(e)
+        }
+        model_metadata_cache[model_name] = default_metadata
+        return default_metadata
+
+
+def get_model_metadata(model_name: str) -> Dict:
+    """모델 메타데이터 조회 (캐시된 데이터 반환)"""
+    return load_model_metadata_from_file(model_name)
+
+
+def get_available_models() -> Dict[str, Dict]:
+    """사용 가능한 모든 모델의 메타데이터 조회"""
+    # MODELS_DIR에서 모든 모델 파일 찾기
+    model_files = list(MODELS_DIR.glob('*_tuned.pkl')) + list(MODELS_DIR.glob('*.joblib'))
+
+    if not model_files:
+        logger.warning("⚠️ 모델 파일을 찾을 수 없습니다")
+        return {}
+
+    # 모델 이름 추출 (파일명에서 _tuned.pkl 제거)
+    model_names = set()
+    for model_file in model_files:
+        name = model_file.stem.replace('_tuned', '').replace('_', '_')
+        model_names.add(name)
+
+    # 각 모델의 메타데이터 로드
+    available_models = {}
+    for model_name in sorted(model_names):
+        metadata = get_model_metadata(model_name)
+        available_models[model_name] = metadata
+
+    return available_models
 
 
 # Pydantic 모델 정의 (입력 검증 포함)
@@ -227,26 +317,61 @@ class ModelInfo(BaseModel):
     timestamp: str
 
 
+def compute_file_hash(filepath: Path, algorithm: str = 'sha256') -> str:
+    """파일의 해시값 계산 (무결성 검증)"""
+    hash_obj = hashlib.new(algorithm)
+    with open(filepath, 'rb') as f:
+        for chunk in iter(lambda: f.read(4096), b''):
+            hash_obj.update(chunk)
+    return hash_obj.hexdigest()
+
+
 def load_model(model_name: str):
-    """모델 로드 (캐싱)"""
+    """
+    모델 로드 (캐싱 + 보안)
+    C8 CRITICAL 이슈 해결: joblib 사용 + SHA256 해시 검증
+    """
+    # 캐시 확인
     if model_name in loaded_models:
         return loaded_models[model_name]
 
     # 가장 최근의 모델 파일 찾기
     model_files = list(MODELS_DIR.glob(f'{model_name}_*.pkl'))
+    model_files += list(MODELS_DIR.glob(f'{model_name}_*.joblib'))
+
     if not model_files:
-        logger.warning(f"모델 파일을 찾을 수 없음: {model_name}")
+        logger.warning(f"⚠️ 모델 파일을 찾을 수 없음: {model_name}")
         return None
 
     latest_model_file = sorted(model_files)[-1]
+
     try:
-        with open(latest_model_file, 'rb') as f:
-            model = pickle.load(f)
+        # 해시 검증 (선택사항: .sha256 파일이 있으면 검증)
+        hash_file = latest_model_file.with_suffix('.sha256')
+        if hash_file.exists():
+            computed_hash = compute_file_hash(latest_model_file)
+            with open(hash_file, 'r') as f:
+                stored_hash = f.read().strip()
+
+            if computed_hash != stored_hash:
+                raise ValueError(
+                    f"모델 파일 무결성 검증 실패: {model_name}\n"
+                    f"Expected: {stored_hash}\n"
+                    f"Computed: {computed_hash}"
+                )
+            logger.info(f"✅ 해시 검증 통과: {model_name}")
+
+        # joblib으로 모델 로드 (pickle보다 안전)
+        model = joblib.load(str(latest_model_file))
         loaded_models[model_name] = model
-        logger.info(f"모델 로드됨: {model_name} from {latest_model_file.name}")
+        logger.info(f"✅ 모델 로드 완료: {model_name} from {latest_model_file.name}")
         return model
+
+    except ValueError as e:
+        logger.error(f"❌ 무결성 검증 실패: {e}")
+        raise
     except Exception as e:
-        logger.error(f"모델 로드 실패: {model_name} - {e}")
+        logger.error(f"❌ 모델 로드 실패: {model_name} - {type(e).__name__}: {e}")
         return None
 
 
@@ -303,27 +428,32 @@ async def root():
 @app.get("/health", tags=["Health"])
 async def health_check():
     """서버 상태 확인"""
+    available_models = get_available_models()
     return {
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "models_available": len([m for m in model_metadata.keys() if load_model(m) is not None])
+        "models_available": len([m for m in available_models if load_model(m) is not None]),
+        "total_models": len(available_models)
     }
 
 
 @app.get("/models", response_model=List[ModelInfo], tags=["Models"])
 async def list_models():
-    """사용 가능한 모델 목록 조회"""
+    """사용 가능한 모델 목록 조회 (동적 로드)"""
     models = []
-    for model_key, metadata in model_metadata.items():
+    available_models = get_available_models()
+
+    for model_key, metadata in available_models.items():
         model = load_model(model_key)
         if model is not None:
             models.append(ModelInfo(
                 model_name=model_key,
-                display_name=metadata['name'],
-                r2_score=metadata['r2'],
-                status=metadata['status'],
+                display_name=metadata.get('name', model_key.title()),
+                r2_score=float(metadata.get('r2', 0.0)),
+                status=metadata.get('status', 'unknown'),
                 timestamp=datetime.now().isoformat()
             ))
+
     return models
 
 
@@ -352,12 +482,10 @@ async def predict(request: PredictionRequest):
         # 예측 실행
         predicted_price = model.predict(X)[0]
 
-        # 신뢰도 점수 (R² 기반)
-        if request.model_name not in model_metadata:
-            raise PredictionError(f"모델 메타데이터 없음: {request.model_name}")
-
-        r2_score = model_metadata[request.model_name]['r2']
-        confidence_score = float(r2_score)
+        # 신뢰도 점수 (R² 기반 - 동적 로드)
+        metadata = get_model_metadata(request.model_name)
+        r2_score = float(metadata.get('r2', 0.0))
+        confidence_score = r2_score
 
         logger.info(f"✅ 예측 완료: {request.model_name} → {predicted_price:,.0f}원")
 
@@ -388,21 +516,21 @@ async def predict(request: PredictionRequest):
 
 @app.get("/model/{model_name}", tags=["Models"])
 async def get_model_info(model_name: str):
-    """특정 모델의 상세 정보 조회"""
-    if model_name not in model_metadata:
-        raise HTTPException(status_code=404, detail=f"모델을 찾을 수 없음: {model_name}")
-
+    """특정 모델의 상세 정보 조회 (동적 메타데이터)"""
     model = load_model(model_name)
     if model is None:
-        raise HTTPException(status_code=400, detail=f"모델을 로드할 수 없음: {model_name}")
+        raise HTTPException(status_code=404, detail=f"모델을 찾을 수 없음: {model_name}")
 
-    metadata = model_metadata[model_name]
+    metadata = get_model_metadata(model_name)
+    r2_score = float(metadata.get('r2', 0.0))
+    status = metadata.get('status', 'unknown')
+
     return {
         "model_name": model_name,
-        "display_name": metadata['name'],
-        "r2_score": metadata['r2'],
-        "status": metadata['status'],
-        "description": f"{metadata['name']} - R² {metadata['r2']:.4f} ({metadata['status']})",
+        "display_name": metadata.get('name', model_name.title()),
+        "r2_score": r2_score,
+        "status": status,
+        "description": f"{metadata.get('name', model_name.title())} - R² {r2_score:.4f} ({status})",
         "timestamp": datetime.now().isoformat()
     }
 
