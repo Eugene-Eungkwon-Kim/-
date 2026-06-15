@@ -9,11 +9,17 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from dotenv import load_dotenv
+
+from data_path_config import get_data_path
+from exceptions import CleansingError
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-D_DRIVE_PATH = r'D:\LG_AVM_Workspace_Data_Moved_20260604'
+D_DRIVE_PATH = get_data_path()
 TIMESTAMP = datetime.now().strftime('%Y-%m-%d')
 
 

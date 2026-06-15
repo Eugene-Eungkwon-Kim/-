@@ -8,16 +8,28 @@ import os
 from datetime import datetime
 from pathlib import Path
 import logging
+from dotenv import load_dotenv
+
+from data_path_config import get_data_path
+from exceptions import APIKeyError, DataDownloadError
+
+# Load environment variables
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# API 키값
-DATAGOVKR_API_KEY = '9+Sz4Yn+RoH4bEhkrqfzS+AJz9ldaehP57wEhL3sEKmDMZW5t7UnTs7rPOA3BNcczF8AI/OX0YJ51PmPAAEZFw=='
-VWORLD_API_KEY = '50D9ECCF-3977-37F1-B323-4997BEAAE387'
+# API 키값 (환경변수에서 읽음)
+DATAGOVKR_API_KEY = os.getenv('DATAGOVKR_API_KEY')
+VWORLD_API_KEY = os.getenv('VWORLD_API_KEY')
 
-# 경로
-D_DRIVE_PATH = r'D:\LG_AVM_Workspace_Data_Moved_20260604'
+if not DATAGOVKR_API_KEY:
+    raise APIKeyError("DATAGOVKR_API_KEY not configured. Set environment variable or .env file.")
+if not VWORLD_API_KEY:
+    raise APIKeyError("VWORLD_API_KEY not configured. Set environment variable or .env file.")
+
+# 경로 (플랫폼 독립적)
+D_DRIVE_PATH = get_data_path()
 TIMESTAMP = datetime.now().strftime('%Y-%m-%d')
 
 

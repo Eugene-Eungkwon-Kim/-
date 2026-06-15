@@ -2,16 +2,32 @@
 logs/
 *.log
 
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+.env.prod
+
+# API Keys & Credentials
+*.key
+*.pem
+secrets/
+
 # Data
 data/raw/*.csv
 data/processed/*.csv
+data/raw/*.json
+data/processed/*.json
 
 # Models
 models/*.pkl
+models/*.joblib
 
 # Output
 output/*.csv
+output/*.json
 output/orchestration_report_*.json
+output/hyperparameter_tuning_*.json
 
 # Python
 __pycache__/
