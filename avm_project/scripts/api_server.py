@@ -7,7 +7,8 @@ REST API for Automated Valuation Model Predictions
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, validator
 import pickle
 import numpy as np
 import pandas as pd
@@ -16,6 +17,15 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
 import json
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Import custom exceptions
+from data_path_config import get_models_path
+from exceptions import ModelNotFoundError, InvalidInputError, PredictionError
 
 # 로깅 설정
 logging.basicConfig(
@@ -31,18 +41,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS 설정 (모든 출처에서 접근 허용)
+# CORS 설정 (환경변수에서 읽음)
+ALLOWED_ORIGINS = os.getenv(
+    'ALLOWED_ORIGINS',
+    'http://localhost:3000,http://localhost:8080'
+).split(',')
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[origin.strip() for origin in ALLOWED_ORIGINS],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
+    max_age=600,
 )
 
-# 프로젝트 경로
+# 프로젝트 경로 (플랫폼 독립적)
 PROJECT_ROOT = Path(__file__).parent.parent
-MODELS_DIR = PROJECT_ROOT / "models"
+MODELS_DIR = get_models_path()  # 환경변수 지원
 DATA_DIR = PROJECT_ROOT / "data"
 
 # 로드된 모델 캐시
@@ -58,34 +74,133 @@ model_metadata = {
 }
 
 
-# Pydantic 모델 정의
+# Pydantic 모델 정의 (입력 검증 포함)
 class PropertyData(BaseModel):
-    """부동산 데이터 요청 스키마"""
-    area_sqm: float
-    year_built: int
-    rooms: int
-    bathrooms: int
-    parking: int
-    floor: int
-    total_floor: int
-    condition: int
-    original_price: float
-    appraised_price: float
-    outstanding_debt: float
-    market_price: float
-    transaction_count_1y: int
-    ltv: float
-    loan_term_months: int
-    days_on_market: int
-    appraisal_rounds: int
-    age_years: int
-    price_per_sqm: float
-    debt_to_price_ratio: float
-    price_variance: float
-    numeric_mean: Optional[float] = None
-    numeric_std: Optional[float] = None
-    numeric_max: Optional[float] = None
-    numeric_min: Optional[float] = None
+    """부동산 데이터 요청 스키마 - 엄격한 검증 포함"""
+
+    # 물리적 특성
+    area_sqm: float = Field(
+        ...,
+        gt=0,
+        le=1000,
+        description="건물 면적 (m²), 10-1000 범위"
+    )
+    year_built: int = Field(
+        ...,
+        ge=1900,
+        le=2026,
+        description="건축년도, 1900-2026 범위"
+    )
+    rooms: int = Field(..., ge=0, le=20, description="방 개수")
+    bathrooms: int = Field(..., ge=0, le=10, description="욕실 개수")
+    parking: int = Field(..., ge=0, le=10, description="주차 공간")
+    floor: int = Field(..., ge=0, le=100, description="현재 층수")
+    total_floor: int = Field(..., ge=1, le=100, description="총 층수")
+    condition: int = Field(..., ge=1, le=10, description="건물 상태 (1-10)")
+
+    # 가격 정보 (단위: 만원)
+    original_price: float = Field(..., gt=100, description="원래 가격 (만원)")
+    appraised_price: float = Field(..., gt=100, description="감정가 (만원)")
+    outstanding_debt: float = Field(..., ge=0, description="미상환 채무 (만원)")
+    market_price: float = Field(..., gt=100, description="시장 가격 (만원)")
+
+    # 거래 정보
+    transaction_count_1y: int = Field(
+        ...,
+        ge=0,
+        le=500,
+        description="1년 내 거래 횟수"
+    )
+    ltv: float = Field(..., ge=0, le=2, description="LTV (부채/자산 비율)")
+    loan_term_months: int = Field(..., ge=1, le=600, description="대출 기간 (개월)")
+    days_on_market: int = Field(..., ge=0, le=3650, description="시장 노출 일수 (0-10년)")
+    appraisal_rounds: int = Field(..., ge=1, le=10, description="감정 횟수")
+
+    # 파생 특성
+    age_years: int = Field(..., ge=0, le=150, description="건물 경과 연수")
+    price_per_sqm: float = Field(..., gt=0, description="m²당 가격")
+    debt_to_price_ratio: float = Field(..., ge=0, le=2, description="채무/가격 비율")
+    price_variance: float = Field(..., ge=0, le=1, description="가격 변동성")
+
+    # 경제 지표
+    numeric_mean: Optional[float] = Field(None, description="평균값")
+    numeric_std: Optional[float] = Field(None, description="표준편차")
+    numeric_max: Optional[float] = Field(None, description="최댓값")
+    numeric_min: Optional[float] = Field(None, description="최솟값")
+
+    @validator('year_built')
+    def validate_year_built(cls, v):
+        """건축년도가 현재보다 미래일 수 없음"""
+        from datetime import datetime
+        current_year = datetime.now().year
+        if v > current_year:
+            raise ValueError(f'건축년도는 현재보다 미래일 수 없습니다: {v}')
+        if current_year - v > 100:
+            raise ValueError(f'건축년도가 너무 오래됨: {v} (100년 이상)')
+        return v
+
+    @validator('area_sqm')
+    def validate_area(cls, v):
+        """면적이 합리적인 범위여야 함"""
+        if v < 10:
+            raise ValueError('면적은 최소 10m² 이상이어야 합니다')
+        if v > 500:
+            raise ValueError('면적이 일반적인 범위를 초과합니다 (> 500m²)')
+        return v
+
+    @validator('original_price', 'appraised_price', 'market_price', always=True)
+    def validate_prices(cls, v):
+        """가격이 합리적인 범위여야 함"""
+        if v < 100:  # 1000만원 미만
+            raise ValueError('가격이 너무 낮습니다 (최소 1000만원)')
+        if v > 100000:  # 10억원 이상
+            raise ValueError('가격이 너무 높습니다 (최대 10억원)')
+        return v
+
+    @validator('debt_to_price_ratio')
+    def validate_debt_ratio(cls, v):
+        """채무비율이 합리적인 범위여야 함"""
+        if v > 2:
+            raise ValueError('채무비율이 비정상입니다 (2.0 초과)')
+        return v
+
+    @validator('ltv')
+    def validate_ltv(cls, v):
+        """LTV가 합리적인 범위여야 함"""
+        if v < 0 or v > 2:
+            raise ValueError('LTV는 0-2 범위여야 합니다')
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "area_sqm": 84.5,
+                "year_built": 2015,
+                "rooms": 3,
+                "bathrooms": 2,
+                "parking": 1,
+                "floor": 5,
+                "total_floor": 15,
+                "condition": 7,
+                "original_price": 450000,
+                "appraised_price": 455000,
+                "outstanding_debt": 250000,
+                "market_price": 460000,
+                "transaction_count_1y": 12,
+                "ltv": 0.55,
+                "loan_term_months": 240,
+                "days_on_market": 30,
+                "appraisal_rounds": 2,
+                "age_years": 11,
+                "price_per_sqm": 5326,
+                "debt_to_price_ratio": 0.55,
+                "price_variance": 0.02,
+                "numeric_mean": 450000,
+                "numeric_std": 50000,
+                "numeric_max": 500000,
+                "numeric_min": 400000
+            }
+        }
 
 
 class PredictionRequest(BaseModel):
@@ -215,58 +330,36 @@ async def list_models():
 @app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 async def predict(request: PredictionRequest):
     """
-    부동산 가격 예측
+    부동산 가격 예측 (입력 검증 포함)
 
-    요청 예시:
-    ```json
-    {
-        "property_data": {
-            "area_sqm": 100.5,
-            "year_built": 2010,
-            "rooms": 3,
-            "bathrooms": 2,
-            "parking": 1,
-            "floor": 5,
-            "total_floor": 20,
-            "condition": 7,
-            "original_price": 500000000,
-            "appraised_price": 480000000,
-            "outstanding_debt": 300000000,
-            "market_price": 490000000,
-            "transaction_count_1y": 5,
-            "ltv": 0.62,
-            "loan_term_months": 240,
-            "days_on_market": 30,
-            "appraisal_rounds": 2,
-            "age_years": 14,
-            "price_per_sqm": 4876000,
-            "debt_to_price_ratio": 0.61,
-            "price_variance": 0.02
-        },
-        "model_name": "lightgbm"
-    }
-    ```
+    Pydantic 자동 검증:
+    - area_sqm: 0 < x <= 1000
+    - year_built: 1900 <= x <= 2026
+    - 모든 가격: 100 <= x <= 100000 (만원 단위)
     """
     try:
         # 모델 로드
+        if request.model_name not in model_metadata:
+            raise ModelNotFoundError(f"모델이 등록되지 않음: {request.model_name}")
+
         model = load_model(request.model_name)
         if model is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"모델을 로드할 수 없음: {request.model_name}"
-            )
+            raise ModelNotFoundError(f"모델을 로드할 수 없음: {request.model_name}")
 
-        # 데이터 준비
+        # 데이터 준비 (Pydantic이 이미 검증함)
         X = prepare_prediction_data(request.property_data)
 
-        # 예측
+        # 예측 실행
         predicted_price = model.predict(X)[0]
 
         # 신뢰도 점수 (R² 기반)
+        if request.model_name not in model_metadata:
+            raise PredictionError(f"모델 메타데이터 없음: {request.model_name}")
+
         r2_score = model_metadata[request.model_name]['r2']
         confidence_score = float(r2_score)
 
-        logger.info(f"예측 완료: {request.model_name} → {predicted_price:,.0f}원")
+        logger.info(f"✅ 예측 완료: {request.model_name} → {predicted_price:,.0f}원")
 
         return PredictionResponse(
             predicted_price=float(predicted_price),
@@ -276,9 +369,21 @@ async def predict(request: PredictionRequest):
             timestamp=datetime.now().isoformat()
         )
 
+    except ModelNotFoundError as e:
+        logger.warning(f"⚠️ 모델 오류: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except InvalidInputError as e:
+        logger.warning(f"⚠️ 입력 오류: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except PredictionError as e:
+        logger.error(f"❌ 예측 오류: {e}")
+        raise HTTPException(status_code=500, detail="모델 예측 실패")
+    except ValueError as e:
+        logger.warning(f"⚠️ 검증 오류: {e}")
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        logger.error(f"예측 실패: {e}")
-        raise HTTPException(status_code=500, detail=f"예측 중 오류 발생: {str(e)}")
+        logger.exception(f"❌ 예상치 못한 오류: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="서버 내부 오류")
 
 
 @app.get("/model/{model_name}", tags=["Models"])
@@ -333,6 +438,33 @@ async def get_version():
         "updated_at": "2026-06-12",
         "status": "production"
     }
+
+
+# Global exception handlers
+from pydantic import ValidationError
+
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request, exc):
+    """Pydantic 검증 오류 처리"""
+    logger.warning(f"검증 오류: {exc.errors()}")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": "입력 검증 실패",
+            "errors": exc.errors()
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    """일반 예외 처리"""
+    logger.exception(f"처리되지 않은 예외: {type(exc).__name__}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "서버 내부 오류"},
+    )
 
 
 if __name__ == "__main__":
