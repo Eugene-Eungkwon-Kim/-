@@ -197,8 +197,11 @@ class TestHyperparameterValidation:
 
     def test_negative_n_estimators(self, hp_data):
         """Test negative n_estimators parameter"""
+        X, y = hp_data
+        # sklearn validates n_estimators lazily at fit() time, not construction
         with pytest.raises(ValueError):
-            RandomForestRegressor(n_estimators=-1)
+            model = RandomForestRegressor(n_estimators=-1)
+            model.fit(X, y)
 
 
 class TestModelComparison:

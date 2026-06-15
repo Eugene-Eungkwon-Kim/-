@@ -76,9 +76,13 @@ class TestAPIServer:
     def test_environment_variables(self):
         """Test that environment variables are properly configured"""
         import os
-        from dotenv import load_dotenv
 
-        load_dotenv()
+        # python-dotenv is optional in the test environment
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
 
         # Check if required env vars are set (in test, we may not have actual values)
         # This test just verifies that the configuration loading works

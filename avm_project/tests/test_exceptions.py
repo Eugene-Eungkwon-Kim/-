@@ -247,13 +247,13 @@ class TestExceptionHierarchy:
             raise ModelNotFoundError("test")
 
     def test_catch_specific_exception(self):
-        """Test catching specific exception does not catch others"""
-        with pytest.raises(ModelNotFoundError):
+        """Test that an except clause does not catch unrelated exception types"""
+        # InvalidInputError must propagate through an `except ModelNotFoundError` block
+        with pytest.raises(InvalidInputError):
             try:
                 raise InvalidInputError("test")
             except ModelNotFoundError:
-                pass
-            raise ModelNotFoundError("test")
+                pytest.fail("ModelNotFoundError handler should not catch InvalidInputError")
 
 
 class TestExceptionMessages:

@@ -32,7 +32,7 @@ class TestDataCleaner:
         for col in df_numeric.columns:
             df.loc[:, col] = df[col].fillna(df[col].mean())
 
-        df_categorical = df.select_dtypes(include=['object'])
+        df_categorical = df.select_dtypes(include=['object', 'string'])
         for col in df_categorical.columns:
             df.loc[:, col] = df[col].fillna(df[col].mode()[0] if not df[col].mode().empty else 'Unknown')
 
@@ -142,7 +142,7 @@ class TestDataCleaner:
             'value': [1, 2, 3, 4]
         })
 
-        categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'string']).columns.tolist()
         assert 'category' in categorical_cols
         assert 'value' not in categorical_cols
 
@@ -169,7 +169,8 @@ class TestDataCleaner:
 
         assert df['int_col'].dtype in [np.int64, np.int32]
         assert df['float_col'].dtype in [np.float64, np.float32]
-        assert df['str_col'].dtype == 'object'
+        # pandas 3.0 introduces a dedicated 'str' dtype; accept both it and legacy 'object'
+        assert df['str_col'].dtype == 'object' or pd.api.types.is_string_dtype(df['str_col'])
 
     def test_value_range_validation(self):
         """Test value range validation"""
