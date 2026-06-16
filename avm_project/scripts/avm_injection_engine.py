@@ -11,8 +11,11 @@ from datetime import datetime
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))  # scripts/ (feature_schema 등)
 
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
@@ -146,31 +149,33 @@ class AVMModelInjectionEngine:
         print(f"   제거된 행: {removed}")
         print(f"   남은 행: {len(df)}")
 
-        # 특성과 타겟 분리 (수치형만)
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-        if target_col in numeric_cols:
-            numeric_cols.remove(target_col)
+        # 특성과 타겟 분리 — 공유 스키마(SERVING_FEATURES) 기준
+        # train/serve 스큐 및 누수(final_sale_price, numeric_* 등) 방지
+        from feature_schema import SERVING_FEATURES, EXCLUDED_COLUMNS, save_schema
 
-        X = df[numeric_cols]
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        feature_cols = [c for c in SERVING_FEATURES if c in numeric_cols]
+        dropped = [c for c in numeric_cols if c not in feature_cols and c != target_col]
+
+        X = df[feature_cols]
         y = df[target_col]
 
-        print(f"\n✅ 특성 분리 완료 (수치형만):")
-        print(f"   제거된 문자열 컬럼: property_id, property_type, region, district, condition")
-        print(f"   사용 특성 수: {len(numeric_cols)}")
+        # 실제 사용 특성 스키마 저장 (API 서빙이 동일 순서 사용)
+        save_schema(feature_cols, target_col)
+
+        print(f"\n✅ 특성 분리 완료 (공유 스키마 기준):")
+        print(f"   제외된 누수/식별자/문자열 컬럼: {EXCLUDED_COLUMNS}")
+        print(f"   추가로 드롭된 수치 컬럼: {dropped}")
+        print(f"   사용 특성 수: {len(feature_cols)}")
         print(f"   X 형태: {X.shape}")
         print(f"   y 형태: {y.shape}")
 
-        # 데이터 정규화
-        print(f"\n📊 데이터 정규화:")
-        X_min = X.min()
-        X_max = X.max()
-        # 영점 나누기 방지
-        X_max = X_max.replace(0, 1)
-        X_normalized = (X - X_min) / (X_max - X_min)
-        X_normalized = X_normalized.fillna(0)
-        print(f"   Min-Max 정규화 적용")
+        # 정규화는 모델 파이프라인(MinMaxScaler)에 내장하여 처리한다.
+        # → 학습/서빙이 동일한 스케일러를 사용하므로 train/serve 스큐가 없고,
+        #   서빙 시 원본(raw) 특성을 그대로 입력해도 모델 내부에서 스케일링된다.
+        print(f"\n📊 정규화: 모델 파이프라인 내 MinMaxScaler로 처리 (raw 특성 반환)")
 
-        return X_normalized, y, X.columns.tolist()
+        return X, y, X.columns.tolist()
 
     def split_data(self, X, y, test_size=0.2):
         """데이터 분할"""
@@ -194,7 +199,7 @@ class AVMModelInjectionEngine:
         print("🤖 Step 4: 모델 학습 (6개 모델)")
         print("="*70)
 
-        models_to_train = {
+        estimators = {
             'LinearRegression': LinearRegression(),
             'DecisionTreeRegressor': DecisionTreeRegressor(max_depth=10, random_state=42),
             'RandomForestRegressor': RandomForestRegressor(
@@ -211,10 +216,15 @@ class AVMModelInjectionEngine:
             )
         }
 
-        for model_name, model in models_to_train.items():
-            print(f"\n🔨 {model_name} 학습 중...")
-            model.fit(X_train, y_train)
-            self.models[model_name] = model
+        # 각 모델을 MinMaxScaler와 함께 Pipeline으로 감싸 전처리를 모델에 내장
+        for model_name, estimator in estimators.items():
+            print(f"\n🔨 {model_name} 학습 중 (Scaler 내장 Pipeline)...")
+            pipeline = Pipeline([
+                ('scaler', MinMaxScaler()),
+                ('model', estimator),
+            ])
+            pipeline.fit(X_train, y_train)
+            self.models[model_name] = pipeline
             print(f"   ✅ 완료")
 
         return self.models

@@ -28,6 +28,11 @@ load_dotenv()
 # Import custom exceptions
 from data_path_config import get_models_path
 from exceptions import ModelNotFoundError, InvalidInputError, PredictionError
+from prediction_enhancements import ConfidenceEstimator, PredictionCache
+from feature_schema import load_schema as load_feature_schema
+
+# PHASE 4.1.1 - 반복 예측 캐시 (전역 인스턴스)
+prediction_cache = PredictionCache(maxsize=10000)
 
 # 로깅 설정
 logging.basicConfig(
@@ -376,37 +381,22 @@ def load_model(model_name: str):
 
 
 def prepare_prediction_data(property_data: PropertyData) -> np.ndarray:
-    """예측용 데이터 준비"""
-    data = {
-        'area_sqm': property_data.area_sqm,
-        'year_built': property_data.year_built,
-        'rooms': property_data.rooms,
-        'bathrooms': property_data.bathrooms,
-        'parking': property_data.parking,
-        'floor': property_data.floor,
-        'total_floor': property_data.total_floor,
-        'condition': property_data.condition,
-        'original_price': property_data.original_price,
-        'appraised_price': property_data.appraised_price,
-        'outstanding_debt': property_data.outstanding_debt,
-        'market_price': property_data.market_price,
-        'transaction_count_1y': property_data.transaction_count_1y,
-        'ltv': property_data.ltv,
-        'loan_term_months': property_data.loan_term_months,
-        'days_on_market': property_data.days_on_market,
-        'appraisal_rounds': property_data.appraisal_rounds,
-        'age_years': property_data.age_years,
-        'price_per_sqm': property_data.price_per_sqm,
-        'debt_to_price_ratio': property_data.debt_to_price_ratio,
-        'price_variance': property_data.price_variance,
-        'numeric_mean': property_data.numeric_mean or 0.0,
-        'numeric_std': property_data.numeric_std or 0.0,
-        'numeric_max': property_data.numeric_max or 0.0,
-        'numeric_min': property_data.numeric_min or 0.0,
-    }
+    """예측용 데이터 준비.
 
-    df = pd.DataFrame([data])
-    return df.values.astype(np.float32)
+    저장된 특성 스키마(models/feature_schema.json)를 단일 소스로 사용하여
+    학습 시점과 동일한 특성·순서로 입력 벡터를 구성한다(train/serve 스큐 방지).
+    """
+    # PropertyData의 모든 필드를 dict로 변환 후 스키마 순서대로 선택
+    all_values = property_data.dict()
+    schema = load_feature_schema()
+    feature_names = schema["features"]
+
+    row = []
+    for name in feature_names:
+        value = all_values.get(name)
+        row.append(float(value) if value is not None else 0.0)
+
+    return np.array([row], dtype=np.float32)
 
 
 @app.get("/", tags=["Info"])
@@ -468,10 +458,7 @@ async def predict(request: PredictionRequest):
     - 모든 가격: 100 <= x <= 100000 (만원 단위)
     """
     try:
-        # 모델 로드
-        if request.model_name not in model_metadata:
-            raise ModelNotFoundError(f"모델이 등록되지 않음: {request.model_name}")
-
+        # 모델 로드 (미존재 시 load_model이 None 반환 → 404)
         model = load_model(request.model_name)
         if model is None:
             raise ModelNotFoundError(f"모델을 로드할 수 없음: {request.model_name}")
@@ -512,6 +499,58 @@ async def predict(request: PredictionRequest):
     except Exception as e:
         logger.exception(f"❌ 예상치 못한 오류: {type(e).__name__}: {e}")
         raise HTTPException(status_code=500, detail="서버 내부 오류")
+
+
+@app.post("/predict/confidence", tags=["Prediction"])
+async def predict_with_confidence(request: PredictionRequest, confidence: float = 0.95):
+    """
+    PHASE 4.2.1 - 신뢰구간 포함 예측
+
+    점추정값과 함께 예측 불확실성(신뢰구간)을 반환한다.
+    트리 앙상블 모델은 개별 추정기 분산을, 그 외 모델은 보수적
+    폴백(점추정의 5%)을 사용해 구간을 계산한다.
+    - confidence: 0.90 / 0.95 / 0.99 중 선택 (기본 0.95)
+    """
+    try:
+        model = load_model(request.model_name)
+        if model is None:
+            raise ModelNotFoundError(f"모델을 로드할 수 없음: {request.model_name}")
+
+        if confidence not in ConfidenceEstimator.Z:
+            raise InvalidInputError(
+                f"confidence는 {list(ConfidenceEstimator.Z)} 중 하나여야 합니다"
+            )
+
+        X = prepare_prediction_data(request.property_data)
+        estimator = ConfidenceEstimator(model, confidence=confidence)
+        interval = estimator.estimate(X[0])
+
+        logger.info(
+            f"✅ 신뢰구간 예측: {request.model_name} → "
+            f"{interval.prediction:,.0f}원 [{interval.lower:,.0f}, {interval.upper:,.0f}]"
+        )
+
+        return {
+            "model_name": request.model_name,
+            **interval.to_dict(),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    except ModelNotFoundError as e:
+        logger.warning(f"⚠️ 모델 오류: {e}")
+        raise HTTPException(status_code=404, detail=str(e))
+    except InvalidInputError as e:
+        logger.warning(f"⚠️ 입력 오류: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception(f"❌ 예상치 못한 오류: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="서버 내부 오류")
+
+
+@app.get("/cache/stats", tags=["Info"])
+async def cache_stats():
+    """PHASE 4.1.1 - 예측 캐시 통계 조회"""
+    return {"cache": prediction_cache.stats(), "timestamp": datetime.now().isoformat()}
 
 
 @app.get("/model/{model_name}", tags=["Models"])
@@ -562,7 +601,7 @@ async def get_version():
     """API 버전 정보"""
     return {
         "api_version": "1.0.0",
-        "models_count": len(model_metadata),
+        "models_count": len(get_available_models()),
         "updated_at": "2026-06-12",
         "status": "production"
     }
