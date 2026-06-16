@@ -27,10 +27,10 @@ def sample_property_data():
         "floor": 5,
         "total_floor": 15,
         "condition": 7,
-        "original_price": 450000,
-        "appraised_price": 455000,
-        "outstanding_debt": 250000,
-        "market_price": 460000,
+        "original_price": 4500,  # 4500만원
+        "appraised_price": 4550,  # 4550만원
+        "outstanding_debt": 2500,  # 2500만원
+        "market_price": 4600,  # 4600만원
         "transaction_count_1y": 12,
         "ltv": 0.55,
         "loan_term_months": 240,
@@ -57,10 +57,10 @@ def invalid_property_data_negative_area():
         "floor": 5,
         "total_floor": 15,
         "condition": 7,
-        "original_price": 450000,
-        "appraised_price": 455000,
-        "outstanding_debt": 250000,
-        "market_price": 460000,
+        "original_price": 4500,  # 4500만원
+        "appraised_price": 4550,  # 4550만원
+        "outstanding_debt": 2500,  # 2500만원
+        "market_price": 4600,  # 4600만원
         "transaction_count_1y": 12,
         "ltv": 0.55,
         "loan_term_months": 240,
@@ -87,10 +87,10 @@ def invalid_property_data_future_year():
         "floor": 5,
         "total_floor": 15,
         "condition": 7,
-        "original_price": 450000,
-        "appraised_price": 455000,
-        "outstanding_debt": 250000,
-        "market_price": 460000,
+        "original_price": 4500,  # 4500만원
+        "appraised_price": 4550,  # 4550만원
+        "outstanding_debt": 2500,  # 2500만원
+        "market_price": 4600,  # 4600만원
         "transaction_count_1y": 12,
         "ltv": 0.55,
         "loan_term_months": 240,

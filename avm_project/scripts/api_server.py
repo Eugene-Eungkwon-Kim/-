@@ -193,11 +193,11 @@ class PropertyData(BaseModel):
     total_floor: int = Field(..., ge=1, le=100, description="총 층수")
     condition: int = Field(..., ge=1, le=10, description="건물 상태 (1-10)")
 
-    # 가격 정보 (단위: 만원)
-    original_price: float = Field(..., gt=100, description="원래 가격 (만원)")
-    appraised_price: float = Field(..., gt=100, description="감정가 (만원)")
-    outstanding_debt: float = Field(..., ge=0, description="미상환 채무 (만원)")
-    market_price: float = Field(..., gt=100, description="시장 가격 (만원)")
+    # 가격 정보 (단위: 만원 ₩10,000)
+    original_price: float = Field(..., gt=100, le=10000000, description="원래 가격 (만원, 1000만~1조원)")
+    appraised_price: float = Field(..., gt=100, le=10000000, description="감정가 (만원, 1000만~1조원)")
+    outstanding_debt: float = Field(..., ge=0, le=10000000, description="미상환 채무 (만원)")
+    market_price: float = Field(..., gt=100, le=10000000, description="시장 가격 (만원, 1000만~1조원)")
 
     # 거래 정보
     transaction_count_1y: int = Field(
@@ -213,7 +213,7 @@ class PropertyData(BaseModel):
 
     # 파생 특성
     age_years: int = Field(..., ge=0, le=150, description="건물 경과 연수")
-    price_per_sqm: float = Field(..., gt=0, description="m²당 가격")
+    price_per_sqm: float = Field(..., gt=0, description="m²당 가격 (만원)")
     debt_to_price_ratio: float = Field(..., ge=0, le=2, description="채무/가격 비율")
     price_variance: float = Field(..., ge=0, le=1, description="가격 변동성")
 
@@ -245,11 +245,11 @@ class PropertyData(BaseModel):
 
     @validator('original_price', 'appraised_price', 'market_price', always=True)
     def validate_prices(cls, v):
-        """가격이 합리적인 범위여야 함"""
-        if v < 100:  # 1000만원 미만
-            raise ValueError('가격이 너무 낮습니다 (최소 1000만원)')
-        if v > 100000:  # 10억원 이상
-            raise ValueError('가격이 너무 높습니다 (최대 10억원)')
+        """가격이 합리적인 범위여야 함 (입력 단위: 만원 ₩10,000)"""
+        if v < 100:  # 100 × ₩10,000 = ₩1,000,000
+            raise ValueError('가격이 너무 낮습니다 (최소 100만원)')
+        if v > 10000000:  # 10,000,000 × ₩10,000 = ₩100,000,000,000 = 1조원
+            raise ValueError('가격이 너무 높습니다 (최대 1조원)')
         return v
 
     @validator('debt_to_price_ratio')

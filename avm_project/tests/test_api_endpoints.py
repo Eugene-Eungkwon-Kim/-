@@ -31,13 +31,14 @@ def client():
 
 @pytest.fixture
 def valid_property():
+    """예제 부동산 데이터 (단위: 만원)"""
     return {
         "area_sqm": 150, "year_built": 2005, "rooms": 3, "bathrooms": 2,
         "parking": 1, "floor": 10, "total_floor": 20, "condition": 7,
-        "original_price": 80000, "appraised_price": 82000, "outstanding_debt": 40000,
-        "market_price": 85000, "transaction_count_1y": 10, "ltv": 0.5,
+        "original_price": 8000, "appraised_price": 8200, "outstanding_debt": 4000,  # 8000/8200/4000만원
+        "market_price": 8500, "transaction_count_1y": 10, "ltv": 0.5,  # 8500만원
         "loan_term_months": 240, "days_on_market": 30, "appraisal_rounds": 2,
-        "age_years": 20, "price_per_sqm": 9000, "debt_to_price_ratio": 0.5,
+        "age_years": 20, "price_per_sqm": 560, "debt_to_price_ratio": 0.5,  # m²당 560만원
         "price_variance": 0.1,
     }
 
