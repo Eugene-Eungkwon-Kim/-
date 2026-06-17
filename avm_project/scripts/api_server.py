@@ -30,6 +30,7 @@ from data_path_config import get_models_path
 from exceptions import ModelNotFoundError, InvalidInputError, PredictionError
 from prediction_enhancements import ConfidenceEstimator, PredictionCache
 from feature_schema import load_schema as load_feature_schema
+from dashboard_data import get_dashboard_summary, get_performance_history, get_alerts
 
 # PHASE 4.1.1 - 반복 예측 캐시 (전역 인스턴스)
 prediction_cache = PredictionCache(maxsize=10000)
@@ -551,6 +552,467 @@ async def predict_with_confidence(request: PredictionRequest, confidence: float 
 async def cache_stats():
     """PHASE 4.1.1 - 예측 캐시 통계 조회"""
     return {"cache": prediction_cache.stats(), "timestamp": datetime.now().isoformat()}
+
+
+# ============================================================================
+# 대시보드 엔드포인트 (웹 UI용 데이터 제공)
+# ============================================================================
+@app.get("/dashboard/api/summary", tags=["Dashboard"])
+async def dashboard_summary():
+    """대시보드 종합 요약"""
+    return get_dashboard_summary()
+
+
+@app.get("/dashboard/api/performance", tags=["Dashboard"])
+async def dashboard_performance(limit: int = 100):
+    """성능 이력 (시계열 데이터)"""
+    history = get_performance_history(limit)
+    return {
+        "total": len(history),
+        "data": history,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.get("/dashboard/api/alerts", tags=["Dashboard"])
+async def dashboard_alerts(limit: int = 20):
+    """최근 알림"""
+    alerts = get_alerts(limit)
+    return {
+        "total": len(alerts),
+        "data": alerts,
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.get("/dashboard", tags=["Dashboard"])
+async def dashboard_ui():
+    """웹 기반 성능 모니터링 대시보드"""
+    from fastapi.responses import HTMLResponse
+
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>AVM 성능 모니터링 대시보드</title>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+                color: #333;
+            }
+
+            .container {
+                max-width: 1400px;
+                margin: 0 auto;
+            }
+
+            header {
+                text-align: center;
+                color: white;
+                margin-bottom: 30px;
+            }
+
+            header h1 {
+                font-size: 2.5em;
+                margin-bottom: 10px;
+            }
+
+            header p {
+                font-size: 1.1em;
+                opacity: 0.9;
+            }
+
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+                gap: 20px;
+                margin-bottom: 30px;
+            }
+
+            .card {
+                background: white;
+                border-radius: 12px;
+                padding: 20px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                backdrop-filter: blur(10px);
+            }
+
+            .card h2 {
+                font-size: 1.3em;
+                margin-bottom: 15px;
+                color: #667eea;
+                border-bottom: 2px solid #667eea;
+                padding-bottom: 10px;
+            }
+
+            .stat {
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid #eee;
+            }
+
+            .stat:last-child {
+                border-bottom: none;
+            }
+
+            .stat-label {
+                font-weight: 500;
+                color: #666;
+            }
+
+            .stat-value {
+                font-weight: bold;
+                color: #333;
+                font-family: 'Monaco', 'Courier New', monospace;
+            }
+
+            .stat-value.positive {
+                color: #10b981;
+            }
+
+            .stat-value.negative {
+                color: #ef4444;
+            }
+
+            .chart-container {
+                position: relative;
+                height: 300px;
+                margin: 20px 0;
+            }
+
+            .alert {
+                background: #fef3c7;
+                border-left: 4px solid #f59e0b;
+                padding: 12px 15px;
+                border-radius: 4px;
+                margin-bottom: 10px;
+                font-size: 0.9em;
+            }
+
+            .alert.high {
+                background: #fee2e2;
+                border-left-color: #ef4444;
+            }
+
+            .loading {
+                text-align: center;
+                padding: 40px;
+                color: #999;
+            }
+
+            .spinner {
+                display: inline-block;
+                width: 40px;
+                height: 40px;
+                border: 4px solid #f3f3f3;
+                border-top: 4px solid #667eea;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+
+            .full-width {
+                grid-column: 1 / -1;
+            }
+
+            .status-badge {
+                display: inline-block;
+                padding: 4px 12px;
+                border-radius: 20px;
+                font-size: 0.85em;
+                font-weight: 600;
+            }
+
+            .status-healthy {
+                background: #d1fae5;
+                color: #065f46;
+            }
+
+            .status-warning {
+                background: #fef3c7;
+                color: #92400e;
+            }
+
+            .timestamp {
+                font-size: 0.85em;
+                color: #999;
+                text-align: right;
+                margin-top: 15px;
+                padding-top: 15px;
+                border-top: 1px solid #eee;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <h1>🎯 AVM 성능 모니터링 대시보드</h1>
+                <p>자동감정가 모델 실시간 성능 추적</p>
+            </header>
+
+            <div class="grid">
+                <!-- 상태 요약 -->
+                <div class="card full-width">
+                    <h2>📊 실시간 현황</h2>
+                    <div id="summary-content" class="loading">
+                        <div class="spinner"></div> 데이터 로드 중...
+                    </div>
+                </div>
+
+                <!-- 성능 그래프 -->
+                <div class="card full-width">
+                    <h2>📈 성능 추이 (R²)</h2>
+                    <div class="chart-container">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 통계 -->
+                <div class="card">
+                    <h2>📉 성능 통계</h2>
+                    <div id="stats-content" class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+
+                <!-- 챔피언 모델 -->
+                <div class="card">
+                    <h2>🏆 챔피언 모델</h2>
+                    <div id="champion-content" class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+
+                <!-- 최근 알림 -->
+                <div class="card full-width">
+                    <h2>🚨 최근 알림</h2>
+                    <div id="alerts-content" class="loading">
+                        <div class="spinner"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            let performanceChart = null;
+
+            async function loadDashboard() {
+                try {
+                    // 요약 데이터 로드
+                    const summaryResp = await fetch('/dashboard/api/summary');
+                    const summary = await summaryResp.json();
+                    updateSummary(summary);
+
+                    // 성능 이력 로드
+                    const perfResp = await fetch('/dashboard/api/performance?limit=50');
+                    const perfData = await perfResp.json();
+                    updateChart(perfData.data);
+                    updateStats(summary.performance);
+
+                    // 챔피언 모델 로드
+                    updateChampion(summary.champion);
+
+                    // 알림 로드
+                    const alertResp = await fetch('/dashboard/api/alerts?limit=10');
+                    const alerts = await alertResp.json();
+                    updateAlerts(alerts.data);
+
+                } catch (error) {
+                    console.error('Dashboard load failed:', error);
+                    document.getElementById('summary-content').innerHTML =
+                        '<div style="color: red;">데이터 로드 실패</div>';
+                }
+            }
+
+            function updateSummary(data) {
+                const latest = data.performance.latest;
+                const status = data.status === 'healthy' ?
+                    '<span class="status-badge status-healthy">✅ 건강</span>' :
+                    '<span class="status-badge status-warning">⚠️ 주의</span>';
+
+                const html = `
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <div>
+                            <div class="stat">
+                                <span class="stat-label">현재 R²</span>
+                                <span class="stat-value">${(latest.r2).toFixed(4)}</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">변화</span>
+                                <span class="stat-value ${latest.r2_change >= 0 ? 'positive' : 'negative'}">
+                                    ${latest.r2_change >= 0 ? '+' : ''}${(latest.r2_change).toFixed(6)}
+                                </span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">모델</span>
+                                <span class="stat-value">${latest.model}</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="stat">
+                                <span class="stat-label">상태</span>
+                                <span>${status}</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">추이</span>
+                                <span class="stat-value">${latest.trend}</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">업데이트</span>
+                                <span class="stat-value">${new Date(latest.timestamp).toLocaleString('ko-KR')}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('summary-content').innerHTML = html;
+            }
+
+            function updateChart(data) {
+                const ctx = document.getElementById('performanceChart').getContext('2d');
+
+                const timestamps = data.map(d => new Date(d.timestamp).toLocaleDateString('ko-KR'));
+                const r2Values = data.map(d => (d.test_r2 * 100).toFixed(2));
+
+                if (performanceChart) {
+                    performanceChart.destroy();
+                }
+
+                performanceChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: timestamps,
+                        datasets: [{
+                            label: 'Test R² (%)',
+                            data: r2Values,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 4,
+                            pointBackgroundColor: '#667eea',
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                labels: { font: { size: 12 } }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                min: 0,
+                                max: 100,
+                                ticks: { callback: (v) => v + '%' }
+                            }
+                        }
+                    }
+                });
+            }
+
+            function updateStats(perfStats) {
+                if (!perfStats.stats) {
+                    document.getElementById('stats-content').innerHTML =
+                        '<div style="color: #999;">데이터 없음</div>';
+                    return;
+                }
+
+                const stats = perfStats.stats;
+                const html = `
+                    <div class="stat">
+                        <span class="stat-label">최고 R²</span>
+                        <span class="stat-value">${(stats.best_r2).toFixed(4)}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">평균 R²</span>
+                        <span class="stat-value">${(stats.avg_r2).toFixed(4)}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">최저 R²</span>
+                        <span class="stat-value">${(stats.worst_r2).toFixed(4)}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">평균 RMSE</span>
+                        <span class="stat-value">${(stats.avg_rmse).toFixed(0)}</span>
+                    </div>
+                `;
+                document.getElementById('stats-content').innerHTML = html;
+            }
+
+            function updateChampion(champion) {
+                const html = `
+                    <div class="stat">
+                        <span class="stat-label">모델명</span>
+                        <span class="stat-value">${champion.name}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">R² 점수</span>
+                        <span class="stat-value">${(champion.r2).toFixed(4)}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">RMSE</span>
+                        <span class="stat-value">${(champion.rmse).toFixed(0)}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">서명</span>
+                        <span class="stat-value" style="font-size: 0.85em;">${champion.sha256}</span>
+                    </div>
+                `;
+                document.getElementById('champion-content').innerHTML = html;
+            }
+
+            function updateAlerts(alerts) {
+                if (alerts.length === 0) {
+                    document.getElementById('alerts-content').innerHTML =
+                        '<div style="color: #10b981; text-align: center; padding: 20px;">✅ 알림 없음</div>';
+                    return;
+                }
+
+                const html = alerts.map(alert => `
+                    <div class="alert ${alert.severity === 'HIGH' ? 'high' : ''}">
+                        <strong>${alert.severity}</strong> - ${alert.type}
+                        <br><small>${new Date(alert.timestamp).toLocaleString('ko-KR')}</small>
+                        ${alert.type === 'performance_regression' ?
+                            `<br><small>R²: ${(alert.previous_r2).toFixed(4)} → ${(alert.latest_r2).toFixed(4)}</small>` : ''}
+                    </div>
+                `).join('');
+
+                document.getElementById('alerts-content').innerHTML = html;
+            }
+
+            // 초기 로드
+            loadDashboard();
+
+            // 30초마다 새로고침
+            setInterval(loadDashboard, 30000);
+        </script>
+    </body>
+    </html>
+    """
+
+    return HTMLResponse(content=html_content)
+
 
 
 @app.get("/model/{model_name}", tags=["Models"])
