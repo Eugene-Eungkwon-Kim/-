@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """iPhone 데이터 정리 스크립트 — iPhone 13 Pro 최적화"""
 
-import os
 import re
 import sys
 import json
 import shutil
 import hashlib
 import argparse
-import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -21,7 +19,7 @@ except ImportError:
 # iPhone 파일 카테고리
 FILE_CATEGORIES = {
     "사진":     {".jpg", ".jpeg", ".heic", ".heif", ".png", ".gif", ".bmp", ".tiff", ".webp", ".raw"},
-    "라이브포토": {".mov"},   # .heic 와 쌍을 이루는 Live Photo
+    "라이브포토": set(),      # get_category()에서 HEIC+MOV 쌍으로 판별
     "동영상":   {".mp4", ".m4v", ".mov", ".avi", ".mkv"},
     "슬로모션":  set(),      # 파일명 패턴으로 구분
     "타임랩스":  set(),
@@ -32,10 +30,8 @@ FILE_CATEGORIES = {
     "기타":     set(),
 }
 
-# Live Photo 판단: HEIC 와 같은 이름의 MOV
-LIVE_PHOTO_PATTERN = re.compile(r"^IMG_\d{4}$", re.IGNORECASE)
-SLO_MO_PATTERN     = re.compile(r"slo.?mo|slow", re.IGNORECASE)
-TIMELAPSE_PATTERN  = re.compile(r"time.?lapse|IMG_E\d+", re.IGNORECASE)
+SLO_MO_PATTERN    = re.compile(r"slo.?mo|slow", re.IGNORECASE)
+TIMELAPSE_PATTERN = re.compile(r"time.?lapse|IMG_E\d+", re.IGNORECASE)
 
 
 def log(icon: str, msg: str):
@@ -56,7 +52,7 @@ def get_exif_date(path: Path) -> datetime | None:
     try:
         from PIL.ExifTags import TAGS
         img = Image.open(path)
-        exif = img._getexif()
+        exif = dict(img.getexif())
         if not exif:
             return None
         for tag_id, val in exif.items():
@@ -144,9 +140,10 @@ def organize(src: Path, dest: Path, dry_run: bool) -> dict:
             fname    = new_filename(path, date)
             out      = out_dir / fname
 
+            base = out.stem
             n = 1
             while out.exists() and get_hash(out) != h:
-                out = out_dir / f"{out.stem}_{n}{out.suffix}"
+                out = out_dir / f"{base}_{n}{out.suffix}"
                 n += 1
 
             log("→", f"[{category}] {path.name}  →  {date.strftime('%Y/%m')}/{fname}")

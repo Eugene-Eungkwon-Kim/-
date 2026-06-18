@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """모바일 기기 데이터 마이그레이션 — Android(ADB) / 로컬 폴더 지원"""
 
-import os
 import re
 import sys
 import json
@@ -66,7 +65,7 @@ def get_exif_date(path: Path) -> datetime | None:
     try:
         from PIL.ExifTags import TAGS
         img = Image.open(path)
-        exif = img._getexif()
+        exif = dict(img.getexif())
         if not exif:
             return None
         for tag_id, val in exif.items():
@@ -177,9 +176,10 @@ def organize(src: Path, dest: Path, dry_run: bool) -> dict:
             fname   = new_filename(path, date)
             out     = out_dir / fname
 
+            base = out.stem
             n = 1
             while out.exists() and get_hash(out) != h:
-                out = out_dir / f"{out.stem}_{n}{out.suffix}"
+                out = out_dir / f"{base}_{n}{out.suffix}"
                 n += 1
 
             log("MOVE", f"{path.relative_to(src)}  →  {out.relative_to(dest)}")
