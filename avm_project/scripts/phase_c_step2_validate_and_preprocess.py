@@ -150,7 +150,7 @@ def validate_and_preprocess(csv_path, output_path="avm_project/data/raw/real_est
 
     # 체크 9: 면적 범위
     print(f"\n   [9] 면적: {df['면적'].min():.1f} ~ {df['면적'].max():.1f} ㎡")
-    if (df['면적'] > 10) & (df['면적'] < 500):
+    if ((df['면적'] > 10) & (df['면적'] < 500)).all():
         print(f"       ✅ 범위 정상")
         checks.append(True)
     else:
