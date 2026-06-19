@@ -7,9 +7,9 @@
     "timezone": "Asia/Seoul",
     "description": "매주 목요일 10:00에 재학습 시작"
   },
-  "data_path": "avm_project/data/raw/real_estate_2024.csv",
-  "model_dir": "avm_project/models",
-  "log_file": "avm_project/logs/retrain_history.jsonl",
+  "data_path": "data/raw/real_estate_2024.csv",
+  "model_dir": "models",
+  "log_file": "logs/retrain_history.jsonl",
   "test_size": 0.15,
   "val_size": 0.15,
   "performance_threshold": 0.95,
@@ -80,9 +80,9 @@
     "level": "INFO",
     "format": "%(asctime)s - %(levelname)s - %(message)s",
     "files": {
-      "retrain_log": "avm_project/logs/weekly_retrain.log",
-      "monitor_log": "avm_project/logs/performance_monitor.log",
-      "history_log": "avm_project/logs/retrain_history.jsonl"
+      "retrain_log": "logs/weekly_retrain.log",
+      "monitor_log": "logs/performance_monitor.log",
+      "history_log": "logs/retrain_history.jsonl"
     }
   },
   "feature_columns": [

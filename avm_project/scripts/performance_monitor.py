@@ -13,11 +13,15 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
+script_dir = Path(__file__).parent.parent
+log_dir = script_dir / 'logs'
+log_dir.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('avm_project/logs/performance_monitor.log'),
+        logging.FileHandler(log_dir / 'performance_monitor.log'),
         logging.StreamHandler()
     ]
 )
@@ -27,11 +31,17 @@ logger = logging.getLogger(__name__)
 class PerformanceMonitor:
     """모델 성능 모니터 및 알림 시스템"""
 
-    def __init__(self, config_path='avm_project/config/schedule_config.json'):
+    def __init__(self, config_path=None):
         """초기화"""
+        if config_path is None:
+            project_root = Path(__file__).parent.parent
+            config_path = project_root / 'config' / 'schedule_config.json'
+
         self.config_path = config_path
+        self.project_root = Path(__file__).parent.parent
         self.config = self._load_config()
-        self.log_file = Path(self.config.get('log_file', 'avm_project/logs/retrain_history.jsonl'))
+        log_file_path = self.config.get('log_file', 'logs/retrain_history.jsonl')
+        self.log_file = self.project_root / log_file_path
         self.alert_config = self.config.get('alert_config', {})
 
     def _load_config(self):
