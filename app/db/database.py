@@ -1,9 +1,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.db.models import Base
-import os
+from app.config import settings
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///D:/NPL전례/avm_project/data/npl_avm.db")
+DATABASE_URL = settings.DATABASE_URL
 
 engine = create_engine(
     DATABASE_URL,
