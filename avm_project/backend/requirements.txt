@@ -18,3 +18,9 @@ lightgbm==4.6.0
 pandas==3.0.3
 numpy==2.4.6
 joblib==1.5.3
+
+# --- 테스트 및 개발도구 ---
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+websockets==12.0
