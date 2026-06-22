@@ -1,10 +1,8 @@
-# Git
-.git
-.gitignore
-.github
+# 백엔드 이미지 빌드 컨텍스트(avm_project/) 제외 목록
+# 주의: models/, data/, config/, logs/ 는 백엔드가 런타임에 사용하므로 포함한다.
 
-# Python
-__pycache__
+# --- Python 캐시/빌드 산출물 ---
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -15,8 +13,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -25,54 +21,42 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
+# --- 가상환경 ---
 venv/
 ENV/
 env/
+.venv/
 
-# IDE
-.vscode
-.idea
+# --- 테스트/커버리지 ---
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+tests/
+
+# --- 프론트엔드 (백엔드 이미지에 불필요) ---
+frontend/
+
+# --- 문서/노트북/백업 (런타임 불필요, 컨텍스트 축소) ---
+docs/
+notebooks/
+backups/
+*.md
+
+# --- 오래된 모델 포맷 (.joblib 만 로드함) ---
+models/*.pkl
+
+# --- Docker / CI ---
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+.github/
+
+# --- IDE / OS ---
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
 .DS_Store
-
-# Testing
-.pytest_cache
-.coverage
-htmlcov/
-
-# Documentation
-docs/
-README.md
-LICENSE
-
-# Data (keep only processed data)
-avm_project/data/raw/*.csv
-avm_project/output/*.csv
-avm_project/logs/*.log
-
-# OS
-.DS_Store
 Thumbs.db
-
-# Docker
-Dockerfile*
-docker-compose*.yml
-.dockerignore
-
-# CI/CD
-.github/
-.gitlab-ci.yml
-.travis.yml
-
-# Node (if using frontend)
-node_modules/
-npm-debug.log
-yarn-error.log
-
-# Large files
-*.zip
-*.tar.gz
-*.tar.bz2

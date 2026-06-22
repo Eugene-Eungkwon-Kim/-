@@ -1,21 +1,9 @@
-# Node.js
 node_modules/
-npm-debug.log
-yarn-error.log
 .next/
-.env
+dist/
+build/
+*.log
 .env.local
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
+.env.*.local
 .vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Allow lib directory (our TypeScript utility directory)
-!lib/
+.DS_Store
