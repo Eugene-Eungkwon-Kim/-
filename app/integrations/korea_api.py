@@ -92,14 +92,14 @@ class KoreaLandAPI:
     - 오피스텔 매매 (OFFICETEL)
     """
 
-    BASE_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstallPackage/service/rest"
+    BASE_URL = "http://apis.data.go.kr/1613000"
 
-    # 각 용도별 서비스명
+    # 각 용도별 서비스명 (data.go.kr 현행 경로)
     SERVICES = {
-        "아파트":   "RTMSOBJSvc/getRTMSDataSvcAptTradeDev",
-        "다세대":   "RTMSOBJSvc/getRTMSDataSvcRHTrade",
-        "연립":     "RTMSOBJSvc/getRTMSDataSvcRHTrade",    # 다세대와 동일 엔드포인트 (용도코드 분리)
-        "오피스텔": "RTMSOBJSvc/getRTMSDataSvcOffiTrade",
+        "아파트":   "RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev",
+        "다세대":   "RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade",
+        "연립":     "RTMSDataSvcRHTrade/getRTMSDataSvcRHTrade",
+        "오피스텔": "RTMSDataSvcOffiTrade/getRTMSDataSvcOffiTrade",
     }
 
     def __init__(self, api_key: str, timeout: int = 30, retry: int = 3):
