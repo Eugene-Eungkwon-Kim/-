@@ -6,14 +6,20 @@ FastAPI 기반 REST API 서버
 
 import os
 import json
+import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Set
+from enum import Enum
 
-from fastapi import FastAPI, HTTPException, Depends, status, Header
+from fastapi import FastAPI, HTTPException, Depends, status, Header, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import uvicorn
+
+# 모니터링 모듈 임포트
+from backend.ml_models import model_manager
+from backend.retraining_monitor import monitor
 
 # ============================================
 # 앱 설정
@@ -37,6 +43,70 @@ app.add_middleware(
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "avm_project" / "data"
 LOGS_DIR = PROJECT_ROOT / "avm_project" / "logs"
+
+# ============================================
+# WebSocket 메시지 타입
+# ============================================
+class MessageType(str, Enum):
+    """WebSocket 메시지 타입"""
+    DASHBOARD_UPDATE = "dashboard_update"
+    DEGRADATION_ALERT = "degradation_alert"
+    TRAINING_STATUS = "training_status"
+    MODEL_PERFORMANCE = "model_performance"
+    SYSTEM_HEALTH = "system_health"
+
+
+# ============================================
+# ConnectionManager - WebSocket 연결 관리
+# ============================================
+class ConnectionManager:
+    """WebSocket 연결 관리자"""
+
+    def __init__(self):
+        self.active_connections: Dict[str, Set[WebSocket]] = {
+            "dashboard": set(),
+            "monitoring": set()
+        }
+        self.background_task = None
+
+    async def connect(self, websocket: WebSocket, channel: str):
+        """클라이언트 연결"""
+        await websocket.accept()
+        if channel in self.active_connections:
+            self.active_connections[channel].add(websocket)
+
+    def disconnect(self, websocket: WebSocket, channel: str):
+        """클라이언트 연결 해제"""
+        if channel in self.active_connections:
+            self.active_connections[channel].discard(websocket)
+
+    async def broadcast(self, channel: str, message: Dict[str, Any]):
+        """채널에 메시지 브로드캐스트"""
+        if channel not in self.active_connections:
+            return
+
+        disconnected = set()
+        for websocket in self.active_connections[channel]:
+            try:
+                await websocket.send_json(message)
+            except Exception as e:
+                disconnected.add(websocket)
+
+        # 연결 끊긴 클라이언트 제거
+        for ws in disconnected:
+            self.active_connections[channel].discard(ws)
+
+    async def send_personal(self, websocket: WebSocket, message: Dict[str, Any]):
+        """개별 메시지 전송"""
+        try:
+            await websocket.send_json(message)
+        except Exception:
+            pass
+
+
+# 전역 ConnectionManager 인스턴스
+connection_manager = ConnectionManager()
+
 
 # ============================================
 # 모델 및 Schemas
@@ -386,6 +456,121 @@ async def get_retraining_history(limit: int = 50, token: str = Depends(verify_to
         })
 
     return {"data": history}
+
+
+# ============================================
+# WebSocket 엔드포인트
+# ============================================
+@app.websocket("/ws/dashboard")
+async def websocket_dashboard(websocket: WebSocket):
+    """대시보드 실시간 업데이트 WebSocket"""
+    await connection_manager.connect(websocket, "dashboard")
+    try:
+        while True:
+            # 클라이언트로부터 메시지 수신 대기
+            data = await websocket.receive_text()
+            if data == "ping":
+                await connection_manager.send_personal(
+                    websocket,
+                    {"type": "pong", "timestamp": datetime.now().isoformat()}
+                )
+    except WebSocketDisconnect:
+        connection_manager.disconnect(websocket, "dashboard")
+    except Exception as e:
+        connection_manager.disconnect(websocket, "dashboard")
+
+
+@app.websocket("/ws/monitoring")
+async def websocket_monitoring(websocket: WebSocket):
+    """모니터링 실시간 업데이트 WebSocket"""
+    await connection_manager.connect(websocket, "monitoring")
+    try:
+        while True:
+            # 클라이언트로부터 메시지 수신 대기
+            data = await websocket.receive_text()
+            if data == "ping":
+                await connection_manager.send_personal(
+                    websocket,
+                    {"type": "pong", "timestamp": datetime.now().isoformat()}
+                )
+    except WebSocketDisconnect:
+        connection_manager.disconnect(websocket, "monitoring")
+    except Exception as e:
+        connection_manager.disconnect(websocket, "monitoring")
+
+
+# ============================================
+# 백그라운드 업데이트 작업
+# ============================================
+async def broadcast_dashboard_updates():
+    """대시보드 업데이트 브로드캐스트 (30초마다)"""
+    while True:
+        try:
+            await asyncio.sleep(30)
+
+            # 최신 재학습 결과 조회
+            latest_result = monitor.get_latest_result()
+            trend_data = monitor.get_trend_data(weeks=10)
+            stats = monitor.get_statistics()
+
+            message = {
+                "type": MessageType.DASHBOARD_UPDATE,
+                "timestamp": datetime.now().isoformat(),
+                "latest_result": latest_result,
+                "trend_data": trend_data,
+                "statistics": stats
+            }
+
+            await connection_manager.broadcast("dashboard", message)
+
+        except Exception as e:
+            pass
+
+
+async def broadcast_monitoring_updates():
+    """모니터링 업데이트 브로드캐스트 (30초마다)"""
+    while True:
+        try:
+            await asyncio.sleep(30)
+
+            # 성능 저하 확인
+            degradation = monitor.check_performance_degradation()
+
+            # 다음 학습 시간 예측
+            next_training = monitor.estimate_next_training()
+
+            # 시스템 상태
+            health_status = monitor.get_health_status()
+
+            # 성능 저하 감지 시 알림
+            if degradation and degradation.get("detected"):
+                message = {
+                    "type": MessageType.DEGRADATION_ALERT,
+                    "timestamp": datetime.now().isoformat(),
+                    "alert": degradation
+                }
+                await connection_manager.broadcast("monitoring", message)
+
+            # 일반 모니터링 메시지
+            message = {
+                "type": MessageType.SYSTEM_HEALTH,
+                "timestamp": datetime.now().isoformat(),
+                "health_status": health_status,
+                "next_training": next_training
+            }
+
+            await connection_manager.broadcast("monitoring", message)
+
+        except Exception as e:
+            pass
+
+
+@app.on_event("startup")
+async def startup_event():
+    """애플리케이션 시작 시 백그라운드 작업 시작"""
+    # 백그라운드 작업 시작
+    asyncio.create_task(broadcast_dashboard_updates())
+    asyncio.create_task(broadcast_monitoring_updates())
 
 
 # ============================================
