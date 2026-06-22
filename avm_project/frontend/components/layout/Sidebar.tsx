@@ -8,6 +8,7 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  Activity,
 } from 'lucide-react'
 
 interface SidebarProps {
@@ -22,6 +23,12 @@ export default function Sidebar({ activePage, setActivePage }: SidebarProps) {
       label: '대시보드',
       icon: LayoutDashboard,
       description: '모델 성능 모니터링',
+    },
+    {
+      id: 'monitoring',
+      label: '실시간 모니터링',
+      icon: Activity,
+      description: '시스템 상태 및 알림',
     },
     {
       id: 'models',

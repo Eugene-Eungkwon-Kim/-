@@ -4,6 +4,7 @@ import React from 'react'
 import Header from '@/components/layout/Header'
 import Sidebar from '@/components/layout/Sidebar'
 import Dashboard from '@/components/pages/Dashboard'
+import RealtimeMonitoring from '@/components/pages/RealtimeMonitoring'
 
 export default function Home() {
   const [activePage, setActivePage] = React.useState('dashboard')
@@ -21,6 +22,7 @@ export default function Home() {
         {/* Page Content */}
         <main className="flex-1 overflow-auto">
           {activePage === 'dashboard' && <Dashboard />}
+          {activePage === 'monitoring' && <RealtimeMonitoring />}
           {/* Other pages will be added here */}
         </main>
       </div>

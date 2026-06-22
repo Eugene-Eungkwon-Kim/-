@@ -1,45 +1,105 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { TrendingUp, AlertCircle, CheckCircle } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { TrendingUp, AlertCircle, CheckCircle, Wifi, WifiOff } from 'lucide-react'
 import SummaryCard from '@/components/ui/SummaryCard'
 import StatisticCard from '@/components/ui/StatisticCard'
 import LineChart from '@/components/ui/LineChart'
 import PerformanceTable from '@/components/ui/PerformanceTable'
+import { useWebSocket } from '@/lib/useWebSocket'
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+interface DashboardData {
+  ensemble_r2: number
+  ensemble_rmse: number
+  ensemble_mae: number
+  trend: any[]
+  recent_trainings: any[]
+  statistics?: any
+}
 
 export default function Dashboard() {
-  const [data, setData] = useState(null)
+  const [data, setData] = useState<DashboardData>({
+    ensemble_r2: 0.8450,
+    ensemble_rmse: 55200000,
+    ensemble_mae: 42300000,
+    trend: [],
+    recent_trainings: [],
+  })
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    // 백엔드에서 데이터 로드 (추후 구현)
-    setTimeout(() => {
-      setData({
-        ensemble_r2: 0.8450,
-        ensemble_rmse: 55200000,
-        ensemble_mae: 42300000,
-        trend: [
-          { week: '1주', r2: 0.8200 },
-          { week: '2주', r2: 0.8220 },
-          { week: '3주', r2: 0.8250 },
-          { week: '4주', r2: 0.8280 },
-          { week: '5주', r2: 0.8310 },
-          { week: '6주', r2: 0.8340 },
-          { week: '7주', r2: 0.8360 },
-          { week: '8주', r2: 0.8380 },
-          { week: '9주', r2: 0.8410 },
-          { week: '10주', r2: 0.8450 },
-        ],
-        recent_trainings: [
-          { date: '2026-06-19', status: 'success', r2: 0.8450, rmse: 55200000, duration: '12분' },
-          { date: '2026-06-12', status: 'success', r2: 0.8420, rmse: 55800000, duration: '11분' },
-          { date: '2026-06-05', status: 'success', r2: 0.8380, rmse: 56500000, duration: '13분' },
-          { date: '2026-05-29', status: 'warning', r2: 0.8340, rmse: 57200000, duration: '12분' },
-          { date: '2026-05-22', status: 'success', r2: 0.8310, rmse: 57500000, duration: '11분' },
-        ],
-      })
+  const handleWebSocketMessage = useCallback((message: any) => {
+    if (message.type === 'dashboard_update') {
+      // WebSocket에서 수신한 데이터로 업데이트
+      if (message.trend_data && message.trend_data.length > 0) {
+        const trend = message.trend_data.map((item: any) => ({
+          week: item.week,
+          r2: item.r2,
+        }))
+
+        if (message.latest_result) {
+          setData((prev) => ({
+            ...prev,
+            ensemble_r2: message.latest_result.ensemble?.r2 || prev.ensemble_r2,
+            ensemble_rmse: message.latest_result.ensemble?.rmse || prev.ensemble_rmse,
+            ensemble_mae: message.latest_result.ensemble?.mae || prev.ensemble_mae,
+            trend: trend,
+          }))
+        } else {
+          setData((prev) => ({
+            ...prev,
+            trend: trend,
+          }))
+        }
+      }
       setLoading(false)
-    }, 1000)
+    }
+  }, [])
+
+  const { isConnected, isReconnecting, send } = useWebSocket(
+    `${API_BASE_URL}/ws/dashboard`,
+    {
+      onMessage: handleWebSocketMessage,
+      onError: (error) => {
+        console.error('WebSocket error:', error)
+        setLoading(false)
+      },
+      onClose: () => {
+        console.log('WebSocket connection closed')
+      },
+    }
+  )
+
+  // 초기 데이터 로드
+  useEffect(() => {
+    // 데모 데이터 설정
+    const demoData: DashboardData = {
+      ensemble_r2: 0.8450,
+      ensemble_rmse: 55200000,
+      ensemble_mae: 42300000,
+      trend: [
+        { week: '1주', r2: 0.8200 },
+        { week: '2주', r2: 0.8220 },
+        { week: '3주', r2: 0.8250 },
+        { week: '4주', r2: 0.8280 },
+        { week: '5주', r2: 0.8310 },
+        { week: '6주', r2: 0.8340 },
+        { week: '7주', r2: 0.8360 },
+        { week: '8주', r2: 0.8380 },
+        { week: '9주', r2: 0.8410 },
+        { week: '10주', r2: 0.8450 },
+      ],
+      recent_trainings: [
+        { date: '2026-06-19', status: 'success', r2: 0.8450, rmse: 55200000, duration: '12분' },
+        { date: '2026-06-12', status: 'success', r2: 0.8420, rmse: 55800000, duration: '11분' },
+        { date: '2026-06-05', status: 'success', r2: 0.8380, rmse: 56500000, duration: '13분' },
+        { date: '2026-05-29', status: 'warning', r2: 0.8340, rmse: 57200000, duration: '12분' },
+        { date: '2026-05-22', status: 'success', r2: 0.8310, rmse: 57500000, duration: '11분' },
+      ],
+    }
+    setData(demoData)
+    setLoading(false)
   }, [])
 
   if (loading) {
@@ -55,10 +115,30 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-h2 text-neutral-900 font-semibold">대시보드</h1>
-        <p className="text-body text-neutral-600 mt-1">모델 성능 모니터링 및 분석</p>
+      {/* Connection Status Indicator */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h1 className="text-h2 text-neutral-900 font-semibold">대시보드</h1>
+          <p className="text-body text-neutral-600 mt-1">모델 성능 모니터링 및 분석</p>
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 bg-neutral-50 rounded-lg border border-neutral-200">
+          {isConnected ? (
+            <>
+              <Wifi className="w-4 h-4 text-success-500" />
+              <span className="text-sm text-success-600 font-medium">실시간 연결</span>
+            </>
+          ) : isReconnecting ? (
+            <>
+              <WifiOff className="w-4 h-4 text-warning-500 animate-pulse" />
+              <span className="text-sm text-warning-600 font-medium">재연결 중...</span>
+            </>
+          ) : (
+            <>
+              <WifiOff className="w-4 h-4 text-error-500" />
+              <span className="text-sm text-error-600 font-medium">연결 대기</span>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Summary Cards */}
