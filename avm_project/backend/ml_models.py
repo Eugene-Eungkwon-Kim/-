@@ -12,8 +12,9 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# backend/ 는 avm_project/ 내부에 위치하므로 parent.parent == avm_project 디렉토리
 PROJECT_ROOT = Path(__file__).parent.parent
-MODEL_DIR = PROJECT_ROOT / "avm_project" / "models"
+MODEL_DIR = PROJECT_ROOT / "models"
 
 
 class ModelManager:
@@ -28,6 +29,45 @@ class ModelManager:
         'lightgbm': 'LightGBM',
         'ensemble': 'Ensemble (Meta Learner)'
     }
+
+    # 파일명 키워드 → 표준 모델 타입 (구체적인 키워드를 먼저 매칭)
+    # 실제 모델 파일 예: "XGBoost_model_real_2024.joblib",
+    #                   "Random Forest_model_real_2024.joblib",
+    #                   "LGBMRegressor_model.joblib",
+    #                   "production_model_real_2024.joblib"
+    TYPE_KEYWORDS = [
+        ('production', 'ensemble'),
+        ('ensemble', 'ensemble'),
+        ('xgb', 'xgboost'),
+        ('lightgbm', 'lightgbm'),
+        ('lgbm', 'lightgbm'),
+        ('random forest', 'random_forest'),
+        ('randomforest', 'random_forest'),
+        ('gradient boosting', 'gradient_boosting'),
+        ('gradientboosting', 'gradient_boosting'),
+        ('decision tree', 'decision_tree'),
+        ('decisiontree', 'decision_tree'),
+        ('linear regression', 'linear_regression'),
+        ('linearregression', 'linear_regression'),
+    ]
+
+    @classmethod
+    def _classify_model_type(cls, stem: str) -> Optional[str]:
+        """파일명(stem)에서 표준 모델 타입을 추론"""
+        s = stem.lower()
+        for keyword, model_type in cls.TYPE_KEYWORDS:
+            if keyword in s:
+                return model_type
+        return None
+
+    @staticmethod
+    def _derive_version(model_file: Path) -> str:
+        """파일 수정 시각 기반 버전 문자열 생성"""
+        try:
+            mtime = model_file.stat().st_mtime
+            return datetime.fromtimestamp(mtime).strftime('%Y%m%d_%H%M%S')
+        except OSError:
+            return 'unknown'
 
     def __init__(self):
         self.models: Dict[str, Any] = {}
@@ -51,63 +91,53 @@ class ModelManager:
                 self._create_demo_models()
                 return
 
-            # 모델 이름별로 최신 버전 찾기
-            version_map: Dict[str, List[tuple]] = {}
+            # 모델 타입별 후보 수집: type -> list of (priority, mtime, file)
+            # priority: 실제 2024 데이터로 학습된 모델(real)을 우선
+            candidates: Dict[str, List[tuple]] = {}
 
             for model_file in model_files:
-                # 파일명: model_xgboost_v20260619_100000.joblib
-                # 또는 ensemble_model_v20260619_100000.joblib
-                stem = model_file.stem
-                parts = stem.split('_')
-
-                # 모델 타입 추출
-                model_type = None
-                timestamp = None
-
-                if 'ensemble' in stem:
-                    model_type = 'ensemble'
-                    # ensemble_model_v20260619_100000
-                    if len(parts) >= 4:
-                        timestamp = parts[-1]
-                elif 'model' in stem and len(parts) >= 3:
-                    # model_xgboost_v20260619_100000
-                    model_type = parts[1]
-                    if len(parts) >= 4:
-                        timestamp = parts[-1]
-
-                if not model_type or not timestamp:
-                    logger.warning(f"파일명 형식 오류: {stem}")
+                model_type = self._classify_model_type(model_file.stem)
+                if model_type is None:
+                    logger.warning(f"모델 타입 인식 불가: {model_file.name}")
                     continue
 
-                if model_type not in version_map:
-                    version_map[model_type] = []
+                stem_lower = model_file.stem.lower()
+                priority = 1 if 'real' in stem_lower else 0
+                try:
+                    mtime = model_file.stat().st_mtime
+                except OSError:
+                    mtime = 0.0
 
-                version_map[model_type].append((timestamp, model_file))
+                candidates.setdefault(model_type, []).append(
+                    (priority, mtime, model_file)
+                )
 
-            # 각 모델의 최신 버전 로드
-            for model_type, versions in version_map.items():
-                versions.sort(reverse=True)
-                latest_file = versions[0][1]
+            # 각 타입에서 (real 우선, 최신 수정시각) 모델을 선택 후 로드
+            for model_type, items in candidates.items():
+                items.sort(key=lambda t: (t[0], t[1]), reverse=True)
+                best_file = items[0][2]
+                version = self._derive_version(best_file)
 
                 try:
-                    model = joblib.load(latest_file)
+                    model = joblib.load(best_file)
                     model_id = f"{model_type}_latest"
 
                     self.models[model_id] = model
-                    self.latest_version[model_type] = versions[0][0]
+                    self.latest_version[model_type] = version
 
                     self.model_metadata[model_id] = {
                         'type': model_type,
-                        'file': latest_file.name,
-                        'version': versions[0][0],
+                        'file': best_file.name,
+                        'version': version,
                         'loaded_at': datetime.now().isoformat(),
-                        'display_name': self.MODEL_NAMES.get(model_type, model_type)
+                        'display_name': self.MODEL_NAMES.get(model_type, model_type),
+                        'is_real_data': 'real' in best_file.stem.lower(),
                     }
 
-                    logger.info(f"✅ 모델 로드: {model_id} ({latest_file.name})")
+                    logger.info(f"✅ 모델 로드: {model_id} ({best_file.name})")
 
                 except Exception as e:
-                    logger.error(f"❌ 모델 로드 실패 ({latest_file}): {e}")
+                    logger.error(f"❌ 모델 로드 실패 ({best_file}): {e}")
 
             if self.models:
                 logger.info(f"✅ 총 {len(self.models)}개 모델 로드 완료")
@@ -242,7 +272,10 @@ class ModelManager:
     def get_model_performance(self, model_id: str) -> Optional[Dict]:
         """모델 성능 메트릭 (재학습 이력에서)"""
         try:
-            from backend.database import history_manager
+            try:
+                from backend.database import history_manager
+            except ImportError:
+                from database import history_manager
 
             history = history_manager.get_history(limit=10)
 

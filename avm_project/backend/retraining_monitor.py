@@ -13,8 +13,8 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).parent.parent
-AVM_PROJECT = PROJECT_ROOT / "avm_project"
+# backend/ 는 avm_project/ 내부에 위치하므로 parent.parent == avm_project 디렉토리
+AVM_PROJECT = Path(__file__).parent.parent
 HISTORY_FILE = AVM_PROJECT / "logs" / "retrain_history.jsonl"
 CONFIG_FILE = AVM_PROJECT / "config" / "schedule_config.json"
 

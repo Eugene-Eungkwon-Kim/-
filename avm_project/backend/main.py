@@ -18,8 +18,15 @@ from fastapi.responses import JSONResponse
 import uvicorn
 
 # 모니터링 모듈 임포트
-from backend.ml_models import model_manager
-from backend.retraining_monitor import monitor
+# 실행 방식에 따라 두 가지 임포트 경로 지원:
+#  - `cd backend && uvicorn main:app` (문서 권장)  → 최상위 모듈
+#  - `uvicorn backend.main:app` (avm_project 루트) → backend 패키지
+try:
+    from backend.ml_models import model_manager
+    from backend.retraining_monitor import monitor
+except ImportError:
+    from ml_models import model_manager
+    from retraining_monitor import monitor
 
 # ============================================
 # 앱 설정
@@ -40,9 +47,10 @@ app.add_middleware(
 )
 
 # 프로젝트 루트 경로
+# backend/ 는 avm_project/ 내부에 위치하므로 parent.parent == avm_project 디렉토리
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "avm_project" / "data"
-LOGS_DIR = PROJECT_ROOT / "avm_project" / "logs"
+DATA_DIR = PROJECT_ROOT / "data"
+LOGS_DIR = PROJECT_ROOT / "logs"
 
 # ============================================
 # WebSocket 메시지 타입
