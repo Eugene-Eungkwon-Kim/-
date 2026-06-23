@@ -148,9 +148,11 @@ class KoreaLandAPI:
         if not service:
             raise ValueError(f"지원하지 않는 property_type: {property_type}")
 
-        url = f"{self.BASE_URL}/{service}"
+        import urllib.parse
+        # serviceKey를 URL에 직접 포함해 requests의 이중 인코딩 방지
+        base = (f"{self.BASE_URL}/{service}"
+                f"?serviceKey={urllib.parse.quote(self.api_key, safe='')}")
         params = {
-            "serviceKey": self.api_key,
             "LAWD_CD": sgg_code,
             "DEAL_YMD": f"{year}{month:02d}",
             "pageNo": 1,
@@ -159,7 +161,7 @@ class KoreaLandAPI:
 
         for attempt in range(self.retry):
             try:
-                resp = self.session.get(url, params=params, timeout=self.timeout)
+                resp = self.session.get(base, params=params, timeout=self.timeout)
                 resp.raise_for_status()
                 records = self._parse_xml(resp.text, sgg_code, property_type)
                 logger.debug(
