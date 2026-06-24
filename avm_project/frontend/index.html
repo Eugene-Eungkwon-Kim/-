@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loan4U Price Prediction</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        input { width: 100%; padding: 8px; margin: 10px 0; }
+        button { padding: 10px 20px; background-color: #007bff; color: white; }
+        .result { margin-top: 20px; padding: 15px; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Loan4U Price Prediction</h1>
+        <input type="text" id="pnu" placeholder="Property Number">
+        <input type="number" id="area" placeholder="Area (㎡)" min="0" max="1000">
+        <select id="region">
+            <option value="">Select Region</option>
+            <option value="서울">Seoul</option>
+            <option value="경기">Gyeonggi</option>
+            <option value="인천">Incheon</option>
+            <option value="지방">Other</option>
+        </select>
+        <button onclick="predict()">Predict Price</button>
+        <div id="result" class="result" style="display:none;"></div>
+    </div>
+
+    <script>
+        async function predict() {
+            const pnu = document.getElementById("pnu").value;
+            const area = parseFloat(document.getElementById("area").value);
+            const region = document.getElementById("region").value;
+
+            if (!pnu || !area || !region) {
+                alert("Please fill all fields");
+                return;
+            }
+
+            const response = await fetch("http://localhost:8000/predict", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pnu, area, region })
+            });
+
+            const data = await response.json();
+            const resultDiv = document.getElementById("result");
+
+            if (data.status === 200) {
+                resultDiv.innerHTML = `
+                    <h2>Predicted Price: ${data.prediction.toLocaleString()} KRW</h2>
+                    <p>Confidence: ${(data.confidence * 100).toFixed(1)}%</p>
+                    <p>Region: ${data.region}</p>
+                `;
+            } else {
+                resultDiv.innerHTML = `<p>Error: ${data.detail}</p>`;
+            }
+            resultDiv.style.display = "block";
+        }
+    </script>
+</body>
+</html>
