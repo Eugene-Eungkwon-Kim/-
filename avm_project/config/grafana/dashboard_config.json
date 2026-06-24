@@ -1,0 +1,80 @@
+{
+  "dashboard": {
+    "title": "Loan4U QC v1.1 - 성능 모니터링",
+    "description": "실시간 예측 서비스 모니터링",
+    "tags": [
+      "loan4u",
+      "prediction",
+      "monitoring"
+    ],
+    "timezone": "Asia/Seoul",
+    "panels": [
+      {
+        "title": "일일 예측 건수",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(predictions_total[1d]))"
+          }
+        ]
+      },
+      {
+        "title": "평균 응답 시간",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "predict_duration_seconds"
+          }
+        ],
+        "thresholds": {
+          "warning": 100,
+          "critical": 200
+        }
+      },
+      {
+        "title": "지역별 예측",
+        "type": "pie",
+        "targets": [
+          {
+            "expr": "sum by (region) (predictions_total)"
+          }
+        ]
+      },
+      {
+        "title": "모델 R² 점수",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "model_r2_score"
+          }
+        ],
+        "thresholds": {
+          "warning": 0.85,
+          "critical": 0.8
+        }
+      },
+      {
+        "title": "API 가용성",
+        "type": "gauge",
+        "targets": [
+          {
+            "expr": "api_uptime_percent"
+          }
+        ],
+        "thresholds": {
+          "warning": 99.5,
+          "critical": 99.0
+        }
+      },
+      {
+        "title": "캐시 히트율",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "cache_hit_ratio"
+          }
+        ]
+      }
+    ]
+  }
+}
