@@ -1,0 +1,68 @@
+{
+  "new_regions": {
+    "Gangneung": {
+      "market_size_trillion": 3,
+      "expected_users": 35,
+      "monthly_revenue": 1050000,
+      "r2_score": 0.85
+    },
+    "Chuncheon": {
+      "market_size_trillion": 2,
+      "expected_users": 25,
+      "monthly_revenue": 750000,
+      "r2_score": 0.85
+    },
+    "Jeju": {
+      "market_size_trillion": 2,
+      "expected_users": 25,
+      "monthly_revenue": 750000,
+      "r2_score": 0.87
+    },
+    "Gyeongju": {
+      "market_size_trillion": 1,
+      "expected_users": 15,
+      "monthly_revenue": 450000,
+      "r2_score": 0.86
+    }
+  },
+  "marketing_strategies": {
+    "SNS_Campaign": {
+      "budget": 5000000,
+      "expected_users": 20
+    },
+    "Broker_Partnership": {
+      "budget": 3000000,
+      "expected_users": 30
+    },
+    "Local_Media": {
+      "budget": 2000000,
+      "expected_users": 15
+    },
+    "Referral_Program": {
+      "budget": 0,
+      "expected_users": 35
+    }
+  },
+  "regional_performance": {
+    "Gangneung": {
+      "r2_score": 0.85,
+      "accuracy_rate": 85.0,
+      "model_status": "READY"
+    },
+    "Chuncheon": {
+      "r2_score": 0.85,
+      "accuracy_rate": 85.0,
+      "model_status": "READY"
+    },
+    "Jeju": {
+      "r2_score": 0.87,
+      "accuracy_rate": 87.0,
+      "model_status": "READY"
+    },
+    "Gyeongju": {
+      "r2_score": 0.86,
+      "accuracy_rate": 86.0,
+      "model_status": "READY"
+    }
+  }
+}
