@@ -1,0 +1,22 @@
+# Git LFS Configuration
+# Large files handling for Loan4U QC v1.1 project
+
+# Excel files (main output)
+*.xlsx filter=lfs diff=lfs merge=lfs -text
+*.xls filter=lfs diff=lfs merge=lfs -text
+
+# CSV data files (>50MB)
+data/**/*.csv filter=lfs diff=lfs merge=lfs -text
+output/**/*.csv filter=lfs diff=lfs merge=lfs -text
+
+# Model files (joblib/pickle)
+*.pkl filter=lfs diff=lfs merge=lfs -text
+*.joblib filter=lfs diff=lfs merge=lfs -text
+
+# Database files
+*.db filter=lfs diff=lfs merge=lfs -text
+*.sqlite filter=lfs diff=lfs merge=lfs -text
+
+# Backups
+backups/**/*.xlsx filter=lfs diff=lfs merge=lfs -text
+backups/**/*.csv filter=lfs diff=lfs merge=lfs -text
