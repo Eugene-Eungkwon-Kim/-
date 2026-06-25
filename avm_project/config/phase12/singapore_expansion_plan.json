@@ -92,5 +92,21 @@
     "agencies": [
       "Singapore Real Estate Agency Association"
     ]
-  }
+  },
+  "sample_properties": [
+    {
+      "property_id": "SG_CBD_001",
+      "address": "1 Raffles Place, Singapore",
+      "area": 3500,
+      "old_price": 8500000,
+      "new_price": 8750000
+    },
+    {
+      "property_id": "SG_EW_001",
+      "address": "123 East Coast Road, Singapore",
+      "area": 2800,
+      "old_price": 5600000,
+      "new_price": 5880000
+    }
+  ]
 }

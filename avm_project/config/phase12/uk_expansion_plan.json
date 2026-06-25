@@ -105,5 +105,21 @@
     "week_5_6": "API development & testing",
     "week_7_8": "Production deployment & partnerships",
     "week_9_12": "Ramp-up to monthly target"
-  }
+  },
+  "sample_properties": [
+    {
+      "property_id": "UK_LON_001",
+      "address": "123 Oxford Street, London",
+      "area": 150,
+      "old_price": 850000,
+      "new_price": 875000
+    },
+    {
+      "property_id": "UK_MAN_001",
+      "address": "456 Market Street, Manchester",
+      "area": 120,
+      "old_price": 450000,
+      "new_price": 468000
+    }
+  ]
 }

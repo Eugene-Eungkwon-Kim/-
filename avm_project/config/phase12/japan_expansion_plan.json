@@ -46,5 +46,21 @@
     "economic_variation": "Regional economic indices",
     "infrastructure_impact": "Upcoming station/development projects",
     "disaster_factors": "Earthquake seismic grades, flood risk"
-  }
+  },
+  "sample_properties": [
+    {
+      "property_id": "JP_TYO_001",
+      "address": "1-1-1 Chiyoda, Tokyo",
+      "area": 4500,
+      "old_price": 95000000,
+      "new_price": 98000000
+    },
+    {
+      "property_id": "JP_OSA_001",
+      "address": "2-2-2 Kita Ward, Osaka",
+      "area": 3200,
+      "old_price": 62000000,
+      "new_price": 64500000
+    }
+  ]
 }
