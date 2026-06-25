@@ -1,0 +1,50 @@
+{
+  "country": "Japan",
+  "market_code": "JP",
+  "currency": "JPY",
+  "timestamp": "2026-06-25",
+  "data_collection": {
+    "primary": "Ministry of Land, Infrastructure, Transport & Tourism",
+    "monthly_transactions": 250000,
+    "data_volume_gb": 8,
+    "critical_transformation": "Tokyo Datum → WGS84",
+    "geographic_coverage": {
+      "urban_3": [
+        "Tokyo",
+        "Osaka",
+        "Nagoya"
+      ],
+      "major_cities": "20+ cities (>500K pop)",
+      "regional": "All prefectures"
+    }
+  },
+  "multi_region_model_architecture": {
+    "model_set_1": {
+      "name": "Urban Core (Tokyo/Osaka/Nagoya)",
+      "target_r2": 0.92,
+      "monthly_volume": "50K",
+      "key_characteristics": [
+        "High density",
+        "Station proximity critical",
+        "Building age significant"
+      ]
+    },
+    "model_set_2": {
+      "name": "Major Cities (50K+ pop)",
+      "target_r2": 0.89,
+      "monthly_volume": "70K"
+    },
+    "model_set_3": {
+      "name": "Regional/Rural",
+      "target_r2": 0.83,
+      "monthly_volume": "30K",
+      "lower_transaction_volume": true
+    }
+  },
+  "special_considerations": {
+    "lease_modeling": "Lease remaining vs Freehold distinction",
+    "economic_variation": "Regional economic indices",
+    "infrastructure_impact": "Upcoming station/development projects",
+    "disaster_factors": "Earthquake seismic grades, flood risk"
+  }
+}
