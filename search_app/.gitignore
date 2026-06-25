@@ -19,3 +19,10 @@ __pycache__/
 
 # Node
 node_modules/
+
+# AI 에이전트 산출 문서 (1,517개) — 소스코드 리포 불필요
+docs/
+
+# 임시/운영 스크립트
+scripts/
+tmp_*.py
