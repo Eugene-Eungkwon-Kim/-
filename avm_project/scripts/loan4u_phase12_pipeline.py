@@ -6,7 +6,6 @@ Unified Excel/PDF generation with price validation across 8 countries.
 
 import json
 import logging
-from copy import copy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -16,45 +15,32 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
 # Constants
 REVIEW_DATE = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 COUNTRIES = ['UK', 'SG', 'JP', 'DE', 'AU', 'CA', 'TH', 'HK']
-
-# Country-specific tolerance ranges (market volatility)
 TOLERANCE_MAP = {
     'UK': 0.05, 'JP': 0.05, 'SG': 0.08, 'DE': 0.08,
     'HK': 0.08, 'AU': 0.10, 'CA': 0.10, 'TH': 0.15
 }
-
-# Model version confidence factors
 CONFIDENCE_MAP = {'v1.0': 1.0, 'v1.1': 0.98, 'v1.2': 0.95}
-
-# Conformity grade colors
 GRADE_COLORS = {
-    '적정': 'C6EFCE',           # Green
-    '확인필요': 'FFEB9C',       # Yellow
-    '편차주의': 'FFC7CE',       # Light Red
-    '추가확인': 'FF0000'        # Red
+    '적정': 'C6EFCE', '확인필요': 'FFEB9C',
+    '편차주의': 'FFC7CE', '추가확인': 'FF0000'
 }
 
-# Styles
 HEADER_FILL = PatternFill(fill_type="solid", fgColor="1F4E78")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
-THIN_BORDER = Border(
-    left=Side(style="thin", color="D9D9D9"),
-    right=Side(style="thin", color="D9D9D9"),
-    top=Side(style="thin", color="D9D9D9"),
-    bottom=Side(style="thin", color="D9D9D9"),
-)
+THIN_BORDER = Border(left=Side(style="thin", color="D9D9D9"),
+                     right=Side(style="thin", color="D9D9D9"),
+                     top=Side(style="thin", color="D9D9D9"),
+                     bottom=Side(style="thin", color="D9D9D9"))
 
 
 @dataclass
 class Phase12CountryData:
-    """Country-specific AVM data"""
     country: str
     properties: List[Dict[str, Any]]
     total_records: int = 0
@@ -65,7 +51,6 @@ class Phase12CountryData:
 
 @dataclass
 class AuditResult:
-    """Price audit result for single property"""
     property_id: str
     old_price: Optional[float]
     new_price: Optional[float]
@@ -77,27 +62,23 @@ class AuditResult:
 
 @dataclass
 class GlobalMetrics:
-    """Aggregated metrics across countries"""
     countries: List[str]
     total_properties: int
-    audit_count: int
-    passed_audit: int
+    audit_count: int = 0
+    passed_audit: int = 0
     audit_rate: float = 0.0
     review_date: str = REVIEW_DATE
 
 
 def normalize_text(value: Any) -> str:
-    """Normalize text value"""
     if value is None:
         return ""
     return str(value).strip()
 
 
 def normalize_number(value: Any) -> Optional[float]:
-    """Parse currency/number strings"""
     if value is None or (isinstance(value, float) and str(value) == 'nan'):
         return None
-
     if isinstance(value, (int, float)):
         return float(value)
 
@@ -106,21 +87,16 @@ def normalize_number(value: Any) -> Optional[float]:
         return None
 
     text = text.replace(',', '').replace('원', '').replace('₩', '')
-
     if '억' in text:
         try:
-            num = float(text.replace('억', '').replace('원', '').strip())
-            return num * 100_000_000
+            return float(text.replace('억', '').replace('원', '').strip()) * 100_000_000
         except:
             pass
-
     if '만' in text:
         try:
-            num = float(text.replace('만', '').replace('원', '').strip())
-            return num * 10_000
+            return float(text.replace('만', '').replace('원', '').strip()) * 10_000
         except:
             pass
-
     try:
         return float(text)
     except:
@@ -128,12 +104,10 @@ def normalize_number(value: Any) -> Optional[float]:
 
 
 def safe_div(num: Optional[float], denom: Optional[float]) -> Optional[float]:
-    """Safe division"""
     return num / denom if num and denom and denom != 0 else None
 
 
 def get_header_map(ws, header_row: int = 1) -> Dict[str, int]:
-    """Get column mapping from header row"""
     header_map = {}
     for col in range(1, ws.max_column + 1):
         val = normalize_text(ws.cell(header_row, col).value)
@@ -143,7 +117,6 @@ def get_header_map(ws, header_row: int = 1) -> Dict[str, int]:
 
 
 def ensure_columns(ws, columns: List[str], header_row: int = 1) -> Dict[str, int]:
-    """Add missing columns to worksheet"""
     header_map = get_header_map(ws, header_row)
     next_col = ws.max_column + 1
 
@@ -169,29 +142,13 @@ def classify_price_conformity_phase12(
     real_transaction: bool = False,
     source_records: Optional[List[Dict]] = None
 ) -> Tuple[str, Optional[float], str]:
-    """
-    Classify price conformity with country-specific tolerance & model confidence.
-
-    Args:
-        old_price: Original price
-        new_price: Updated/predicted price
-        country: Country code (UK, JP, etc)
-        model_version: Model version (v1.0, v1.1, v1.2)
-        real_transaction: Real transaction applied
-        source_records: External source price records
-
-    Returns:
-        (conformity_grade, deviation_ratio, reason)
-    """
     if new_price is None:
         return '추가확인', None, 'Missing new price'
 
-    # Get tolerance & confidence factor
     tolerance = TOLERANCE_MAP.get(country, 0.10)
     confidence = CONFIDENCE_MAP.get(model_version, 1.0)
     adjusted_tolerance = tolerance * confidence
 
-    # Calculate deviation ratio
     if old_price and old_price != 0:
         deviation = (new_price - old_price) / old_price
     else:
@@ -202,156 +159,119 @@ def classify_price_conformity_phase12(
         if prices:
             avg_price = sum(prices) / len(prices)
             source_dev = (new_price - avg_price) / avg_price if avg_price else None
-
             if source_dev is None:
-                return '추가확인', None, 'Source average calculation failed'
+                return '추가확인', None, 'Source calculation failed'
 
             abs_dev = abs(source_dev)
             if abs_dev <= adjusted_tolerance:
                 return '적정', source_dev, f'Within {country} tolerance'
             elif abs_dev <= adjusted_tolerance * 1.5:
-                return '확인필요', source_dev, f'Needs verification'
+                return '확인필요', source_dev, 'Needs verification'
             else:
                 return '편차주의', source_dev, f'Exceeds {country} tolerance'
 
-    # Fallback: use old vs new comparison
     if real_transaction and deviation:
-        if abs(deviation) > 0.20:
-            return '편차주의', deviation, 'Real transaction but >20% change'
-        return '적정', deviation, 'Real transaction applied'
+        return ('편차주의', deviation, '>20% change') if abs(deviation) > 0.20 else ('적정', deviation, 'Real transaction')
 
-    if deviation:
-        if abs(deviation) > 0.20:
-            return '편차주의', deviation, '>20% change detected'
+    if deviation and abs(deviation) > 0.20:
+        return '편차주의', deviation, '>20% change'
 
-    return '추가확인', deviation, 'Insufficient information'
+    return '추가확인', deviation, 'Insufficient info'
 
 
 def classify_correction_result(grade: str, real_transaction: bool) -> str:
-    """Map conformity grade to correction result"""
     if grade == '적정':
         return '실거래 기반 업데이트' if real_transaction else '출처 기반 적정'
-    if grade == '확인필요':
-        return '추가확인'
-    if grade == '편차주의':
-        return '편차주의'
-    return '추가확인'
+    return '추가확인' if grade == '확인필요' else '편차주의' if grade == '편차주의' else '추가확인'
 
 
 def classify_final_action(grade: str) -> str:
-    """Map conformity grade to final action"""
-    actions = {
-        '적정': '유지',
-        '확인필요': '원자료 재확인',
-        '편차주의': '가격 재검증 필요',
-        '추가확인': '추가 자료 확보'
-    }
+    actions = {'적정': '유지', '확인필요': '원자료 재확인', '편차주의': '가격 재검증 필요', '추가확인': '추가 자료 확보'}
     return actions.get(grade, '검토필요')
 
 
-def style_range(ws, min_row: int, max_row: int, min_col: int, max_col: int,
-                fill: Optional[PatternFill] = None) -> None:
-    """Apply styling to cell range"""
+def style_range(ws, min_row: int, max_row: int, min_col: int, max_col: int) -> None:
     for row in range(min_row, max_row + 1):
         for col in range(min_col, max_col + 1):
             cell = ws.cell(row, col)
             cell.border = THIN_BORDER
             cell.alignment = Alignment(vertical='center', wrap_text=True)
-            if fill:
-                cell.fill = fill
 
 
-def autofit_columns(ws, min_width: int = 8, max_width: int = 40) -> None:
-    """Auto-fit column widths"""
+def autofit_columns(ws, min_w: int = 8, max_w: int = 40) -> None:
     for col in range(1, ws.max_column + 1):
-        max_len = 0
-        for row in range(1, min(ws.max_row, 500) + 1):
-            val = ws.cell(row, col).value
-            if val:
-                max_len = max(max_len, len(str(val)))
-        width = max(min_width, min(max_len + 2, max_width))
-        ws.column_dimensions[get_column_letter(col)].width = width
+        max_len = max((len(str(ws.cell(r, col).value or '')) for r in range(1, min(ws.max_row, 500))), default=0)
+        ws.column_dimensions[get_column_letter(col)].width = max(min_w, min(max_len + 2, max_w))
 
 
-def process_domestic_sheets(wb, input_path: str, configs: Dict) -> None:
-    """Extend domestic sheets (아파트, 빌라) with validation"""
+def process_domestic_sheets(wb, input_path: str) -> int:
+    """Process domestic sheets from base Excel. Returns row count."""
     try:
         base_wb = load_workbook(input_path)
-    except Exception as e:
-        log.warning(f"Could not load base Excel: {e}")
-        return
+    except (FileNotFoundError, Exception) as e:
+        log.warning(f"Cannot load base Excel: {e}")
+        return 0
 
-    # Handle sheet names with potential whitespace
-    domestic_sheets = []
-    for candidate in ['아파트', ' 아파트', '빌라', ' 빌라']:
-        if candidate in base_wb.sheetnames:
-            domestic_sheets.append(candidate)
-
-    for sheet_name in domestic_sheets:
+    total_rows = 0
+    for sheet_name in ['아파트', '빌라']:
         if sheet_name not in base_wb.sheetnames:
             continue
 
         src_ws = base_wb[sheet_name]
+        if src_ws.max_row < 2:
+            continue
+
+        header_map = get_header_map(src_ws)
         dst_ws = wb.create_sheet(sheet_name)
 
-        # Copy structure & data
-        for row in src_ws.iter_rows():
-            for cell in row:
-                new_cell = dst_ws[cell.coordinate]
-                new_cell.value = cell.value
-                if cell.has_style:
-                    new_cell.font = copy(cell.font)
-                    new_cell.border = copy(cell.border)
-                    new_cell.fill = copy(cell.fill)
-                    new_cell.alignment = copy(cell.alignment)
+        # Copy headers
+        for col in range(1, src_ws.max_column + 1):
+            dst_ws.cell(1, col).value = src_ws.cell(1, col).value
+            dst_ws.cell(1, col).fill = HEADER_FILL
+            dst_ws.cell(1, col).font = HEADER_FONT
 
-        # Add validation columns
-        header_map = get_header_map(dst_ws)
-        next_col = max(header_map.values()) + 1 if header_map else 1
+        new_cols = ensure_columns(dst_ws, ['가격부합성', '편차율', '최종조치'], header_row=1)
 
-        new_cols = {
-            '가격부합성': next_col,
-            '편차율': next_col + 1,
-            '최종조치': next_col + 2
-        }
+        # Process rows
+        old_col = header_map.get('기존가격')
+        new_col = header_map.get('신규가격')
 
-        for i, col_name in enumerate(new_cols.keys()):
-            cell = dst_ws.cell(1, next_col + i)
-            cell.value = col_name
-            cell.fill = HEADER_FILL
-            cell.font = HEADER_FONT
-            cell.border = THIN_BORDER
+        for row in range(2, src_ws.max_row + 1):
+            for col in range(1, src_ws.max_column + 1):
+                dst_ws.cell(row, col).value = src_ws.cell(row, col).value
 
-        # Process data rows
-        for row in range(2, dst_ws.max_row + 1):
-            row_data = {h: dst_ws.cell(row, c).value for h, c in header_map.items()}
-            old_price = normalize_number(row_data.get('기존가격'))
-            new_price = normalize_number(row_data.get('신규가격'))
+            old_p = normalize_number(src_ws.cell(row, old_col).value) if old_col else None
+            new_p = normalize_number(src_ws.cell(row, new_col).value) if new_col else None
 
-            grade, dev, _ = classify_price_conformity_phase12(
-                old_price, new_price, 'KR', real_transaction=False
-            )
+            grade, dev, _ = classify_price_conformity_phase12(old_p, new_p, 'KR')
 
-            # Write results
             dst_ws.cell(row, new_cols['가격부합성']).value = grade
             if dev:
                 dst_ws.cell(row, new_cols['편차율']).value = f"{dev:.2%}"
             dst_ws.cell(row, new_cols['최종조치']).value = classify_final_action(grade)
 
-            # Apply color
             fill = PatternFill(fill_type="solid", fgColor=GRADE_COLORS.get(grade, "FFFFFF"))
             dst_ws.cell(row, new_cols['가격부합성']).fill = fill
+            total_rows += 1
+
+        style_range(dst_ws, 2, dst_ws.max_row, 1, dst_ws.max_column)
+        autofit_columns(dst_ws)
+
+    base_wb.close()
+    return total_rows
 
 
-def process_country_sheets(wb, country: str, country_data: Phase12CountryData,
-                          model_version: str = 'v1.0') -> None:
-    """Create country-specific sheets (Residential + Prediction)"""
+def process_country_sheets(wb, country: str, country_data: Phase12CountryData, model_version: str = 'v1.0') -> int:
+    """Create country sheets. Returns property count."""
+    if not country_data.properties:
+        return 0
+
+    headers = ['Property_ID', 'Address', 'Area', 'Old_Price', 'New_Price', 'Conformity', 'Deviation', 'Action']
 
     # Residential sheet
     res_name = f"{country}_Residential"
-    res_ws = wb.create_sheet(res_name) if res_name not in wb.sheetnames else wb[res_name]
+    res_ws = wb.create_sheet(res_name)
 
-    headers = ['Property_ID', 'Address', 'Area', 'Old_Price', 'New_Price', 'Conformity', 'Deviation', 'Action']
     for col, header in enumerate(headers, 1):
         cell = res_ws.cell(1, col)
         cell.value = header
@@ -359,14 +279,10 @@ def process_country_sheets(wb, country: str, country_data: Phase12CountryData,
         cell.font = HEADER_FONT
         cell.border = THIN_BORDER
 
-    # Populate data
     for row, prop in enumerate(country_data.properties, 2):
         old_p = normalize_number(prop.get('old_price'))
         new_p = normalize_number(prop.get('new_price'))
-
-        grade, dev, _ = classify_price_conformity_phase12(
-            old_p, new_p, country, model_version
-        )
+        grade, dev, _ = classify_price_conformity_phase12(old_p, new_p, country, model_version)
 
         res_ws.cell(row, 1).value = prop.get('property_id')
         res_ws.cell(row, 2).value = prop.get('address')
@@ -378,39 +294,37 @@ def process_country_sheets(wb, country: str, country_data: Phase12CountryData,
             res_ws.cell(row, 7).value = f"{dev:.2%}"
         res_ws.cell(row, 8).value = classify_final_action(grade)
 
-        # Apply color
         fill = PatternFill(fill_type="solid", fgColor=GRADE_COLORS.get(grade))
         res_ws.cell(row, 6).fill = fill
 
     style_range(res_ws, 2, res_ws.max_row, 1, len(headers))
     autofit_columns(res_ws)
+    res_ws.freeze_panes = res_ws.cell(2, 1).coordinate
 
-    # Prediction sheet (mirror with v1.0 baseline)
+    # Prediction sheet (copy)
     pred_name = f"{country}_Prediction"
-    pred_ws = wb.create_sheet(pred_name) if pred_name not in wb.sheetnames else wb[pred_name]
+    pred_ws = wb.create_sheet(pred_name)
 
-    # Copy structure
     for col, header in enumerate(headers, 1):
         cell = pred_ws.cell(1, col)
         cell.value = header
         cell.fill = HEADER_FILL
         cell.font = HEADER_FONT
 
-    # Copy data (for now, same as residential)
-    for row, prop in enumerate(country_data.properties, 2):
+    for row in range(2, res_ws.max_row + 1):
         for col in range(1, len(headers) + 1):
             pred_ws.cell(row, col).value = res_ws.cell(row, col).value
             pred_ws.cell(row, col).border = THIN_BORDER
 
     autofit_columns(pred_ws)
+    pred_ws.freeze_panes = pred_ws.cell(2, 1).coordinate
+
+    return len(country_data.properties)
 
 
 def create_report_sheet(wb, metrics: GlobalMetrics, audit_results: List[AuditResult]) -> None:
-    """Create summary report sheet"""
-
     ws = wb.create_sheet("Report", 0)
 
-    # Header
     ws['A1'] = "Loan4U Phase 12 Global Validation Report"
     ws['A1'].font = Font(bold=True, size=14)
     ws.merge_cells('A1:H1')
@@ -418,11 +332,10 @@ def create_report_sheet(wb, metrics: GlobalMetrics, audit_results: List[AuditRes
     ws['A2'] = f"Review Date: {metrics.review_date}"
     ws.merge_cells('A2:H2')
 
-    # Metrics
     ws['A4'] = "Country Metrics"
     ws['A4'].font = Font(bold=True)
 
-    headers = ['Country', 'Properties', 'Audited', 'Pass Rate']
+    headers = ['Country', 'Properties', 'Passed', 'Pass Rate']
     for col, header in enumerate(headers, 1):
         ws.cell(5, col).value = header
         ws.cell(5, col).fill = HEADER_FILL
@@ -445,188 +358,57 @@ def create_report_sheet(wb, metrics: GlobalMetrics, audit_results: List[AuditRes
     ws.freeze_panes = 'A6'
 
 
-def apply_workbook_formatting(wb) -> None:
-    """Apply final formatting to all sheets"""
-    for ws in wb.sheetnames:
-        ws_obj = wb[ws]
+def run_pipeline(base_excel: str, config_dir: str, output_excel: str) -> None:
+    """Main pipeline execution."""
+    log.info("Starting Phase 12 pipeline...")
 
-        # Set freeze panes
-        if ws != 'Report':
-            ws_obj.freeze_panes = ws_obj.cell(2, 1).coordinate
-
-        # Auto-fit all columns
-        autofit_columns(ws_obj)
-
-
-def generate_pdf_report(excel_path: str, pdf_path: str, metrics: GlobalMetrics) -> None:
-    """Generate PDF summary from metrics"""
-    try:
-        from weasyprint import HTML, CSS
-    except ImportError:
-        log.warning("weasyprint not installed, skipping PDF generation")
-        return
-
-    html_content = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 20px; }}
-            h1 {{ color: #1F4E78; }}
-            table {{ border-collapse: collapse; width: 100%; margin-top: 20px; }}
-            th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
-            th {{ background-color: #1F4E78; color: white; }}
-            .metric {{ font-size: 18px; font-weight: bold; color: #1F4E78; }}
-        </style>
-    </head>
-    <body>
-        <h1>Loan4U Phase 12 Global Validation Report</h1>
-        <p>Review Date: {metrics.review_date}</p>
-
-        <div class="metric">Total Properties: {metrics.total_properties}</div>
-        <div class="metric">Audit Rate: {metrics.audit_rate:.1%}</div>
-
-        <h2>Country Summary</h2>
-        <table>
-            <tr>
-                <th>Country</th>
-                <th>Properties</th>
-                <th>Status</th>
-            </tr>
-    """
-
-    for country in metrics.countries:
-        html_content += f"""
-            <tr>
-                <td>{country}</td>
-                <td>Data pending</td>
-                <td>Ready for audit</td>
-            </tr>
-        """
-
-    html_content += """
-        </table>
-    </body>
-    </html>
-    """
-
-    try:
-        HTML(string=html_content).write_pdf(pdf_path)
-        log.info(f"PDF saved: {pdf_path}")
-    except Exception as e:
-        log.error(f"PDF generation failed: {e}")
-
-
-def validate_workbook(wb) -> Tuple[bool, List[str]]:
-    """Validate workbook structure"""
-    errors = []
-    sheets = wb.sheetnames
-
-    # Check required sheets (Report + Domestic + Countries)
-    has_report = 'Report' in sheets
-    has_domestic = any(s.strip() in ['아파트', '빌라'] for s in sheets)
-    has_countries = sum(1 for c in COUNTRIES for s in sheets if s.startswith(c + '_')) >= 14
-
-    if not has_report:
-        errors.append("Missing sheet: Report")
-    if not has_domestic:
-        errors.append("Missing domestic sheets (아파트/빌라)")
-    if not has_countries:
-        errors.append("Missing country sheets")
-
-    return len(errors) == 0, errors
-
-
-def run_pipeline(base_excel: str, config_dir: str, output_excel: str, output_pdf: str = None) -> None:
-    """Main execution pipeline"""
-
-    log.info(f"Loading base Excel: {base_excel}")
-
-    # Load configurations
-    config_path = Path(config_dir)
-    with open(config_path / 'countries_strategy.json') as f:
-        countries_strategy = json.load(f)
-
-    # Create new workbook
     wb = Workbook()
     wb.remove(wb.active)
 
-    # Process domestic sheets
+    # Process domestic
     log.info("Processing domestic sheets...")
-    process_domestic_sheets(wb, base_excel, countries_strategy)
+    dom_rows = process_domestic_sheets(wb, base_excel)
 
-    # Process country sheets
-    log.info(f"Creating {len(COUNTRIES)} country sheets...")
-    metrics = GlobalMetrics(countries=COUNTRIES, total_properties=0, audit_count=0, passed_audit=0)
-
-    country_file_map = {
-        'UK': 'uk_expansion_plan.json',
-        'SG': 'singapore_expansion_plan.json',
-        'JP': 'japan_expansion_plan.json',
-        'DE': 'de_expansion_plan.json',
-        'AU': 'au_expansion_plan.json',
-        'CA': 'ca_expansion_plan.json',
-        'TH': 'th_expansion_plan.json',
-        'HK': 'hk_expansion_plan.json'
-    }
+    # Process countries
+    log.info(f"Processing {len(COUNTRIES)} countries...")
+    config_path = Path(config_dir)
+    total_props = 0
+    metrics = GlobalMetrics(countries=COUNTRIES, total_properties=0)
 
     for country in COUNTRIES:
-        filename = country_file_map.get(country, f'{country.lower()}_expansion_plan.json')
-        config_file = config_path / filename
-        if config_file.exists():
-            with open(config_file) as f:
-                country_config = json.load(f)
+        try:
+            config_file = config_path / f'{country.lower()}_expansion_plan.json'
+            if config_file.exists():
+                with open(config_file) as f:
+                    config = json.load(f)
 
-            # Build country data (using config data or sample)
-            properties = country_config.get('sample_properties', [])
-            if not properties:
-                # Generate minimal sample if not provided
-                properties = [
-                    {'property_id': f'{country}_001', 'address': f'Address 1, {country}', 'area': 3000, 'old_price': 500000, 'new_price': 520000},
-                    {'property_id': f'{country}_002', 'address': f'Address 2, {country}', 'area': 2500, 'old_price': 400000, 'new_price': 420000}
-                ]
+                props = config.get('sample_properties', [])
+                country_data = Phase12CountryData(country=country, properties=props)
+                count = process_country_sheets(wb, country, country_data)
+                total_props += count
+                log.info(f"  {country}: {count} properties")
+        except Exception as e:
+            log.warning(f"  {country}: {e}")
 
-            country_data = Phase12CountryData(country=country, properties=properties)
+    metrics.total_properties = dom_rows + total_props
+    metrics.audit_count = total_props
 
-            process_country_sheets(wb, country, country_data)
-            metrics.total_properties += len(properties)
-            metrics.audit_count += len(properties)
-
-    # Create report
+    # Report
     log.info("Creating report sheet...")
-    audit_results = []  # Would be populated with actual audit results
-    create_report_sheet(wb, metrics, audit_results)
+    create_report_sheet(wb, metrics, [])
 
-    # Apply formatting
-    log.info("Applying formatting...")
-    apply_workbook_formatting(wb)
-
-    # Validate
-    log.info("Validating workbook...")
-    is_valid, errors = validate_workbook(wb)
-    if not is_valid:
-        for error in errors:
-            log.warning(error)
-
-    # Save Excel
-    log.info(f"Saving Excel: {output_excel}")
+    # Save
     wb.save(output_excel)
-
-    # Generate PDF
-    if output_pdf:
-        log.info(f"Generating PDF: {output_pdf}")
-        generate_pdf_report(output_excel, output_pdf, metrics)
-
-    log.info("✅ Pipeline complete")
+    log.info(f"✓ Saved: {output_excel} ({len(wb.sheetnames)} sheets, {metrics.total_properties} records)")
 
 
 if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='Loan4U Phase 12 Pipeline')
-    parser.add_argument('--base', default='Loan4U_QC_v1.1_before_fill.xlsx', help='Base Excel file')
-    parser.add_argument('--config', default='config/phase12', help='Config directory')
-    parser.add_argument('--output', default='Loan4U_QC_v1.1_Phase12_Global_Corrected_20260625.xlsx', help='Output Excel')
-    parser.add_argument('--pdf', default='Loan4U_Phase12_Final_Report.pdf', help='Output PDF')
+    parser.add_argument('--base', default='data/raw/Loan4U_QC_v1.1_before_fill.xlsx')
+    parser.add_argument('--config', default='config/phase12')
+    parser.add_argument('--output', default='output/Loan4U_QC_v1.1_Phase12_Global_Corrected_20260625.xlsx')
 
     args = parser.parse_args()
-    run_pipeline(args.base, args.config, args.output, args.pdf)
+    run_pipeline(args.base, args.config, args.output)
