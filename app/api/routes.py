@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
+
 from app.db.database import get_db
-from app.db.models import Property, Appraisal, Auction, Deal
+from app.db.models import Appraisal, Auction, Deal, Property
 from app.avm import engine as avm
 
 router = APIRouter()
 
-
-# ─── 요청/응답 스키마 ────────────────────────────────────────────────────────
 
 class AVMRequest(BaseModel):
     address_sido: str
@@ -20,82 +20,49 @@ class AVMRequest(BaseModel):
     max_comparables: int = 10
 
 
-class ComparableOut(BaseModel):
-    property_serial: str
-    address: str
-    property_type: str
-    land_area: Optional[float]
-    building_area: Optional[float]
-    appraisal_date: str
-    appraisal_value: int
-    hammer_price: Optional[int]
-    hammer_rate: Optional[float]
-    deal_name: str
-
-
 class AVMResponse(BaseModel):
     estimated_value: Optional[int]
     confidence: str
     comparable_count: int
     avg_appraisal: Optional[int]
     median_hammer_rate: Optional[float]
-    comparables: list[ComparableOut]
+    comparables: list[dict]
 
-
-# ─── AVM 추정 ────────────────────────────────────────────────────────────────
 
 @router.post("/avm/estimate", response_model=AVMResponse, summary="AVM 감정가 추정")
 def estimate_value(req: AVMRequest, db: Session = Depends(get_db)):
     result = avm.estimate(
-        db=db,
-        address_sido=req.address_sido,
-        address_sigungu=req.address_sigungu,
-        property_type=req.property_type,
-        land_area=req.land_area,
-        building_area=req.building_area,
-        max_comparables=req.max_comparables,
+        db=db, address_sido=req.address_sido, address_sigungu=req.address_sigungu,
+        property_type=req.property_type, land_area=req.land_area,
+        building_area=req.building_area, max_comparables=req.max_comparables,
     )
     return AVMResponse(
-        estimated_value=result.estimated_value,
-        confidence=result.confidence,
-        comparable_count=result.comparable_count,
-        avg_appraisal=result.avg_appraisal,
+        estimated_value=result.estimated_value, confidence=result.confidence,
+        comparable_count=result.comparable_count, avg_appraisal=result.avg_appraisal,
         median_hammer_rate=result.median_hammer_rate,
-        comparables=[ComparableOut(**vars(c)) for c in result.comparables],
+        comparables=[vars(c) for c in result.comparables],
     )
 
-
-# ─── 전례 조회 ───────────────────────────────────────────────────────────────
 
 @router.get("/precedents", summary="유사 물건 전례 조회")
 def get_precedents(
-    sido: str = Query(..., description="시/도 (예: 경기도)"),
-    sigungu: Optional[str] = Query(None, description="시/군/구"),
-    property_type: Optional[str] = Query(None, description="자산유형 (예: 아파트, 창고)"),
-    min_area: Optional[float] = Query(None, description="최소 건물면적(㎡)"),
-    max_area: Optional[float] = Query(None, description="최대 건물면적(㎡)"),
+    sido: str = Query(...),
+    sigungu: Optional[str] = Query(None),
+    property_type: Optional[str] = Query(None),
+    min_area: Optional[float] = Query(None),
+    max_area: Optional[float] = Query(None),
     limit: int = Query(20, le=100),
     db: Session = Depends(get_db),
 ):
-    from sqlalchemy import func as sqlfunc
-    # 최신 감정평가 1건만 (중복 방지)
-    latest_appr_sub = (
-        db.query(
-            Appraisal.property_id,
-            sqlfunc.max(Appraisal.appraisal_date).label("max_date"),
-        )
-        .group_by(Appraisal.property_id)
-        .subquery()
+    latest_sub = (
+        db.query(Appraisal.property_id, func.max(Appraisal.appraisal_date).label("max_date"))
+        .group_by(Appraisal.property_id).subquery()
     )
-
     q = (
         db.query(Property, Appraisal, Deal)
-        .outerjoin(latest_appr_sub, latest_appr_sub.c.property_id == Property.id)
-        .outerjoin(
-            Appraisal,
-            (Appraisal.property_id == Property.id) &
-            (Appraisal.appraisal_date == latest_appr_sub.c.max_date),
-        )
+        .outerjoin(latest_sub, latest_sub.c.property_id == Property.id)
+        .outerjoin(Appraisal, (Appraisal.property_id == Property.id) &
+                   (Appraisal.appraisal_date == latest_sub.c.max_date))
         .join(Deal, Deal.id == Property.deal_id)
         .filter(Property.address_sido == sido)
     )
@@ -108,16 +75,17 @@ def get_precedents(
     if max_area:
         q = q.filter(Property.building_area <= max_area)
 
-    q = q.order_by(Appraisal.appraisal_date.desc()).limit(limit)
-    rows = q.all()
+    rows = q.order_by(Appraisal.appraisal_date.desc()).limit(limit).all()
+
+    # 경매 결과 일괄 prefetch
+    prop_ids = [p.id for p, _, _ in rows]
+    auctions_map = {}
+    for a in db.query(Auction).filter(Auction.property_id.in_(prop_ids)).all():
+        auctions_map.setdefault(a.property_id, []).append(a)
 
     results = []
     for prop, appr, deal in rows:
-        # 해당 물건 최신 경매 결과
-        auction = (db.query(Auction)
-            .filter_by(property_id=prop.id)
-            .order_by(Auction.filing_date.desc())
-            .first())
+        auction = max(auctions_map.get(prop.id, []), key=lambda a: a.filing_date or "", default=None)
         results.append({
             "property_serial": prop.property_serial,
             "address": prop.address_full,
@@ -135,18 +103,14 @@ def get_precedents(
     return {"count": len(results), "items": results}
 
 
-# ─── 낙찰가율 통계 ───────────────────────────────────────────────────────────
-
 @router.get("/auction-stats", summary="낙찰가율 통계")
 def get_auction_stats(
-    property_type: str = Query(..., description="자산유형"),
-    sido: Optional[str] = Query(None, description="시/도"),
+    property_type: str = Query(...),
+    sido: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
     return avm.auction_stats(db, property_type, sido)
 
-
-# ─── 물건 상세 ───────────────────────────────────────────────────────────────
 
 @router.get("/properties/{property_serial}", summary="물건 상세 조회")
 def get_property(property_serial: str, db: Session = Depends(get_db)):
@@ -157,17 +121,16 @@ def get_property(property_serial: str, db: Session = Depends(get_db)):
     appraisals = db.query(Appraisal).filter_by(property_id=prop.id).all()
     auctions = db.query(Auction).filter_by(property_id=prop.id).all()
     deal = db.query(Deal).filter_by(id=prop.deal_id).first()
+    latest_appr_val = next((int(a.total_value) for a in sorted(
+        appraisals, key=lambda a: a.appraisal_date or "", reverse=True
+    ) if a.total_value), None)
 
     return {
         "property": {
-            "serial": prop.property_serial,
-            "address": prop.address_full,
-            "type": prop.property_type,
-            "category": prop.property_category,
-            "land_area": prop.land_area,
-            "building_area": prop.building_area,
+            "serial": prop.property_serial, "address": prop.address_full,
+            "type": prop.property_type, "category": prop.property_category,
+            "land_area": prop.land_area, "building_area": prop.building_area,
             "mortgage_amount": int(prop.mortgage_amount) if prop.mortgage_amount else None,
-            "senior_burden_total": int(prop.senior_burden_total) if prop.senior_burden_total else None,
             "kb_market_price": int(prop.kb_market_price) if prop.kb_market_price else None,
         },
         "deal": {
@@ -176,31 +139,19 @@ def get_property(property_serial: str, db: Session = Depends(get_db)):
             "asset_date": str(deal.asset_date) if deal and deal.asset_date else None,
         },
         "appraisals": [
-            {
-                "type": a.appraisal_type,
-                "date": str(a.appraisal_date),
-                "appraiser": a.appraiser,
-                "land_value": int(a.land_value) if a.land_value else None,
-                "building_value": int(a.building_value) if a.building_value else None,
-                "total_value": int(a.total_value) if a.total_value else None,
-            }
+            {"type": a.appraisal_type, "date": str(a.appraisal_date), "appraiser": a.appraiser,
+             "land_value": int(a.land_value) if a.land_value else None,
+             "building_value": int(a.building_value) if a.building_value else None,
+             "total_value": int(a.total_value) if a.total_value else None}
             for a in appraisals
         ],
         "auctions": [
-            {
-                "court": a.court,
-                "case_number": a.case_number,
-                "first_legal_price": int(a.first_legal_price) if a.first_legal_price else None,
-                "lapse_count": a.lapse_count,
-                "final_result": a.final_result,
-                "hammer_price": int(a.hammer_price) if a.hammer_price else None,
-                "hammer_rate": round(
-                    int(a.hammer_price) / int(
-                        db.query(Appraisal).filter_by(property_id=prop.id)
-                        .order_by(Appraisal.appraisal_date.desc()).first().total_value
-                    ), 4
-                ) if a.hammer_price and appraisals else None,
-            }
+            {"court": a.court, "case_number": a.case_number, "lapse_count": a.lapse_count,
+             "final_result": a.final_result,
+             "first_legal_price": int(a.first_legal_price) if a.first_legal_price else None,
+             "hammer_price": int(a.hammer_price) if a.hammer_price else None,
+             "hammer_rate": round(int(a.hammer_price) / latest_appr_val, 4)
+             if a.hammer_price and latest_appr_val else None}
             for a in auctions
         ],
     }
