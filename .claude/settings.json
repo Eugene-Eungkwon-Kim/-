@@ -23,6 +23,12 @@
     "AVM_PROJECT_ROOT": "avm_project",
     "AVM_DATA_DIR": "avm_project/data",
     "AVM_MODELS_DIR": "avm_project/models",
-    "AVM_OUTPUT_DIR": "avm_project/output"
+    "AVM_OUTPUT_DIR": "avm_project/output",
+    "POLICY_FILE": ".claude/EXECUTION_POLICY.md",
+    "CONFIG_FILE": "CLAUDE.md",
+    "README_FILE": "README.md",
+    "AVM_PHASE": "12-13",
+    "AVM_STATUS": "Phase 12 (70%), Phase 13 (10%)",
+    "AVM_COUNTRIES": "UK,SG,JP,DE,AU,CA,TH,HK"
   }
 }
