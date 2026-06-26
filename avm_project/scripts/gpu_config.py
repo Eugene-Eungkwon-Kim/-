@@ -57,22 +57,18 @@ def select_training_device() -> Tuple[Optional[int], str]:
     return best.index, f"{best.name} ({best.total_memory_mb}MB)"
 
 
-def configure_xgboost_gpu(device_id: int) -> Dict[str, object]:
-    """Return XGBoost GPU params targeting RTX 5050."""
-    return {
-        'tree_method': 'hist',
-        'device': f'cuda:{device_id}',
-        'max_bin': 256,
-    }
+def configure_xgboost_gpu(device_id: Optional[int]) -> Dict[str, object]:
+    """Return XGBoost params; GPU (RTX 5050) if device_id set, else CPU."""
+    if device_id is None:
+        return {'tree_method': 'hist', 'device': 'cpu'}
+    return {'tree_method': 'hist', 'device': f'cuda:{device_id}', 'max_bin': 256}
 
 
-def configure_lightgbm_gpu(device_id: int) -> Dict[str, object]:
-    """Return LightGBM GPU params targeting RTX 5050."""
-    return {
-        'device_type': 'gpu',
-        'gpu_device_id': device_id,
-        'gpu_use_dp': False,
-    }
+def configure_lightgbm_gpu(device_id: Optional[int]) -> Dict[str, object]:
+    """Return LightGBM params; GPU (RTX 5050) if device_id set, else CPU."""
+    if device_id is None:
+        return {'device_type': 'cpu'}
+    return {'device_type': 'gpu', 'gpu_device_id': device_id, 'gpu_use_dp': False}
 
 
 def configure_torch_memory(device_id: int, fraction: float = 0.85) -> bool:
