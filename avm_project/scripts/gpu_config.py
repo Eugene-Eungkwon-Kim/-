@@ -76,17 +76,33 @@ def configure_lightgbm_gpu(device_id: int) -> Dict[str, object]:
 
 
 def configure_torch_memory(device_id: int, fraction: float = 0.85) -> bool:
-    """Limit PyTorch to fraction of RTX 5050's 8GB (default 85% = ~6.8GB)."""
+    """Soft-limit PyTorch memory + enable expandable segments (anti-fragmentation).
+
+    Note: set_per_process_memory_fraction is a SOFT limit (verified: PyTorch
+    issue #107667) — spikes can exceed it. expandable_segments reduces
+    fragmentation on the fixed 8GB GDDR7 (no physical expansion possible).
+    """
+    os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
     try:
         import torch
         if torch.cuda.is_available():
             torch.cuda.set_per_process_memory_fraction(fraction, device_id)
-            os.environ['CUDA_VISIBLE_DEVICES'] = str(device_id)
-            log.info(f"PyTorch limited to {fraction:.0%} of GPU {device_id}")
+            log.info(f"PyTorch soft-limited to {fraction:.0%} of GPU {device_id}")
             return True
     except (ImportError, Exception) as e:
         log.warning(f"PyTorch GPU config skipped: {e}")
     return False
+
+
+def get_memory_saving_options() -> Dict[str, str]:
+    """Verified techniques to fit larger models in fixed 8GB VRAM."""
+    return {
+        'fp16_mixed_precision': 'torch.cuda.amp.autocast — 2x activation/gradient savings',
+        'int8_quantization': 'OpenVINO IR (Phase 13.2.5) — 4x weight reduction',
+        'gradient_checkpointing': '50-70% activation savings for ~30% extra compute',
+        'expandable_segments': 'PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True',
+        'xgboost_subsample': 'subsample=0.6, max_bin=127 — ~40% memory reduction',
+    }
 
 
 def print_gpu_report() -> None:
