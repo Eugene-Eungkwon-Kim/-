@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 
 
-DEFAULT_DATA_ROOT = Path("D:/loan4u_avm_data")
-DEFAULT_BUILDING_REGISTER_DB = Path("D:/hub_building_register/db/hub_building_register.duckdb")
+DEFAULT_DATA_ROOT = Path("./data")
+DEFAULT_BUILDING_REGISTER_DB = Path("./data/search_app.duckdb")
 
 
 def data_root() -> Path:
