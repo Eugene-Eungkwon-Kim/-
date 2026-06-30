@@ -52,6 +52,18 @@ class AuctionModule:
         rate_map = REGION_RATES.get(property_type.lower(), {})
         return rate_map.get(str(district_grade), DEFAULT_REGION_RATE)
 
+    @staticmethod
+    def _auction_confidence(region_rate: float, market_condition: str) -> float:
+        """낙찰가 추정 신뢰도 — 유동성(낙찰가율↑)과 시장 안정성에 비례.
+
+        하드코딩 0.88 대체: 회수율이 높은(유동적) 권역일수록, 안정 시장일수록
+        낙찰가 예측이 신뢰할 만하다는 가정.
+        """
+        liquidity = (region_rate - 0.65) / (0.93 - 0.65)        # 0~1 정규화
+        market_penalty = {'normal': 0.0, 'rising': 0.05, 'declining': 0.10}.get(market_condition, 0.10)
+        confidence = 0.75 + 0.15 * max(0.0, min(1.0, liquidity)) - market_penalty
+        return round(max(0.60, min(0.92, confidence)), 3)
+
     def estimate_auction_price(
         self,
         base_price: float,
@@ -72,5 +84,5 @@ class AuctionModule:
             'market_factor': market_factor,
             'estimated_auction_price': auction_price,
             'market_condition': market_condition,
-            'confidence': 0.88,
+            'confidence': self._auction_confidence(region_rate, market_condition),
         }
