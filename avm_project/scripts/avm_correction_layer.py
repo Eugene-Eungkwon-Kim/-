@@ -5,32 +5,41 @@ from typing import Dict
 
 log = logging.getLogger(__name__)
 
-# 지역×유형별 보정계수 — 모델 base_price에 곱하는 권역 프리미엄.
-# ASSUMPTION: Loan4U MASS 분석에서 가져온 가정값이며 실거래로 캘리브레이션되지 않았다.
-#   프리미엄 권역(등급1)일수록 모델 과소평가를 더 크게 보정한다는 가정.
-# TODO(calibration): 실거래 확보 후 (모델예측 vs 실거래) 잔차로 권역별 계수 재추정.
+# 지역×유형별 *잔차 보정계수* — 1.0 중심.
+#
+# 중요(이중계상 방지): 모델 타깃이 new_price(실제 시세)이므로 base_price는 이미
+# "현재 시세 예측치"다. 따라서 보정은 시세에 프리미엄을 *추가*하는 것이 아니라,
+# 모델의 권역별 *잔차 편향*만 ±소폭 조정해야 한다. (이전 1.20~1.30 계수는
+# base_price를 체계적으로 +30% 부풀리는 이중계상 결함이었음 → 1.0 중심으로 교정)
+#
+# ASSUMPTION: 실거래 미확보 상태이므로 잔차 편향은 사실상 미지(=1.0)이다.
+#   아래 ±3% 스프레드는 권역 신호를 유지하기 위한 최소 가정값일 뿐 근거가 아니다.
+# TODO(calibration): 실거래 확보 후 (모델예측 vs 실거래) 권역별 평균잔차로 재추정.
+#   캘리브레이션 전까지 corrected_price ≈ base_price 여야 한다.
 REGION_CORRECTION_MAP: Dict[str, Dict[str, float]] = {
     'apartment': {
-        '1': 1.30, '2': 1.28, '3': 1.26,
-        '4': 1.24, '5': 1.22, '6': 1.20,
+        '1': 1.03, '2': 1.02, '3': 1.00,
+        '4': 0.99, '5': 0.98, '6': 0.97,
     },
     'multi_family': {
-        '1': 1.30, '2': 1.26, '3': 1.22,
-        '4': 1.20, '5': 1.20, '6': 1.20,
+        '1': 1.00, '2': 0.99, '3': 0.98,
+        '4': 0.97, '5': 0.96, '6': 0.95,
     },
     'townhouse': {
-        '1': 1.30, '2': 1.26, '3': 1.22,
-        '4': 1.20, '5': 1.20, '6': 1.20,
+        '1': 1.00, '2': 0.99, '3': 0.98,
+        '4': 0.97, '5': 0.96, '6': 0.95,
     },
     'officetel': {
-        '1': 1.20, '2': 1.18, '3': 1.16,
-        '4': 1.15, '5': 1.17, '6': 1.20,
+        '1': 0.99, '2': 0.98, '3': 0.97,
+        '4': 0.96, '5': 0.95, '6': 0.94,
     },
     'land': {
-        '1': 1.15, '2': 1.12, '3': 1.10,
-        '4': 1.08, '5': 1.06, '6': 1.05,
+        '1': 0.98, '2': 0.97, '3': 0.96,
+        '4': 0.95, '5': 0.94, '6': 0.93,
     },
 }
+
+DEFAULT_REGION_CORRECTION = 1.00   # 미지정 유형/등급 → 무보정(모델 예측 그대로)
 
 # 연도별 시간 조정 (기준: 2024 = 1.0)
 # ASSUMPTION: 한국 부동산 명목 시세 수준의 근사. TODO: 실제 지수(KB/한국부동산원)로 교체.
@@ -46,7 +55,7 @@ class CorrectionLayer:
     def get_region_correction(self, property_type: str, district_grade: str) -> float:
         """지역 보정값 조회."""
         grade_map = REGION_CORRECTION_MAP.get(property_type.lower(), {})
-        return grade_map.get(str(district_grade), 1.20)
+        return grade_map.get(str(district_grade), DEFAULT_REGION_CORRECTION)
 
     def get_temporal_adjustment(self, reference_year: int) -> float:
         """연도별 시간 조정값 조회."""

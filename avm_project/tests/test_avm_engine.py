@@ -85,21 +85,22 @@ class TestCorrectionLayer:
     def setup_method(self):
         self.layer = CorrectionLayer()
 
-    def test_region_correction_apartment_grade1(self):
-        factor = self.layer.get_region_correction('apartment', '1')
-        assert factor == 1.30
+    def test_region_correction_centered_at_one(self):
+        # 보정은 1.0 중심 잔차 조정 (이중계상 방지): 프리미엄 약간 위, 외곽 약간 아래
+        assert self.layer.get_region_correction('apartment', '1') == 1.03
+        assert self.layer.get_region_correction('apartment', '3') == 1.00
+        assert self.layer.get_region_correction('apartment', '6') == 0.97
 
-    def test_region_correction_apartment_grade6(self):
-        factor = self.layer.get_region_correction('apartment', '6')
-        assert factor == 1.20
-
-    def test_region_correction_officetel(self):
-        factor = self.layer.get_region_correction('officetel', '4')
-        assert factor == 1.15
+    def test_region_correction_within_residual_band(self):
+        # 모든 유형/등급 보정계수는 ±10% 이내 (시세에 30% 프리미엄 덧씌우지 않음)
+        for ptype in ['apartment', 'multi_family', 'officetel', 'land']:
+            for grade in ['1', '2', '3', '4', '5', '6']:
+                f = self.layer.get_region_correction(ptype, grade)
+                assert 0.90 <= f <= 1.10, f"{ptype}/{grade}={f} 잔차밴드 이탈"
 
     def test_region_correction_unknown_type(self):
         factor = self.layer.get_region_correction('unknown', '3')
-        assert factor == 1.20  # 기본값
+        assert factor == 1.00  # 미지정 → 무보정
 
     def test_temporal_adjustment_2024(self):
         assert self.layer.get_temporal_adjustment(2024) == 1.00
@@ -107,9 +108,11 @@ class TestCorrectionLayer:
     def test_temporal_adjustment_2022(self):
         assert self.layer.get_temporal_adjustment(2022) == 0.88
 
-    def test_apply_corrections_increases_price(self):
+    def test_apply_corrections_near_base(self):
+        # corrected ≈ base (모델이 이미 시세 예측 → 보정은 소폭)
         price = self.layer.apply_corrections(1_000_000, 'apartment', '1', 2024)
-        assert price == pytest.approx(1_300_000, rel=1e-3)
+        assert price == pytest.approx(1_030_000, rel=1e-3)
+        assert abs(price - 1_000_000) / 1_000_000 < 0.10
 
     def test_breakdown_keys(self):
         result = self.layer.get_correction_breakdown(1_000_000, 'apartment', '3')
