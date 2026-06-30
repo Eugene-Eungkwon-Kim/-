@@ -59,15 +59,15 @@ def get_calibration_data(df: pd.DataFrame, sample_size: int = 100) -> np.ndarray
 def convert_xgboost_to_onnx(model, country: str, output_dir: Path) -> Optional[Tuple[float, str]]:
     """Convert XGBoost model to ONNX format. Returns (size_mb, onnx_path)."""
     try:
-        import skl2onnx
+        import onnxmltools
+        import onnx
         from skl2onnx.common.data_types import FloatTensorType
 
-        initial_type = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
-        onnx_model = skl2onnx.convert_sklearn(model, initial_types=initial_type)
+        initial_types = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
+        onnx_model = onnxmltools.convert_xgboost(model, initial_types=initial_types)
 
         onnx_path = output_dir / f"xgboost_{country}.onnx"
-        with open(onnx_path, "wb") as f:
-            f.write(onnx_model.SerializeToString())
+        onnx.save(onnx_model, str(onnx_path))
 
         size_mb = onnx_path.stat().st_size / (1024 * 1024)
         log.info(f"  XGBoost→ONNX: {size_mb:.2f}MB")
@@ -80,15 +80,15 @@ def convert_xgboost_to_onnx(model, country: str, output_dir: Path) -> Optional[T
 def convert_lightgbm_to_onnx(model, country: str, output_dir: Path) -> Optional[Tuple[float, str]]:
     """Convert LightGBM model to ONNX format. Returns (size_mb, onnx_path)."""
     try:
-        import skl2onnx
+        import onnxmltools
+        import onnx
         from skl2onnx.common.data_types import FloatTensorType
 
-        initial_type = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
-        onnx_model = skl2onnx.convert_sklearn(model, initial_types=initial_type)
+        initial_types = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
+        onnx_model = onnxmltools.convert_lightgbm(model, initial_types=initial_types)
 
         onnx_path = output_dir / f"lightgbm_{country}.onnx"
-        with open(onnx_path, "wb") as f:
-            f.write(onnx_model.SerializeToString())
+        onnx.save(onnx_model, str(onnx_path))
 
         size_mb = onnx_path.stat().st_size / (1024 * 1024)
         log.info(f"  LightGBM→ONNX: {size_mb:.2f}MB")

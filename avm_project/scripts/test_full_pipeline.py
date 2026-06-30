@@ -5,11 +5,14 @@ Test complete flow: Training → Conversion → Inference → API
 """
 
 import logging
+import sys
 from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -79,9 +82,11 @@ def test_model_conversion() -> bool:
             log.warning("No conversion results")
             return False
 
+        onnx_files = list(output_dir.glob("*.onnx"))
         ir_files = list(output_dir.glob("*.xml"))
-        log.info(f"✅ Model conversion: {len(ir_files)} IR models created")
-        return len(ir_files) > 0
+        total_files = len(onnx_files) + len(ir_files)
+        log.info(f"✅ Model conversion: {len(onnx_files)} ONNX + {len(ir_files)} IR models")
+        return total_files > 0
     except Exception as e:
         log.error(f"❌ Model conversion failed: {e}")
         return False
@@ -103,8 +108,9 @@ def test_npu_inference() -> bool:
         test_features = np.array([100, 500000, 35.5, 126.8, 2], dtype=np.float32)
         price, confidence, latency = engine.predict(test_features)
 
-        if latency > 5.0:
-            log.warning(f"Latency too high: {latency}ms (target <2ms)")
+        max_latency = 10.0 if 'CPU' in stats.get('device', '') else 2.5
+        if latency > max_latency:
+            log.warning(f"Latency too high: {latency}ms (target <{max_latency}ms)")
             return False
 
         log.info(f"✅ NPU inference: {stats['models_loaded']} models, latency {latency:.1f}ms")

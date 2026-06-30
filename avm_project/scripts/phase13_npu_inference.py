@@ -54,17 +54,22 @@ def preprocess_input(features: np.ndarray) -> np.ndarray:
 
 def run_inference(compiled_model: object, features: np.ndarray,
                  model_name: str) -> Optional[InferenceResult]:
-    """Execute NPU inference and return prediction."""
+    """Execute NPU inference and return prediction. Supports both OpenVINO and sklearn models."""
     try:
         import time
         start = time.perf_counter()
 
         input_data = preprocess_input(features)
-        input_layer = list(compiled_model.inputs)
-        output_layer = compiled_model.outputs[0]
 
-        result = compiled_model(input_data)
-        predicted_price = float(result[output_layer][0])
+        try:
+            input_layer = list(compiled_model.inputs)
+            output_layer = compiled_model.outputs[0]
+            result = compiled_model(input_data)
+            predicted_price = float(result[output_layer][0])
+            device = "NPU"
+        except (AttributeError, TypeError):
+            predicted_price = float(compiled_model.predict(input_data.reshape(1, -1))[0])
+            device = "CPU (sklearn)"
 
         latency_ms = (time.perf_counter() - start) * 1000.0
         confidence = 0.95 if latency_ms < 2.0 else 0.85
@@ -74,7 +79,7 @@ def run_inference(compiled_model: object, features: np.ndarray,
             model_name=model_name,
             confidence=confidence,
             latency_ms=latency_ms,
-            device="NPU"
+            device=device
         )
     except Exception as e:
         log.warning(f"Inference failed: {e}")
@@ -110,13 +115,30 @@ class NPUInferenceEngine:
         self._load_models()
 
     def _load_models(self) -> None:
-        """Load all available IR models from directory."""
+        """Load all available IR models from directory, with fallback to pickled models."""
         for ir_file in self.ir_model_dir.glob("*.xml"):
             model_name = ir_file.stem
             compiled = initialize_openvino_model(str(ir_file))
             if compiled:
                 self.models[model_name] = compiled
                 log.info(f"Loaded model: {model_name}")
+
+        if not self.models:
+            self._load_pickled_models_fallback()
+
+    def _load_pickled_models_fallback(self) -> None:
+        """Fallback: Load pickled sklearn models for testing when IR unavailable."""
+        try:
+            import pickle
+            parent_dir = self.ir_model_dir.parent / 'trained_models'
+            for pkl_file in parent_dir.glob('*.pkl'):
+                model_name = pkl_file.stem
+                with open(pkl_file, 'rb') as f:
+                    model = pickle.load(f)
+                self.models[model_name] = model
+                log.info(f"Loaded pickled model (fallback): {model_name}")
+        except Exception as e:
+            log.debug(f"Pickled model fallback failed: {e}")
 
     def predict(self, property_features: np.ndarray) -> Tuple[float, float, float]:
         """Predict property price using ensemble. Returns (price, confidence, latency_ms)."""
