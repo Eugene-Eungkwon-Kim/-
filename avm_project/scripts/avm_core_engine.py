@@ -53,7 +53,7 @@ class AVMCoreEngine:
             return DEFAULT_CONFIG.copy()
 
     def _fit_validator(self) -> None:
-        """학습 데이터로 이상탐지 모델 초기화."""
+        """학습 데이터로 이상탐지 모델 초기화 (정규화 후 fit)."""
         try:
             data_dir = Path(self.config['data_dir'])
             csv_files = list(data_dir.glob('*_data.csv'))
@@ -64,9 +64,12 @@ class AVMCoreEngine:
             cols = ['area_sqm', 'old_price', 'latitude', 'longitude', 'property_type']
             available = [c for c in cols if c in df.columns]
             if len(available) >= 4:
-                X = df[available].dropna().values.astype(np.float32)
-                if len(X) > 10:
-                    self.validator.fit(X[:, :5] if X.shape[1] >= 5 else X)
+                X_raw = df[available].dropna().values.astype(np.float32)
+                if len(X_raw) > 10:
+                    # 추론과 동일한 정규화 적용 (불일치 방지)
+                    X = self.feature_engineer.normalize(X_raw[:, :5]) \
+                        if X_raw.shape[1] >= 5 else X_raw
+                    self.validator.fit(X)
         except Exception as e:
             log.warning(f"Validator fit skipped: {e}")
 

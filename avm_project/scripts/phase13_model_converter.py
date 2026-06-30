@@ -203,37 +203,174 @@ def summarize_conversions(results: List[ConversionResult]) -> Dict[str, object]:
     }
 
 
+def convert_xgboost_native(model: object, name: str, output_dir: Path) -> Optional[str]:
+    """XGBoost 2.x 네이티브 ONNX 저장. 실패 시 onnxmltools 폴백."""
+    onnx_path = output_dir / f"{name}.onnx"
+    # XGBoost 2.x: .onnx 확장자로 save_model 시 ONNX 출력
+    try:
+        model.save_model(str(onnx_path))  # type: ignore[union-attr]
+        if onnx_path.exists() and onnx_path.stat().st_size > 0:
+            log.info(f"  [{name}] XGBoost 네이티브 ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
+            return str(onnx_path)
+    except Exception as e:
+        log.debug(f"  [{name}] 네이티브 ONNX 실패: {e}")
+
+    # onnxmltools 폴백
+    try:
+        import onnxmltools
+        import onnx
+        from skl2onnx.common.data_types import FloatTensorType
+        initial_types = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
+        onnx_model = onnxmltools.convert_xgboost(model, initial_types=initial_types)
+        onnx.save(onnx_model, str(onnx_path))
+        log.info(f"  [{name}] onnxmltools ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
+        return str(onnx_path)
+    except Exception as e:
+        log.warning(f"  [{name}] ONNX 변환 전체 실패: {e}")
+        return None
+
+
+def convert_lightgbm_native(model: object, name: str, output_dir: Path) -> Optional[str]:
+    """LightGBM → ONNX (onnxmltools 또는 hummingbird-ml 사용)."""
+    onnx_path = output_dir / f"{name}.onnx"
+    # hummingbird-ml 시도
+    try:
+        from hummingbird.ml import convert as hb_convert
+        import torch
+        sample = np.zeros((1, len(FEATURE_COLS)), dtype=np.float32)
+        hb_model = hb_convert(model, 'onnx', test_input=sample)
+        hb_model.save(str(output_dir / name))
+        # hummingbird는 디렉토리로 저장 → onnx 파일 찾기
+        for f in (output_dir / name).glob('*.onnx'):
+            f.rename(onnx_path)
+            break
+        if onnx_path.exists():
+            log.info(f"  [{name}] hummingbird ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
+            return str(onnx_path)
+    except Exception as e:
+        log.debug(f"  [{name}] hummingbird 실패: {e}")
+
+    # onnxmltools 폴백
+    try:
+        import onnxmltools
+        import onnx
+        from skl2onnx.common.data_types import FloatTensorType
+        initial_types = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
+        onnx_model = onnxmltools.convert_lightgbm(model, initial_types=initial_types)
+        onnx.save(onnx_model, str(onnx_path))
+        log.info(f"  [{name}] onnxmltools ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
+        return str(onnx_path)
+    except Exception as e:
+        log.warning(f"  [{name}] ONNX 변환 전체 실패: {e}")
+        return None
+
+
+def convert_to_openvino_ir(onnx_path: str, name: str, output_dir: Path) -> Optional[str]:
+    """ONNX → OpenVINO IR (FP32) 변환. openvino 2024.x API 사용."""
+    xml_path = output_dir / f"{name}.xml"
+    try:
+        import openvino as ov
+        ov_model = ov.convert_model(onnx_path)
+        ov.save_model(ov_model, str(xml_path))
+        size_mb = xml_path.stat().st_size / 1024 / 1024
+        log.info(f"  [{name}] OpenVINO IR: {size_mb:.2f}MB")
+        return str(xml_path)
+    except ImportError:
+        log.warning(f"  [{name}] openvino 미설치 - IR 변환 건너뜀")
+        return None
+    except Exception as e:
+        log.warning(f"  [{name}] OpenVINO IR 변환 실패: {e}")
+        return None
+
+
+def convert_kr_models(
+    pkl_dir: Path,
+    output_dir: Path,
+) -> Dict[str, Dict]:
+    """KR 모델 (xgboost_KR, lightgbm_KR) → ONNX + IR 변환."""
+    import pickle
+    import json
+    import time as _time
+    from datetime import datetime
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report: Dict[str, Dict] = {}
+
+    converters = {
+        'xgboost_KR':   convert_xgboost_native,
+        'lightgbm_KR':  convert_lightgbm_native,
+    }
+
+    for model_key, converter_fn in converters.items():
+        pkl_path = pkl_dir / f"{model_key}.pkl"
+        if not pkl_path.exists():
+            log.warning(f"  {pkl_path} 없음 - 건너뜀")
+            continue
+
+        log.info(f"\n▶ {model_key}")
+        t0 = _time.time()
+        pkl_mb = pkl_path.stat().st_size / 1024 / 1024
+
+        with open(pkl_path, 'rb') as f:
+            model = pickle.load(f)
+
+        onnx_path = converter_fn(model, model_key, output_dir)
+        onnx_mb   = Path(onnx_path).stat().st_size / 1024 / 1024 if onnx_path else None
+        ir_path   = convert_to_openvino_ir(onnx_path, model_key, output_dir) if onnx_path else None
+        ir_mb     = Path(ir_path).stat().st_size / 1024 / 1024 if ir_path else None
+
+        status = 'ir_ready' if ir_path else ('onnx_only' if onnx_path else 'pkl_only')
+        report[model_key] = {
+            'pkl_size_mb':  round(pkl_mb, 3),
+            'onnx_size_mb': round(onnx_mb, 3) if onnx_mb else None,
+            'ir_size_mb':   round(ir_mb, 3) if ir_mb else None,
+            'status':       status,
+            'elapsed_sec':  round(_time.time() - t0, 2),
+        }
+        log.info(f"  상태: {status}")
+
+    # 리포트 저장
+    report_path = output_dir.parent / 'conversion_report.json'
+    with open(report_path, 'w', encoding='utf-8') as f:
+        json.dump({'timestamp': datetime.now().isoformat(), 'models': report}, f, indent=2)
+    log.info(f"\n✅ 변환 리포트: {report_path}")
+    return report
+
+
 def main() -> None:
     """Run Phase 13.2.5 model conversion."""
     import argparse
 
     parser = argparse.ArgumentParser(description='Phase 13.2.5 Model Converter')
-    parser.add_argument('--models', default='models', help='Model directory')
-    parser.add_argument('--data', default='data/raw', help='Data directory')
-    parser.add_argument('--output', default='output/models_ir', help='Output directory')
+    parser.add_argument('--country',  default='KR',                    help='국가 코드 (KR 전용)')
+    parser.add_argument('--pkl-dir',  default='output/trained_models', help='pkl 모델 디렉토리')
+    parser.add_argument('--output',   default='output/models_ir',      help='출력 디렉토리')
+    # 레거시 인수 (multi-country 모드)
+    parser.add_argument('--models',   default='models',   help='(레거시) 모델 디렉토리')
+    parser.add_argument('--data',     default='data/raw', help='(레거시) 데이터 디렉토리')
     args = parser.parse_args()
+
+    log.info("=" * 60)
+    log.info(f"Phase 13.2.5 모델 변환 시작 (대상: {args.country})")
+    log.info("=" * 60)
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    all_results: List[ConversionResult] = []
-    for country_data in Path(args.data).glob('*_data.csv'):
-        country = country_data.stem.replace('_data', '')
-        log.info(f"Converting {country}...")
-        all_results.extend(convert_country_models(country, Path(args.models),
-                                                   Path(args.data), output_dir))
-
-    summary = summarize_conversions(all_results)
-
-    print(f"\n{'='*50}")
-    print("Phase 13.2.5 Conversion Complete")
-    print(f"{'='*50}")
-    print(f"Models converted: {summary['total']}")
-    if summary['total'] > 0:
-        print(f"Avg original size: {summary['avg_original_mb']:.2f}MB")
-        print(f"Avg IR size (INT8): {summary['avg_ir_mb']:.2f}MB")
-        print(f"Avg quantization ratio: {summary['avg_ratio']:.1f}x")
-        print(f"Total memory saved: {summary['total_saved_mb']:.2f}MB")
+    if args.country == 'KR':
+        report = convert_kr_models(Path(args.pkl_dir), output_dir)
+        success = sum(1 for v in report.values() if v['status'] != 'pkl_only')
+        log.info(f"\n{success}/{len(report)} 모델 ONNX/IR 변환 완료")
+    else:
+        # 레거시 멀티-컨트리 경로
+        all_results: List[ConversionResult] = []
+        for country_data in Path(args.data).glob('*_data.csv'):
+            country = country_data.stem.replace('_data', '')
+            log.info(f"Converting {country}...")
+            all_results.extend(convert_country_models(
+                country, Path(args.models), Path(args.data), output_dir))
+        summary = summarize_conversions(all_results)
+        log.info(f"Models converted: {summary['total']}")
 
 
 if __name__ == '__main__':

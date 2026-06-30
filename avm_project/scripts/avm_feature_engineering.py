@@ -8,8 +8,9 @@ import pandas as pd
 
 log = logging.getLogger(__name__)
 
-FEATURE_MIN = np.array([10.0, 50000.0, 33.0, 126.0, 1.0], dtype=np.float32)
-FEATURE_MAX = np.array([500.0, 5000000.0, 38.0, 131.0, 5.0], dtype=np.float32)
+# KR 실거래 범위 기준 (원 단위): area 10~500㎡, price 5천만~60억원
+FEATURE_MIN = np.array([10.0, 50_000_000.0, 33.0, 126.0, 1.0], dtype=np.float32)
+FEATURE_MAX = np.array([500.0, 6_000_000_000.0, 38.0, 131.0, 5.0], dtype=np.float32)
 
 PROPERTY_TYPE_MAP = {
     'apartment': 1, '아파트': 1,
