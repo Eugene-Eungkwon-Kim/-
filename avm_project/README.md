@@ -2,6 +2,41 @@
 
 NPL(Non-Performing Loans) 데이터 기반 자동감정가 모델 개발 및 실제 평가 시스템 구현
 
+---
+
+## 🤖 **[ Claude 에이전트 주목! ]**
+
+이 프로젝트에서 작업하는 모든 Claude 에이전트는 **반드시** 다음을 읽으세요:
+
+### **✅ 5분 시작 가이드**
+```
+1. 프로젝트 루트의 AGENT_GUIDE.md 읽기
+2. Windows: .\.claude\fix_external_drive.ps1 -AutoFix 실행
+3. .claude/AGENT_STARTUP_CHECKLIST.md 완료
+4. 작업 시작!
+```
+
+### **📚 필수 문서 (순서대로)**
+1. **AGENT_GUIDE.md** ← 가장 먼저 읽기!
+2. **.claude/AGENT_STARTUP_CHECKLIST.md**
+3. **.claude/ENVIRONMENT_SETUP_GUIDE.md**
+4. **.claude/EXECUTION_POLICY.md**
+
+### **⚠️ Windows 사용자 (즉시 실행)**
+```powershell
+.\.claude\fix_external_drive.ps1 -AutoFix
+```
+
+### **✨ 준비 완료 신호**
+```
+✅ 드라이브 설정 완료
+✅ Git 상태 정상 (git status)
+✅ 필수 문서 읽음
+✅ 작업 시작 가능!
+```
+
+---
+
 ## 프로젝트 개요
 
 이 프로젝트는 역사적 부동산 평가 데이터를 활용하여 머신러닝 기반 자동감정가(AVM) 모델을 개발하고, 이를 실제 평가 시스템에 통합하는 것을 목표로 합니다.
