@@ -33,6 +33,7 @@ class AVMEnsembleEngine:
         self.cache_hits = 0
         self.cache_misses = 0
         self.predictions_count = 0
+        self.last_prediction_std = 0.0
         self.latencies: List[float] = []
         self._load_models()
         log.info(f"Ensemble engine ready: {list(self.models.keys())}")
@@ -101,12 +102,18 @@ class AVMEnsembleEngine:
         return max(MIN_CONFIDENCE, BASE_CONFIDENCE - cv * STD_PENALTY_FACTOR * 100)
 
     def predict(self, features: np.ndarray) -> Tuple[float, float, float]:
-        """앙상블 예측: (price, confidence, latency_ms)."""
+        """앙상블 예측: (price, confidence, latency_ms).
+
+        부수효과: self.last_prediction_std 에 모델 간 예측 표준편차를 저장한다
+        (검증 레이어의 신뢰구간 추정에 사용 — 하드코딩 std 대체).
+        """
         cache_key = tuple(features.tolist())
         if cache_key in self._cache:
             self.cache_hits += 1
             self._cache.move_to_end(cache_key)
-            return self._cache[cache_key]
+            price, conf, lat, std = self._cache[cache_key]
+            self.last_prediction_std = std
+            return price, conf, lat
 
         self.cache_misses += 1
         start = time.perf_counter()
@@ -119,6 +126,7 @@ class AVMEnsembleEngine:
 
         if not raw_predictions:
             log.error("All models failed prediction")
+            self.last_prediction_std = 0.0
             return 0.0, 0.0, 0.0
 
         # 가중 평균 (알려진 모델명 기준, 나머지는 균등 가중치)
@@ -137,7 +145,12 @@ class AVMEnsembleEngine:
         confidence = self._calculate_confidence(list(raw_predictions.values()))
         latency_ms = (time.perf_counter() - start) * 1000.0
 
-        result = (base_price, confidence, latency_ms)
+        # 모델 간 불일치도 → 예측 표준편차 (단일 모델이면 가격의 5% 폴백)
+        preds = list(raw_predictions.values())
+        std = float(np.std(preds)) if len(preds) > 1 else abs(base_price) * 0.05
+        self.last_prediction_std = std
+
+        result = (base_price, confidence, latency_ms, std)
 
         if len(self._cache) >= CACHE_MAXSIZE:
             self._cache.popitem(last=False)
@@ -145,7 +158,7 @@ class AVMEnsembleEngine:
 
         self.predictions_count += 1
         self.latencies.append(latency_ms)
-        return result
+        return base_price, confidence, latency_ms
 
     @property
     def cache_hit_rate(self) -> float:

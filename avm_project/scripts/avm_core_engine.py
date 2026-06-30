@@ -15,6 +15,7 @@ from scripts.avm_ensemble_engine import AVMEnsembleEngine
 from scripts.avm_correction_layer import CorrectionLayer
 from scripts.avm_validation_engine import ValidationEngine
 from scripts.avm_auction_module import AuctionModule
+from scripts.avm_geo_grading import grade_from_coords
 
 log = logging.getLogger(__name__)
 
@@ -63,13 +64,14 @@ class AVMCoreEngine:
             df = pd.concat(dfs, ignore_index=True)
             cols = ['area_sqm', 'old_price', 'latitude', 'longitude', 'property_type']
             available = [c for c in cols if c in df.columns]
-            if len(available) >= 4:
-                X_raw = df[available].dropna().values.astype(np.float32)
+            if len(available) >= 5:
+                X_raw = df[available[:5]].dropna().values.astype(np.float32)
                 if len(X_raw) > 10:
-                    # 추론과 동일한 정규화 적용 (불일치 방지)
-                    X = self.feature_engineer.normalize(X_raw[:, :5]) \
-                        if X_raw.shape[1] >= 5 else X_raw
+                    # 추론과 동일한 정규화 적용 (배치 단위, 불일치 방지)
+                    fmin, fmax = self.feature_engineer.feature_min, self.feature_engineer.feature_max
+                    X = np.clip((X_raw - fmin) / (fmax - fmin), 0.0, 1.0).astype(np.float32)
                     self.validator.fit(X)
+                    log.info(f"Validator fitted on {len(X)} normalized samples")
         except Exception as e:
             log.warning(f"Validator fit skipped: {e}")
 
@@ -80,13 +82,20 @@ class AVMCoreEngine:
         latitude: float,
         longitude: float,
         property_type: str,
-        district_grade: str = '3',
+        district_grade: str = 'auto',
         public_appraisal_price: Optional[float] = None,
         market_condition: str = 'normal',
         reference_year: int = 2024,
     ) -> Dict[str, Any]:
-        """5단계 부동산 가치평가."""
+        """5단계 부동산 가치평가.
+
+        district_grade='auto'(기본) 시 위·경도로부터 권역 등급을 산정해
+        보정 레이어에 전달한다. 명시적으로 '1'~'6'을 주면 그 값을 사용한다.
+        """
         start = time.perf_counter()
+
+        if district_grade == 'auto':
+            district_grade = grade_from_coords(latitude, longitude)
 
         # Step 1: 특성 엔지니어링
         input_dict = {
@@ -104,8 +113,12 @@ class AVMCoreEngine:
             base_price, property_type, district_grade, reference_year
         )
 
-        # Step 4: 검증
-        validation = self.validator.validate(features, corrected_price, public_appraisal_price)
+        # Step 4: 검증 (앙상블 불일치도를 보정 스케일로 환산해 신뢰구간에 반영)
+        scale = (corrected_price / base_price) if base_price else 1.0
+        price_std = self.ensemble.last_prediction_std * scale
+        validation = self.validator.validate(
+            features, corrected_price, public_appraisal_price, price_std=price_std,
+        )
 
         # Step 5: 낙찰가 추정
         auction = self.auction.estimate_auction_price(
@@ -128,6 +141,7 @@ class AVMCoreEngine:
             'base_price': float(base_price),
             'corrected_price': float(corrected_price),
             'confidence': float(confidence),
+            'district_grade': district_grade,
             'validation_status': validation['is_valid'],
             'validation': validation,
             'auction_forecast': auction,

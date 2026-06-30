@@ -30,7 +30,7 @@ class PropertyInput(BaseModel):
     latitude: float = Field(..., ge=33.0, le=38.0, description="위도")
     longitude: float = Field(..., ge=126.0, le=131.0, description="경도")
     property_type: str = Field(default='apartment', description="부동산유형")
-    district_grade: str = Field(default='3', pattern='^[1-6]$', description="행정구역등급(1-6)")
+    district_grade: str = Field(default='auto', pattern='^(auto|[1-6])$', description="행정구역등급(1-6) 또는 'auto'(좌표 기반 자동)")
     public_appraisal_price: Optional[float] = Field(default=None, gt=0, description="공시가격(원)")
     market_condition: str = Field(default='normal', description="시장상황(rising/normal/declining)")
     reference_year: int = Field(default=2024, ge=2020, le=2026, description="기준연도")

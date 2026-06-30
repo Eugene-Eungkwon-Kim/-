@@ -11,20 +11,23 @@ Z_SCORE_95 = 1.96
 Z_SCORE_99 = 2.576
 APPRAISAL_WARNING = 0.10   # 10% 편차 → 경고
 APPRAISAL_CRITICAL = 0.20  # 20% 편차 → 위험
+# 고가 꼬리(정상이나 희소)의 과민 탐지를 줄이기 위해 0.05 → 0.02
+ANOMALY_CONTAMINATION = 0.02
 
 
 class ValidationEngine:
     """예측값 종합 검증."""
 
-    def __init__(self) -> None:
+    def __init__(self, contamination: float = ANOMALY_CONTAMINATION) -> None:
         self._detector = None
         self.is_fitted = False
+        self.contamination = contamination
 
     def fit(self, X: np.ndarray) -> 'ValidationEngine':
         """이상탐지 모델 학습."""
         try:
             from sklearn.ensemble import IsolationForest
-            self._detector = IsolationForest(contamination=0.05, random_state=42)
+            self._detector = IsolationForest(contamination=self.contamination, random_state=42)
             self._detector.fit(X)
             self.is_fitted = True
             log.info(f"Anomaly detector fitted on {len(X)} samples")
@@ -52,7 +55,7 @@ class ValidationEngine:
         confidence_level: float = 0.95,
     ) -> Dict[str, float]:
         """Z-score 기반 신뢰도 구간."""
-        if std is None:
+        if std is None or std <= 0:
             std = abs(predicted_price) * 0.05
         z = Z_SCORE_95 if confidence_level == 0.95 else Z_SCORE_99
         margin = z * std
@@ -88,8 +91,13 @@ class ValidationEngine:
         features: np.ndarray,
         predicted_price: float,
         public_appraisal_price: Optional[float] = None,
+        price_std: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """종합 검증: 이상탐지 + 신뢰도 구간 + 공시가격."""
+        """종합 검증: 이상탐지 + 신뢰도 구간 + 공시가격.
+
+        price_std: 앙상블 모델 간 불일치도(표준편차). 주어지면 신뢰구간을
+                   하드코딩 5%가 아닌 실제 불확실성으로 추정한다.
+        """
         is_valid = True
         risk_level = 'low'
 
@@ -98,7 +106,7 @@ class ValidationEngine:
             is_valid = False
             risk_level = 'high'
 
-        ci = self.estimate_confidence_interval(predicted_price)
+        ci = self.estimate_confidence_interval(predicted_price, std=price_std)
 
         appraisal_check: Optional[Dict] = None
         if public_appraisal_price:
