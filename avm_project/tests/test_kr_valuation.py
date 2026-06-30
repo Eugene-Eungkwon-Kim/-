@@ -185,6 +185,40 @@ class TestKRValuation:
                            latitude=37.497, longitude=127.024, property_type='apartment')
         assert r['auction_forecast']['estimated_auction_price'] < r['corrected_price']
 
+    # ── 콜드스타트 (직전가 없이 펀더멘털 평가) ────────────────────────────
+
+    def test_coldstart_no_prior_price(self, engine):
+        """직전가 없이 펀더멘털만으로 양수 가격 산출."""
+        r = engine.valuate_coldstart(
+            area_sqm=84, latitude=37.497, longitude=127.024,
+            property_type='apartment', floor=10, construction_year=2010,
+        )
+        assert r['corrected_price'] > 0
+        assert r['method'] == 'coldstart_fundamentals'
+
+    def test_coldstart_geography_matters(self, engine):
+        """콜드스타트도 위치에 따라 가격이 달라진다 (강남 > 경기외곽)."""
+        gangnam = engine.valuate_coldstart(
+            area_sqm=84, latitude=37.497, longitude=127.024)['corrected_price']
+        outer = engine.valuate_coldstart(
+            area_sqm=84, latitude=37.100, longitude=127.200)['corrected_price']
+        assert gangnam > outer
+
+    def test_coldstart_agrees_with_main_engine(self, engine):
+        """콜드스타트 추정이 메인 엔진과 ±35% 이내 (펀더멘털 신호 일관성)."""
+        cs = engine.valuate_coldstart(
+            area_sqm=84, latitude=37.497, longitude=127.024,
+            floor=10, construction_year=2010)['corrected_price']
+        main = engine.valuate(
+            area_sqm=84, old_price=2_200_000_000,
+            latitude=37.497, longitude=127.024, property_type='apartment')['corrected_price']
+        assert abs(cs - main) / main < 0.35, f"콜드스타트 {cs/1e8:.1f}억 vs 메인 {main/1e8:.1f}억 괴리 과대"
+
+    def test_coldstart_lower_confidence(self, engine):
+        """콜드스타트 신뢰도는 보수적(≤0.70)."""
+        r = engine.valuate_coldstart(area_sqm=84, latitude=37.497, longitude=127.024)
+        assert r['confidence'] <= 0.70
+
     def test_regression_engine_suite(self):
         """엔진 테스트 스위트 회귀 없음 — 실패 0건 (subprocess 실행)."""
         result = subprocess.run(

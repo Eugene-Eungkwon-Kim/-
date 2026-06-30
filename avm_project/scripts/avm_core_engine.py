@@ -47,6 +47,7 @@ class AVMCoreEngine:
         self.auction = AuctionModule()
         self._start_time = time.time()
         self._perf_log: List[Dict] = []
+        self._coldstart = None   # 지연 로드 (valuate_coldstart 첫 호출 시)
         self._fit_validator()
         log.info(f"AVMCoreEngine {self.VERSION} ready")
 
@@ -187,6 +188,52 @@ class AVMCoreEngine:
     def batch_valuate(self, properties: List[Dict]) -> List[Dict]:
         """대량 가치평가."""
         return [self.valuate(**p) for p in properties]
+
+    def valuate_coldstart(
+        self,
+        area_sqm: float,
+        latitude: float,
+        longitude: float,
+        property_type: str = 'apartment',
+        floor: int = 5,
+        construction_year: int = 2005,
+        district_grade: str = 'auto',
+        reference_year: int = 2024,
+    ) -> Dict[str, Any]:
+        """직전가 없이 펀더멘털만으로 평가 (담보에 최근 실거래가 없을 때).
+
+        메인 valuate()보다 부정확하므로(MAPE↑) 신뢰도를 보수적으로 낮춘다.
+        콜드스타트 모델 미학습 시 ValueError.
+        """
+        start = time.perf_counter()
+        self._validate_inputs(area_sqm, 1.0, latitude, longitude)  # 가격 가드레일 제외
+
+        if self._coldstart is None:
+            from scripts.avm_coldstart import ColdStartEstimator
+            self._coldstart = ColdStartEstimator(self.config['trained_models_dir'])
+        if not self._coldstart.is_ready:
+            raise ValueError("ColdStart 모델 없음 — scripts/avm_coldstart.py 먼저 실행")
+
+        if district_grade == 'auto':
+            district_grade = grade_from_coords(latitude, longitude)
+
+        base_price = self._coldstart.estimate(area_sqm, latitude, longitude, floor, construction_year)
+        corrected_price = self.corrections.apply_corrections(
+            base_price, property_type, district_grade, reference_year
+        )
+        latency_ms = (time.perf_counter() - start) * 1000.0
+
+        return {
+            'base_price': float(base_price),
+            'corrected_price': float(corrected_price),
+            'confidence': 0.65,   # 펀더멘털만 → 보수적 고정 신뢰도
+            'district_grade': district_grade,
+            'method': 'coldstart_fundamentals',
+            'note': '직전가 미사용 추정 — valuate()보다 부정확',
+            'latency_ms': float(latency_ms),
+            'model_version': self.VERSION,
+            'timestamp': datetime.now().isoformat(),
+        }
 
     def get_engine_stats(self) -> Dict[str, Any]:
         """엔진 상태 및 성능 통계."""
