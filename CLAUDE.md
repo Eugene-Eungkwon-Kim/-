@@ -7,12 +7,23 @@
 **Policy File**: `.claude/EXECUTION_POLICY.md` (required reading for all agents)  
 **Status**: Phase 12 complete, Phase 13 in progress  
 
-## For Claude Agents
+## ⚠️ 환경 설정 (모든 에이전트 필수)
 
-Before starting work:
-1. **Read** `.claude/EXECUTION_POLICY.md` - Contains all mandatory standards
-2. **Review** `README.md` - Project overview
-3. **Check** `avm_project/scripts/loan4u_phase12_pipeline.py` - Reference implementation (417 lines, all standards met)
+**Windows 사용자**: 드라이브 문자 변경 문제 확인
+```powershell
+# 자동 수정 스크립트 실행 (권장)
+.\.claude\fix_external_drive.ps1 -AutoFix
+
+# 또는 수동 확인
+cd E:\avm_project  # E드라이브 확인 (D드라이브가 아님!)
+git status
+```
+
+**모든 에이전트**:
+1. **읽기**: `.claude/ENVIRONMENT_SETUP_GUIDE.md` - 환경 설정 가이드 (필수)
+2. **읽기**: `.claude/EXECUTION_POLICY.md` - 개발 정책 (필수)
+3. **검토**: `README.md` - 프로젝트 개요
+4. **확인**: `avm_project/scripts/loan4u_phase12_pipeline.py` - 참조 구현
 
 ## Code Quality Standards
 
