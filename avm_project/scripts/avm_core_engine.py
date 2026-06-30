@@ -25,6 +25,13 @@ DEFAULT_CONFIG = {
     'data_dir': 'data/raw',
 }
 
+# 입력 가드레일 경계 (한국 부동산 범위)
+KR_LAT_BOUNDS = (33.0, 38.5)
+KR_LNG_BOUNDS = (124.0, 132.0)
+AREA_BOUNDS = (10.0, 1000.0)            # ㎡
+PRICE_BOUNDS = (10_000_000.0, 50_000_000_000.0)  # 원 (1천만 ~ 500억)
+OOD_CONFIDENCE_PENALTY = 0.50           # 경계 밖 입력 시 신뢰도 ×0.5
+
 
 class AVMCoreEngine:
     """통합 AVM 엔진 - 부동산 자동 가치평가."""
@@ -75,6 +82,27 @@ class AVMCoreEngine:
         except Exception as e:
             log.warning(f"Validator fit skipped: {e}")
 
+    @staticmethod
+    def _validate_inputs(
+        area_sqm: float, old_price: float,
+        latitude: float, longitude: float,
+    ) -> List[str]:
+        """입력 가드레일. 불가능 입력은 ValueError, 의심 입력은 경고 리스트 반환."""
+        if old_price <= 0:
+            raise ValueError(f"old_price must be positive, got {old_price}")
+        if area_sqm <= 0:
+            raise ValueError(f"area_sqm must be positive, got {area_sqm}")
+
+        warnings: List[str] = []
+        if not (KR_LAT_BOUNDS[0] <= latitude <= KR_LAT_BOUNDS[1]) or \
+           not (KR_LNG_BOUNDS[0] <= longitude <= KR_LNG_BOUNDS[1]):
+            warnings.append(f"coordinates ({latitude},{longitude}) outside Korea — low confidence")
+        if not (AREA_BOUNDS[0] <= area_sqm <= AREA_BOUNDS[1]):
+            warnings.append(f"area_sqm {area_sqm} outside typical range {AREA_BOUNDS}")
+        if not (PRICE_BOUNDS[0] <= old_price <= PRICE_BOUNDS[1]):
+            warnings.append(f"old_price {old_price:,.0f} outside typical range")
+        return warnings
+
     def valuate(
         self,
         area_sqm: float,
@@ -91,8 +119,11 @@ class AVMCoreEngine:
 
         district_grade='auto'(기본) 시 위·경도로부터 권역 등급을 산정해
         보정 레이어에 전달한다. 명시적으로 '1'~'6'을 주면 그 값을 사용한다.
+        불가능 입력(음수 가격/면적)은 ValueError, 경계 밖 입력은 경고+신뢰도 하향.
         """
         start = time.perf_counter()
+
+        input_warnings = self._validate_inputs(area_sqm, old_price, latitude, longitude)
 
         if district_grade == 'auto':
             district_grade = grade_from_coords(latitude, longitude)
@@ -128,6 +159,8 @@ class AVMCoreEngine:
         # 최종 신뢰도 조정
         if not validation['is_valid']:
             confidence *= 0.70
+        if input_warnings:
+            confidence *= OOD_CONFIDENCE_PENALTY
 
         latency_ms = (time.perf_counter() - start) * 1000.0
         self._perf_log.append({'latency_ms': latency_ms, 'confidence': confidence})
@@ -142,6 +175,7 @@ class AVMCoreEngine:
             'corrected_price': float(corrected_price),
             'confidence': float(confidence),
             'district_grade': district_grade,
+            'input_warnings': input_warnings,
             'validation_status': validation['is_valid'],
             'validation': validation,
             'auction_forecast': auction,

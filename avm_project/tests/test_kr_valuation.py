@@ -141,6 +141,49 @@ class TestKRValuation:
         assert len(results) == 5
         assert all(r['corrected_price'] > 0 for r in results), "배치 내 음수 가격 존재"
 
+    # ── 입력 가드레일 (OOD 방어) ──────────────────────────────────────────
+
+    def test_reject_zero_price(self, engine):
+        """old_price=0 은 ValueError로 거부."""
+        with pytest.raises(ValueError, match="old_price"):
+            engine.valuate(area_sqm=84, old_price=0,
+                           latitude=37.5, longitude=127.0, property_type='apartment')
+
+    def test_reject_negative_area(self, engine):
+        """음수 면적은 ValueError로 거부."""
+        with pytest.raises(ValueError, match="area_sqm"):
+            engine.valuate(area_sqm=-5, old_price=500_000_000,
+                           latitude=37.5, longitude=127.0, property_type='apartment')
+
+    def test_overseas_coords_flagged_low_confidence(self, engine):
+        """한국 밖 좌표는 경고 + 신뢰도 페널티."""
+        r = engine.valuate(area_sqm=84, old_price=500_000_000,
+                           latitude=45.0, longitude=140.0, property_type='apartment')
+        assert len(r['input_warnings']) >= 1
+        assert r['confidence'] <= 0.50, "OOD 입력인데 신뢰도 페널티 미적용"
+
+    def test_normal_input_no_warnings(self, engine):
+        """정상 한국 입력은 경고 없음."""
+        r = engine.valuate(area_sqm=84, old_price=800_000_000,
+                           latitude=37.497, longitude=127.024, property_type='apartment')
+        assert r['input_warnings'] == []
+
+    # ── 강화된 정량 단언 ──────────────────────────────────────────────────
+
+    def test_grade_descends_with_distance_from_gangnam(self, engine):
+        """강남에서 멀어질수록 등급 숫자가 커진다(=프리미엄 낮아짐)."""
+        gangnam = engine.valuate(area_sqm=84, old_price=8e8,
+                                 latitude=37.497, longitude=127.024, property_type='apartment')
+        outer = engine.valuate(area_sqm=84, old_price=8e8,
+                               latitude=37.100, longitude=127.200, property_type='apartment')
+        assert int(gangnam['district_grade']) < int(outer['district_grade'])
+
+    def test_auction_below_valuation(self, engine):
+        """낙찰 예상가는 항상 보정 평가가보다 낮다(경매 할인)."""
+        r = engine.valuate(area_sqm=84, old_price=8e8,
+                           latitude=37.497, longitude=127.024, property_type='apartment')
+        assert r['auction_forecast']['estimated_auction_price'] < r['corrected_price']
+
     def test_regression_engine_suite(self):
         """엔진 테스트 스위트 회귀 없음 — 실패 0건 (subprocess 실행)."""
         result = subprocess.run(
