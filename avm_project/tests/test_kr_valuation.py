@@ -141,15 +141,15 @@ class TestKRValuation:
         assert len(results) == 5
         assert all(r['corrected_price'] > 0 for r in results), "배치 내 음수 가격 존재"
 
-    def test_regression_existing_41_tests(self):
-        """기존 41개 테스트 회귀 없음 (subprocess 실행)."""
+    def test_regression_engine_suite(self):
+        """엔진 테스트 스위트 회귀 없음 — 실패 0건 (subprocess 실행)."""
         result = subprocess.run(
             [sys.executable, '-m', 'pytest', 'tests/test_avm_engine.py', '-q', '--tb=short'],
             capture_output=True, text=True,
             cwd=str(Path(__file__).parent.parent),
         )
-        assert '41 passed' in result.stdout, \
-            f"기존 테스트 실패:\n{result.stdout}\n{result.stderr}"
+        assert ' failed' not in result.stdout and 'passed' in result.stdout, \
+            f"엔진 테스트 회귀:\n{result.stdout}\n{result.stderr}"
 
 
 if __name__ == '__main__':

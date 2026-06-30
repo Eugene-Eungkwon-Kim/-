@@ -5,35 +5,43 @@ from typing import Dict
 
 log = logging.getLogger(__name__)
 
-# Loan4U 지역별 낙찰가율
+# 지역별 경매 낙찰가율 (낙찰가 / 감정가). 시세보다 낮으므로 1.0 미만.
+# ASSUMPTION: 대법원 경매정보 낙찰가율 통계 범위를 근사한 가정값이다.
+#   - 아파트: 유동성 높아 80~93%대, 프리미엄 권역일수록 회수율 높음
+#   - 다세대/연립/오피스텔: 유동성 낮아 70~85%대
+#   - 토지: 가장 비유동적 65~78%대
+# TODO(calibration): 실거래/경매 데이터 확보 후 권역·유형별 실측 낙찰가율로 교체.
 REGION_RATES: Dict[str, Dict[str, float]] = {
     'apartment': {
-        '1': 1.30, '2': 1.28, '3': 1.26,
-        '4': 1.24, '5': 1.22, '6': 1.20,
+        '1': 0.93, '2': 0.91, '3': 0.89,
+        '4': 0.87, '5': 0.85, '6': 0.82,
     },
     'multi_family': {
-        '1': 1.30, '2': 1.26, '3': 1.22,
-        '4': 1.20, '5': 1.20, '6': 1.20,
+        '1': 0.85, '2': 0.82, '3': 0.79,
+        '4': 0.76, '5': 0.74, '6': 0.72,
     },
     'townhouse': {
-        '1': 1.30, '2': 1.26, '3': 1.22,
-        '4': 1.20, '5': 1.20, '6': 1.20,
+        '1': 0.85, '2': 0.82, '3': 0.79,
+        '4': 0.76, '5': 0.74, '6': 0.72,
     },
     'officetel': {
-        '1': 1.20, '2': 1.18, '3': 1.16,
-        '4': 1.15, '5': 1.17, '6': 1.20,
+        '1': 0.84, '2': 0.82, '3': 0.80,
+        '4': 0.78, '5': 0.77, '6': 0.75,
     },
     'land': {
-        '1': 1.10, '2': 1.08, '3': 1.06,
-        '4': 1.05, '5': 1.05, '6': 1.05,
+        '1': 0.78, '2': 0.75, '3': 0.72,
+        '4': 0.70, '5': 0.68, '6': 0.65,
     },
 }
 
+# 시장 국면 보정 — ASSUMPTION: 상승장 낙찰가율 +5%p, 하락장 -5%p 가정.
 MARKET_CONDITIONS: Dict[str, float] = {
     'rising': 1.05,
     'normal': 1.00,
     'declining': 0.95,
 }
+
+DEFAULT_REGION_RATE = 0.85   # 미지정 유형/등급 폴백 (아파트 평균 근사)
 
 
 class AuctionModule:
@@ -42,7 +50,7 @@ class AuctionModule:
     def get_region_rate(self, property_type: str, district_grade: str) -> float:
         """지역별 낙찰가율 조회."""
         rate_map = REGION_RATES.get(property_type.lower(), {})
-        return rate_map.get(str(district_grade), 1.20)
+        return rate_map.get(str(district_grade), DEFAULT_REGION_RATE)
 
     def estimate_auction_price(
         self,

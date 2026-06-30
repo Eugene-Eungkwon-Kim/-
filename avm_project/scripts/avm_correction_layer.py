@@ -5,7 +5,10 @@ from typing import Dict
 
 log = logging.getLogger(__name__)
 
-# Loan4U 지역별 낙찰가율 (부동산유형 × 등급)
+# 지역×유형별 보정계수 — 모델 base_price에 곱하는 권역 프리미엄.
+# ASSUMPTION: Loan4U MASS 분석에서 가져온 가정값이며 실거래로 캘리브레이션되지 않았다.
+#   프리미엄 권역(등급1)일수록 모델 과소평가를 더 크게 보정한다는 가정.
+# TODO(calibration): 실거래 확보 후 (모델예측 vs 실거래) 잔차로 권역별 계수 재추정.
 REGION_CORRECTION_MAP: Dict[str, Dict[str, float]] = {
     'apartment': {
         '1': 1.30, '2': 1.28, '3': 1.26,
@@ -30,6 +33,7 @@ REGION_CORRECTION_MAP: Dict[str, Dict[str, float]] = {
 }
 
 # 연도별 시간 조정 (기준: 2024 = 1.0)
+# ASSUMPTION: 한국 부동산 명목 시세 수준의 근사. TODO: 실제 지수(KB/한국부동산원)로 교체.
 TEMPORAL_ADJUSTMENT: Dict[int, float] = {
     2024: 1.00, 2023: 0.95, 2022: 0.88,
     2021: 0.82, 2020: 0.75,

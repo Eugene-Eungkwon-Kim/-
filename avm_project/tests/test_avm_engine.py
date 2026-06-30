@@ -123,8 +123,23 @@ class TestAuctionModule:
         self.auction = AuctionModule()
 
     def test_estimate_auction_price_normal_market(self):
+        # 낙찰가율은 1.0 미만 → 낙찰가는 감정가보다 낮아야 함
         result = self.auction.estimate_auction_price(1_000_000, 'apartment', '3')
-        assert result['estimated_auction_price'] == pytest.approx(1_260_000, rel=1e-3)
+        assert result['estimated_auction_price'] == pytest.approx(890_000, rel=1e-3)
+        assert result['estimated_auction_price'] < 1_000_000
+
+    def test_auction_below_market_value(self):
+        # 모든 유형/등급에서 낙찰가 < 감정가 (경매 할인)
+        for ptype in ['apartment', 'multi_family', 'officetel', 'land']:
+            for grade in ['1', '3', '6']:
+                r = self.auction.estimate_auction_price(1_000_000, ptype, grade)
+                assert r['estimated_auction_price'] < 1_000_000, f"{ptype}/{grade}: 낙찰가 ≥ 감정가"
+
+    def test_auction_premium_grade_higher_recovery(self):
+        # 프리미엄 등급(1)이 외곽(6)보다 낙찰가율 높음
+        g1 = self.auction.estimate_auction_price(1_000_000, 'apartment', '1')['region_rate']
+        g6 = self.auction.estimate_auction_price(1_000_000, 'apartment', '6')['region_rate']
+        assert g1 > g6
 
     def test_market_rising_increases_price(self):
         normal = self.auction.estimate_auction_price(1_000_000, 'apartment', '3', 'normal')
