@@ -11,6 +11,7 @@ import {
   RegisterLoanInput
 } from '../types/loanPortfolio';
 import { UserNotFoundError, ValidationError } from './errors';
+import { validateRegisterLoanInput } from '../validation/loanValidation';
 
 interface LoanRow {
   id: string;
@@ -86,12 +87,10 @@ export class LoanRepository {
   constructor(private readonly db: Database.Database) {}
 
   async registerLoan(input: RegisterLoanInput): Promise<LoanRecord> {
+    validateRegisterLoanInput(input);
+
     const userExists = this.db.prepare('SELECT 1 FROM users WHERE id = ?').get(input.userId);
     if (!userExists) throw new UserNotFoundError(input.userId);
-
-    if (input.originalAmount <= 0) throw new ValidationError('originalAmount must be greater than 0');
-    if (input.interestRate <= 0) throw new ValidationError('interestRate must be greater than 0');
-    if (input.termMonths <= 0) throw new ValidationError('termMonths must be greater than 0');
 
     const { monthlyPayment } = await calculateLoanPayment({
       principal: input.originalAmount,

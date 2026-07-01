@@ -35,7 +35,8 @@
       "@fixtures/*": ["test/fixtures/*"],
       "@mocks/*": ["test/mocks/*"],
       "@db/*": ["src/db/*"],
-      "@repositories/*": ["src/repositories/*"]
+      "@repositories/*": ["src/repositories/*"],
+      "@validation/*": ["src/validation/*"]
     },
 
     /* Emit */

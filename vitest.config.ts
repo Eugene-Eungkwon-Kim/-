@@ -14,6 +14,7 @@ export default defineConfig({
       '@mocks': path.resolve(__dirname, './test/mocks'),
       '@db': path.resolve(__dirname, './src/db'),
       '@repositories': path.resolve(__dirname, './src/repositories'),
+      '@validation': path.resolve(__dirname, './src/validation'),
     }
   },
 

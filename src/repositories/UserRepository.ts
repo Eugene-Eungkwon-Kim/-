@@ -9,7 +9,8 @@ import {
   UpdateUserInput,
   UserProfile
 } from '../types/user';
-import { DuplicateEmailError, OptimisticLockError, UserNotFoundError, ValidationError } from './errors';
+import { DuplicateEmailError, OptimisticLockError, UserNotFoundError } from './errors';
+import { validateRegisterUserInput, validateUpdateUserInput } from '../validation/userValidation';
 
 interface UserRow {
   id: string;
@@ -44,7 +45,9 @@ interface UserRow {
 type UserRowColumn = keyof UserRow;
 type AuditDiff = Record<string, { from: unknown; to: unknown }>;
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 /**
  * 신용점수 → 등급 매핑. Day 4 상품추천(δ=520)에서 사용한 800/700/600 경계를 그대로 따르되,
@@ -108,19 +111,14 @@ function mapRowToProfile(row: UserRow): UserProfile {
  *
  * 낙관적 동시성 제어(version 컬럼)와 감사 로그(users_audit)를 리포지토리 레벨에서
  * 강제하여, 호출자가 매번 동시성/추적 로직을 재구현하지 않도록 한다.
- * 입력 형식 검증(필드 존재/타입/범위)은 최소한만 수행하며, 포괄적 규칙 검증은
- * Task 5(데이터 검증 & 무결성, δ=1605)에서 이 리포지토리 위에 계층화한다.
+ * 입력 검증은 src/validation/userValidation.ts (Task 5, δ=1605)에 위임하며,
+ * DB CHECK 제약은 애플리케이션 검증을 우회하는 경로에 대비한 최후 방어선이다.
  */
 export class UserRepository {
   constructor(private readonly db: Database.Database) {}
 
   register(input: RegisterUserInput): UserProfile {
-    if (!input.email || !EMAIL_PATTERN.test(input.email)) {
-      throw new ValidationError('A valid email is required');
-    }
-    if (!input.name || input.name.trim().length === 0) {
-      throw new ValidationError('name is required');
-    }
+    validateRegisterUserInput(input, todayIso());
 
     const id = randomUUID();
     const grade = computeCreditGrade(input.creditProfile?.score);
@@ -187,6 +185,8 @@ export class UserRepository {
   }
 
   updateProfile(userId: string, updates: UpdateUserInput, expectedVersion: number): UserProfile {
+    validateUpdateUserInput(updates, todayIso());
+
     const currentRow = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
     if (!currentRow) throw new UserNotFoundError(userId);
     if (currentRow.version !== expectedVersion) {
