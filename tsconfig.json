@@ -36,7 +36,8 @@
       "@mocks/*": ["test/mocks/*"],
       "@db/*": ["src/db/*"],
       "@repositories/*": ["src/repositories/*"],
-      "@validation/*": ["src/validation/*"]
+      "@validation/*": ["src/validation/*"],
+      "@api/*": ["src/api/*"]
     },
 
     /* Emit */

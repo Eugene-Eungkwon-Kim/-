@@ -15,6 +15,7 @@ export default defineConfig({
       '@db': path.resolve(__dirname, './src/db'),
       '@repositories': path.resolve(__dirname, './src/repositories'),
       '@validation': path.resolve(__dirname, './src/validation'),
+      '@api': path.resolve(__dirname, './src/api'),
     }
   },
 
