@@ -1421,4 +1421,141 @@ export const loanHandlers = [
       personalizedAdvice
     }));
   }),
+
+  // 스트레스 테스트
+  rest.post('/api/v1/analysis/stress-test', async (req, res, ctx) => {
+    const body = await req.json() as any;
+    const userId = body.userId || 'user-001';
+    const loanAmount = body.loanAmount || 300000000;
+    const loanTerm = body.loanTerm || 240;
+    const currentRate = body.currentRate || 3.2;
+    const currentIncome = body.currentIncome || 5000000;
+    const scenario = body.scenarios?.scenario || 'rate-increase';
+    const stressLevel = body.scenarios?.stressLevel || 'mild';
+
+    const stressDefaults = {
+      mild: { rateChange: 1, incomeChange: 0 },
+      moderate: { rateChange: 2, incomeChange: -15 },
+      severe: { rateChange: 3, incomeChange: -25 }
+    };
+
+    let rateChange = body.scenarios?.rateChange ?? 0;
+    let incomeChange = body.scenarios?.incomeChange ?? 0;
+
+    if (stressLevel && !body.scenarios?.rateChange && !body.scenarios?.incomeChange) {
+      const defaults = stressDefaults[stressLevel as keyof typeof stressDefaults];
+      if (scenario === 'rate-increase') {
+        rateChange = defaults.rateChange;
+        incomeChange = 0;
+      } else if (scenario === 'income-decrease') {
+        rateChange = 0;
+        incomeChange = defaults.incomeChange;
+      } else {
+        rateChange = defaults.rateChange;
+        incomeChange = defaults.incomeChange;
+      }
+    }
+
+    const calculatePayment = (amount: number, term: number, rate: number) => {
+      const monthlyRate = rate / 12 / 100;
+      return amount * (monthlyRate * Math.pow(1 + monthlyRate, term)) / (Math.pow(1 + monthlyRate, term) - 1);
+    };
+
+    const baseMonthlyPayment = calculatePayment(loanAmount, loanTerm, currentRate);
+    const baseTotalInterest = (baseMonthlyPayment * loanTerm) - loanAmount;
+    const basePaymentRatio = (baseMonthlyPayment / currentIncome) * 100;
+    const baseIsAffordable = basePaymentRatio <= 40;
+
+    const scenarios_ = [
+      { name: '금리 1% 인상', rateChange: 1, incomeChange: 0 },
+      { name: '금리 2% 인상', rateChange: 2, incomeChange: 0 },
+      { name: '금리 3% 인상', rateChange: 3, incomeChange: 0 },
+      { name: '수입 15% 감소', rateChange: 0, incomeChange: -15 },
+      { name: '수입 25% 감소', rateChange: 0, incomeChange: -25 },
+      { name: '금리 1.5% + 수입 10% 감소', rateChange: 1.5, incomeChange: -10 },
+      { name: '금리 2% + 수입 20% 감소', rateChange: 2, incomeChange: -20 }
+    ];
+
+    const stressResults = scenarios_.map(sc => {
+      const newRate = currentRate + sc.rateChange;
+      const newIncome = currentIncome * (1 + sc.incomeChange / 100);
+      const newMonthlyPayment = calculatePayment(loanAmount, loanTerm, newRate);
+      const newTotalInterest = (newMonthlyPayment * loanTerm) - loanAmount;
+      const newPaymentRatio = (newMonthlyPayment / newIncome) * 100;
+      const monthlyPaymentChange = newMonthlyPayment - baseMonthlyPayment;
+      const paymentRatioChange = newPaymentRatio - basePaymentRatio;
+      const isAffordable = newPaymentRatio <= 40;
+
+      let riskLevel = 'low' as const;
+      if (newPaymentRatio > 50) riskLevel = 'critical';
+      else if (newPaymentRatio > 40) riskLevel = 'high';
+      else if (newPaymentRatio > 30) riskLevel = 'medium';
+
+      return {
+        scenarioName: sc.name,
+        parameters: { rateChange: sc.rateChange, incomeChange: sc.incomeChange },
+        results: {
+          rate: Math.round(newRate * 100) / 100,
+          monthlyPayment: Math.round(newMonthlyPayment),
+          monthlyPaymentChange: Math.round(monthlyPaymentChange),
+          totalInterest: Math.round(newTotalInterest),
+          paymentRatio: Math.round(newPaymentRatio * 10) / 10,
+          paymentRatioChange: Math.round(paymentRatioChange * 10) / 10,
+          isAffordable,
+          riskLevel
+        }
+      };
+    });
+
+    let breakEvenRate = currentRate + 10;
+    for (let r = currentRate; r <= currentRate + 10; r += 0.1) {
+      const monthlyPayment = calculatePayment(loanAmount, loanTerm, r);
+      const ratio = (monthlyPayment / currentIncome) * 100;
+      if (ratio > 40) {
+        breakEvenRate = Math.round((r + 0.1) * 100) / 100;
+        break;
+      }
+    }
+
+    let breakEvenIncome = currentIncome * 0.5;
+    for (let inc = currentIncome; inc >= currentIncome * 0.1; inc -= 100000) {
+      const ratio = (baseMonthlyPayment / inc) * 100;
+      if (ratio > 40) {
+        breakEvenIncome = Math.round(inc);
+        break;
+      }
+    }
+
+    const mostCriticalScenario = stressResults.reduce((worst: any, curr: any) =>
+      curr.results.paymentRatio > worst.results.paymentRatio ? curr : worst, stressResults[0]);
+
+    const maxMonthlyPaymentIncrease = Math.max(...stressResults.map(s => s.results.monthlyPaymentChange));
+    const maxPaymentRatioIncrease = Math.max(...stressResults.map(s => s.results.paymentRatioChange));
+
+    const recommendations = [
+      breakEvenRate - currentRate < 2 ? '낮은 금리 인상 한계점, 고정금리 고려' : '현재 조건 안정적',
+      basePaymentRatio > 35 ? '미래 수입 감소에 대비 필요' : '상환능력 충분',
+      breakEvenIncome < currentIncome * 0.7 ? '긴급 기금 확보 권장' : '기본 안전 수준'
+    ];
+
+    return res(ctx.json({
+      userId,
+      baseCase: {
+        rate: currentRate,
+        monthlyPayment: Math.round(baseMonthlyPayment),
+        totalInterest: Math.round(baseTotalInterest),
+        paymentRatio: Math.round(basePaymentRatio * 10) / 10,
+        isAffordable: baseIsAffordable
+      },
+      stressScenarios: stressResults,
+      summary: {
+        mostCriticalScenario: mostCriticalScenario.scenarioName,
+        maxMonthlyPaymentIncrease: Math.round(maxMonthlyPaymentIncrease),
+        maxPaymentRatioIncrease: Math.round(maxPaymentRatioIncrease * 10) / 10,
+        breakEvenRate,
+        breakEvenIncome,
+        recommendations
+      }
+    }));
+  }),
 ];

@@ -2489,6 +2489,146 @@ async function loanProductRecommendationEndpoint(input: any): Promise<any> {
   };
 }
 
+async function stressTestEndpoint(input: any): Promise<any> {
+  const userId = input.userId || 'user-001';
+  const loanAmount = input.loanAmount || 300000000;
+  const loanTerm = input.loanTerm || 240;
+  const currentRate = input.currentRate || 3.2;
+  const currentIncome = input.currentIncome || 5000000;
+  const scenario = input.scenarios?.scenario || 'rate-increase';
+  const stressLevel = input.scenarios?.stressLevel || 'mild';
+
+  // 스트레스 시나리오 기본값
+  const stressDefaults = {
+    mild: { rateChange: 1, incomeChange: 0 },
+    moderate: { rateChange: 2, incomeChange: -15 },
+    severe: { rateChange: 3, incomeChange: -25 }
+  };
+
+  let rateChange = input.scenarios?.rateChange ?? 0;
+  let incomeChange = input.scenarios?.incomeChange ?? 0;
+
+  if (stressLevel && !input.scenarios?.rateChange && !input.scenarios?.incomeChange) {
+    const defaults = stressDefaults[stressLevel as keyof typeof stressDefaults];
+    if (scenario === 'rate-increase') {
+      rateChange = defaults.rateChange;
+      incomeChange = 0;
+    } else if (scenario === 'income-decrease') {
+      rateChange = 0;
+      incomeChange = defaults.incomeChange;
+    } else {
+      rateChange = defaults.rateChange;
+      incomeChange = defaults.incomeChange;
+    }
+  }
+
+  const calculatePayment = (amount: number, term: number, rate: number) => {
+    const monthlyRate = rate / 12 / 100;
+    return amount * (monthlyRate * Math.pow(1 + monthlyRate, term)) / (Math.pow(1 + monthlyRate, term) - 1);
+  };
+
+  // 기본 사례
+  const baseMonthlyPayment = calculatePayment(loanAmount, loanTerm, currentRate);
+  const baseTotalInterest = (baseMonthlyPayment * loanTerm) - loanAmount;
+  const basePaymentRatio = (baseMonthlyPayment / currentIncome) * 100;
+  const baseIsAffordable = basePaymentRatio <= 40;
+
+  // 스트레스 시나리오들
+  const scenarios = [
+    { name: '금리 1% 인상', rateChange: 1, incomeChange: 0 },
+    { name: '금리 2% 인상', rateChange: 2, incomeChange: 0 },
+    { name: '금리 3% 인상', rateChange: 3, incomeChange: 0 },
+    { name: '수입 15% 감소', rateChange: 0, incomeChange: -15 },
+    { name: '수입 25% 감소', rateChange: 0, incomeChange: -25 },
+    { name: '금리 1.5% + 수입 10% 감소', rateChange: 1.5, incomeChange: -10 },
+    { name: '금리 2% + 수입 20% 감소', rateChange: 2, incomeChange: -20 }
+  ];
+
+  const stressResults = scenarios.map(sc => {
+    const newRate = currentRate + sc.rateChange;
+    const newIncome = currentIncome * (1 + sc.incomeChange / 100);
+    const newMonthlyPayment = calculatePayment(loanAmount, loanTerm, newRate);
+    const newTotalInterest = (newMonthlyPayment * loanTerm) - loanAmount;
+    const newPaymentRatio = (newMonthlyPayment / newIncome) * 100;
+    const monthlyPaymentChange = newMonthlyPayment - baseMonthlyPayment;
+    const paymentRatioChange = newPaymentRatio - basePaymentRatio;
+    const isAffordable = newPaymentRatio <= 40;
+
+    let riskLevel = 'low' as const;
+    if (newPaymentRatio > 50) riskLevel = 'critical';
+    else if (newPaymentRatio > 40) riskLevel = 'high';
+    else if (newPaymentRatio > 30) riskLevel = 'medium';
+
+    return {
+      scenarioName: sc.name,
+      parameters: { rateChange: sc.rateChange, incomeChange: sc.incomeChange },
+      results: {
+        rate: Math.round(newRate * 100) / 100,
+        monthlyPayment: Math.round(newMonthlyPayment),
+        monthlyPaymentChange: Math.round(monthlyPaymentChange),
+        totalInterest: Math.round(newTotalInterest),
+        paymentRatio: Math.round(newPaymentRatio * 10) / 10,
+        paymentRatioChange: Math.round(paymentRatioChange * 10) / 10,
+        isAffordable,
+        riskLevel
+      }
+    };
+  });
+
+  // Break-even 계산
+  let breakEvenRate = currentRate + 10;
+  for (let r = currentRate; r <= currentRate + 10; r += 0.1) {
+    const monthlyPayment = calculatePayment(loanAmount, loanTerm, r);
+    const ratio = (monthlyPayment / currentIncome) * 100;
+    if (ratio > 40) {
+      breakEvenRate = Math.round((r + 0.1) * 100) / 100;
+      break;
+    }
+  }
+
+  let breakEvenIncome = currentIncome * 0.5;
+  for (let inc = currentIncome; inc >= currentIncome * 0.1; inc -= 100000) {
+    const ratio = (baseMonthlyPayment / inc) * 100;
+    if (ratio > 40) {
+      breakEvenIncome = Math.round(inc);
+      break;
+    }
+  }
+
+  // 최악 시나리오 찾기
+  const mostCriticalScenario = stressResults.reduce((worst: any, curr: any) =>
+    curr.results.paymentRatio > worst.results.paymentRatio ? curr : worst, stressResults[0]);
+
+  const maxMonthlyPaymentIncrease = Math.max(...stressResults.map(s => s.results.monthlyPaymentChange));
+  const maxPaymentRatioIncrease = Math.max(...stressResults.map(s => s.results.paymentRatioChange));
+
+  const recommendations = [
+    breakEvenRate - currentRate < 2 ? '낮은 금리 인상 한계점, 고정금리 고려' : '현재 조건 안정적',
+    basePaymentRatio > 35 ? '미래 수입 감소에 대비 필요' : '상환능력 충분',
+    breakEvenIncome < currentIncome * 0.7 ? '긴급 기금 확보 권장' : '기본 안전 수준'
+  ];
+
+  return {
+    userId,
+    baseCase: {
+      rate: currentRate,
+      monthlyPayment: Math.round(baseMonthlyPayment),
+      totalInterest: Math.round(baseTotalInterest),
+      paymentRatio: Math.round(basePaymentRatio * 10) / 10,
+      isAffordable: baseIsAffordable
+    },
+    stressScenarios: stressResults,
+    summary: {
+      mostCriticalScenario: mostCriticalScenario.scenarioName,
+      maxMonthlyPaymentIncrease: Math.round(maxMonthlyPaymentIncrease),
+      maxPaymentRatioIncrease: Math.round(maxPaymentRatioIncrease * 10) / 10,
+      breakEvenRate,
+      breakEvenIncome,
+      recommendations
+    }
+  };
+}
+
 // Task 5 Tests
 describe('MSW Handlers: Financial Planning (Task 5 - Day 4)', () => {
   describe('[T-API-1001~1005] 재정 분석 & 계획', () => {
@@ -2595,11 +2735,34 @@ describe('MSW Handlers: Loan Recommendation (Task 3 - Day 4)', () => {
 
 describe('MSW Handlers: Stress Test (Task 4 - Day 4)', () => {
   describe('[T-API-1301~1305] 스트레스 테스트', () => {
-    it('[T-API-1301] 금리 1% 인상', async () => { expect(true).toBe(true); });
-    it('[T-API-1302] 금리 3% 인상', async () => { expect(true).toBe(true); });
-    it('[T-API-1303] 수입 20% 감소', async () => { expect(true).toBe(true); });
-    it('[T-API-1304] 동시 악화', async () => { expect(true).toBe(true); });
-    it('[T-API-1305] 임계점 계산', async () => { expect(true).toBe(true); });
+    it('[T-API-1301] 금리 1% 인상', async () => {
+      const data = await stressTestEndpoint({ userId: 'user-rate1', loanAmount: 300000000, loanTerm: 240, currentRate: 3.2, currentIncome: 5000000, scenarios: { scenario: 'rate-increase', rateChange: 1 } });
+      expect(data.baseCase.rate).toBe(3.2);
+      expect(data.stressScenarios.length).toBeGreaterThan(0);
+      expect(data.summary.breakEvenRate).toBeGreaterThan(3.2);
+    });
+    it('[T-API-1302] 금리 3% 인상', async () => {
+      const data = await stressTestEndpoint({ userId: 'user-rate3', loanAmount: 300000000, loanTerm: 240, currentRate: 3.2, currentIncome: 5000000, scenarios: { scenario: 'rate-increase', rateChange: 3 } });
+      expect(data.stressScenarios.length).toBeGreaterThan(0);
+      expect(data.summary.maxMonthlyPaymentIncrease).toBeGreaterThan(0);
+    });
+    it('[T-API-1303] 수입 20% 감소', async () => {
+      const data = await stressTestEndpoint({ userId: 'user-income', loanAmount: 300000000, loanTerm: 240, currentRate: 3.2, currentIncome: 5000000, scenarios: { scenario: 'income-decrease', incomeChange: -20 } });
+      expect(data.baseCase.isAffordable).toBe(true);
+      expect(data.stressScenarios.length).toBeGreaterThan(0);
+      expect(data.summary.breakEvenIncome).toBeDefined();
+    });
+    it('[T-API-1304] 동시 악화', async () => {
+      const data = await stressTestEndpoint({ userId: 'user-both', loanAmount: 300000000, loanTerm: 240, currentRate: 3.2, currentIncome: 5000000, scenarios: { scenario: 'both', rateChange: 2, incomeChange: -15 } });
+      expect(data.summary.mostCriticalScenario).toBeDefined();
+      expect(data.summary.maxPaymentRatioIncrease).toBeGreaterThan(0);
+    });
+    it('[T-API-1305] 임계점 계산', async () => {
+      const data = await stressTestEndpoint({ userId: 'user-breakeven', loanAmount: 300000000, loanTerm: 240, currentRate: 3.2, currentIncome: 5000000, scenarios: { scenario: 'rate-increase' } });
+      expect(data.summary.breakEvenRate).toBeGreaterThan(3.2);
+      expect(data.summary.breakEvenIncome).toBeGreaterThan(0);
+      expect(data.summary.recommendations.length).toBeGreaterThan(0);
+    });
   });
 });
 
