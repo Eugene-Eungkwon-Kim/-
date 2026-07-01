@@ -100,55 +100,99 @@ export const loanHandlers = [
     }));
   }),
 
-  // 대출상품 조회
+  // 대출상품 조회 (고급 기능 포함: 정렬, 페이징, 적합도 점수)
   rest.get('/api/v1/loans/products', (req, res, ctx) => {
     const creditScore = parseInt(req.url.searchParams.get('creditScore') || '700');
+    const sortBy = req.url.searchParams.get('sortBy') || 'rate';
+    const limit = parseInt(req.url.searchParams.get('limit') || '10');
+    const offset = parseInt(req.url.searchParams.get('offset') || '0');
 
-    // 신용점수에 따라 다른 상품 반환
+    // 신용점수에 따라 상품 범위 결정
+    let allProducts = [];
     if (creditScore >= 800) {
-      return res(ctx.json({
-        products: [
-          {
-            id: 'prime-loan-1',
-            name: '프리미엄 전월세',
-            rate: 2.5,
-            maxAmount: 500000000
-          },
-          {
-            id: 'standard-loan-1',
-            name: '표준 전세',
-            rate: 3.2,
-            maxAmount: 300000000
-          }
-        ]
-      }));
+      allProducts = [
+        {
+          id: 'prime-loan-1',
+          name: '프리미엄 전월세',
+          rate: 2.5,
+          maxAmount: 500000000,
+          minTerm: 120,
+          maxTerm: 360,
+          popularityRank: 2
+        },
+        {
+          id: 'standard-loan-1',
+          name: '표준 전세',
+          rate: 3.2,
+          maxAmount: 300000000,
+          minTerm: 60,
+          maxTerm: 240,
+          popularityRank: 1
+        }
+      ];
     } else if (creditScore >= 700) {
-      return res(ctx.json({
-        products: [
-          {
-            id: 'standard-loan-1',
-            name: '표준 전세',
-            rate: 3.2,
-            maxAmount: 300000000
-          }
-        ]
-      }));
+      allProducts = [
+        {
+          id: 'standard-loan-1',
+          name: '표준 전세',
+          rate: 3.2,
+          maxAmount: 300000000,
+          minTerm: 60,
+          maxTerm: 240,
+          popularityRank: 1
+        }
+      ];
     } else if (creditScore >= 650) {
-      return res(ctx.json({
-        products: [
-          {
-            id: 'conditional-loan-1',
-            name: '조건부 대출',
-            rate: 4.5,
-            maxAmount: 150000000
-          }
-        ]
-      }));
+      allProducts = [
+        {
+          id: 'conditional-loan-1',
+          name: '조건부 대출',
+          rate: 4.5,
+          maxAmount: 150000000,
+          minTerm: 36,
+          maxTerm: 180,
+          popularityRank: 3
+        }
+      ];
     } else {
       return res(ctx.status(400), ctx.json({
         error: '조건에 맞는 상품이 없습니다.'
       }));
     }
+
+    // 정렬 적용
+    let sortedProducts = [...allProducts];
+    if (sortBy === 'rate') {
+      sortedProducts.sort((a, b) => a.rate - b.rate);
+    } else if (sortBy === 'amount') {
+      sortedProducts.sort((a, b) => b.maxAmount - a.maxAmount);
+    } else if (sortBy === 'term') {
+      sortedProducts.sort((a, b) => b.maxTerm - a.maxTerm);
+    }
+
+    // 적합도 점수 계산
+    const productsWithScore = sortedProducts.map((product, index) => ({
+      ...product,
+      eligibilityScore: Math.round((creditScore / 10 + (5 - index)) * 10) / 10,
+      monthlyPaymentEstimate: Math.round((product.maxAmount * 0.01) / 12),
+      competitorCount: Math.max(1, 5 - sortedProducts.length)
+    }));
+
+    // 페이징 적용
+    const total = productsWithScore.length;
+    const paginatedProducts = productsWithScore.slice(offset, offset + limit);
+    const hasMore = offset + limit < total;
+
+    return res(ctx.json({
+      products: paginatedProducts,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore
+      },
+      timestamp: new Date().toISOString()
+    }));
   }),
 
   // 서류 검증

@@ -539,3 +539,187 @@ describe('MSW Handlers: Document Validation Endpoint (Task 3)', () => {
     });
   });
 });
+
+// Enhanced product listing endpoint logic (extracted from handlers for testing)
+async function listLoanProductsEndpoint(input: {
+  creditScore: number;
+  sortBy?: 'rate' | 'amount' | 'term';
+  limit?: number;
+  offset?: number;
+}): Promise<any> {
+  const creditScore = input.creditScore;
+  const sortBy = input.sortBy || 'rate';
+  const limit = input.limit || 10;
+  const offset = input.offset || 0;
+
+  let allProducts = [];
+  if (creditScore >= 800) {
+    allProducts = [
+      {
+        id: 'prime-loan-1',
+        name: '프리미엄 전월세',
+        rate: 2.5,
+        maxAmount: 500000000,
+        minTerm: 120,
+        maxTerm: 360,
+        popularityRank: 2
+      },
+      {
+        id: 'standard-loan-1',
+        name: '표준 전세',
+        rate: 3.2,
+        maxAmount: 300000000,
+        minTerm: 60,
+        maxTerm: 240,
+        popularityRank: 1
+      }
+    ];
+  } else if (creditScore >= 700) {
+    allProducts = [
+      {
+        id: 'standard-loan-1',
+        name: '표준 전세',
+        rate: 3.2,
+        maxAmount: 300000000,
+        minTerm: 60,
+        maxTerm: 240,
+        popularityRank: 1
+      }
+    ];
+  } else if (creditScore >= 650) {
+    allProducts = [
+      {
+        id: 'conditional-loan-1',
+        name: '조건부 대출',
+        rate: 4.5,
+        maxAmount: 150000000,
+        minTerm: 36,
+        maxTerm: 180,
+        popularityRank: 3
+      }
+    ];
+  } else {
+    throw new Error('No products available for this credit score');
+  }
+
+  let sortedProducts = [...allProducts];
+  if (sortBy === 'rate') {
+    sortedProducts.sort((a, b) => a.rate - b.rate);
+  } else if (sortBy === 'amount') {
+    sortedProducts.sort((a, b) => b.maxAmount - a.maxAmount);
+  } else if (sortBy === 'term') {
+    sortedProducts.sort((a, b) => b.maxTerm - a.maxTerm);
+  }
+
+  const productsWithScore = sortedProducts.map((product, index) => ({
+    ...product,
+    eligibilityScore: Math.round((creditScore / 10 + (5 - index)) * 10) / 10,
+    monthlyPaymentEstimate: Math.round((product.maxAmount * 0.01) / 12),
+    competitorCount: Math.max(1, 5 - sortedProducts.length)
+  }));
+
+  const total = productsWithScore.length;
+  const paginatedProducts = productsWithScore.slice(offset, offset + limit);
+  const hasMore = offset + limit < total;
+
+  return {
+    products: paginatedProducts,
+    pagination: {
+      total,
+      limit,
+      offset,
+      hasMore
+    },
+    timestamp: new Date().toISOString()
+  };
+}
+
+describe('MSW Handlers: Enhanced Product Listing Endpoint (Task 4)', () => {
+
+  describe('[T-API-301~305] 상품 조회 강화 기능', () => {
+
+    it('[T-API-301] 이자율 정렬 (sortBy: rate)', async () => {
+      const data = await listLoanProductsEndpoint({
+        creditScore: 800,
+        sortBy: 'rate'
+      });
+
+      expect(data.products.length).toBeGreaterThan(0);
+      expect(data.pagination.total).toBe(data.products.length);
+
+      // 이자율 오름차순 확인
+      for (let i = 0; i < data.products.length - 1; i++) {
+        expect(data.products[i].rate).toBeLessThanOrEqual(data.products[i + 1].rate);
+      }
+    });
+
+    it('[T-API-302] 대출액 정렬 (sortBy: amount)', async () => {
+      const data = await listLoanProductsEndpoint({
+        creditScore: 800,
+        sortBy: 'amount'
+      });
+
+      expect(data.products.length).toBeGreaterThan(0);
+
+      // 대출액 내림차순 확인
+      for (let i = 0; i < data.products.length - 1; i++) {
+        expect(data.products[i].maxAmount).toBeGreaterThanOrEqual(data.products[i + 1].maxAmount);
+      }
+    });
+
+    it('[T-API-303] 페이징 (limit: 1, offset: 0)', async () => {
+      const data1 = await listLoanProductsEndpoint({
+        creditScore: 800,
+        limit: 1,
+        offset: 0
+      });
+
+      expect(data1.products.length).toBe(1);
+      expect(data1.pagination.total).toBe(2);
+      expect(data1.pagination.hasMore).toBe(true);
+      expect(data1.pagination.offset).toBe(0);
+
+      const data2 = await listLoanProductsEndpoint({
+        creditScore: 800,
+        limit: 1,
+        offset: 1
+      });
+
+      expect(data2.products.length).toBe(1);
+      expect(data2.pagination.hasMore).toBe(false);
+      expect(data2.pagination.offset).toBe(1);
+      expect(data2.products[0].id).not.toBe(data1.products[0].id);
+    });
+
+    it('[T-API-304] 적합도 점수 (eligibilityScore)', async () => {
+      const data = await listLoanProductsEndpoint({
+        creditScore: 750
+      });
+
+      expect(data.products.length).toBeGreaterThan(0);
+      expect(data.products[0].eligibilityScore).toBeDefined();
+
+      for (const product of data.products) {
+        expect(product.eligibilityScore).toBeGreaterThan(0);
+        expect(product.monthlyPaymentEstimate).toBeGreaterThan(0);
+        expect(product.competitorCount).toBeGreaterThan(0);
+      }
+    });
+
+    it('[T-API-305] 상품 추천 정보 (popularityRank, competitorCount)', async () => {
+      const data = await listLoanProductsEndpoint({
+        creditScore: 800
+      });
+
+      expect(data.products.length).toBeGreaterThan(0);
+
+      for (const product of data.products) {
+        expect(product.popularityRank).toBeDefined();
+        expect(product.popularityRank).toBeGreaterThan(0);
+        expect(product.competitorCount).toBeDefined();
+      }
+
+      expect(data.timestamp).toBeDefined();
+    });
+  });
+});
