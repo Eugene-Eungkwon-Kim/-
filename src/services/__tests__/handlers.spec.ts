@@ -1467,3 +1467,152 @@ describe('MSW Handlers: Credit History Endpoint (Task 4 - Day 3)', () => {
     });
   });
 });
+
+describe('MSW Handlers: Integration Testing & Validation (Task 5 - Day 3)', () => {
+
+  describe('[T-API-801~803] 통합 검증 시나리오', () => {
+
+    it('[T-API-801] 신규 사용자 단일 대출 시나리오', async () => {
+      // Scenario 1: New user applies for a single loan
+
+      // Step 1: Assess credit
+      const creditAssessment = await assessCreditEndpoint({
+        income: 50000000,
+        debt: 0,
+        creditScore: 800,
+        assets: 100000000
+      });
+
+      expect(creditAssessment.approved).toBe(true);
+      expect(creditAssessment.grade).toBe('A');
+      expect(creditAssessment.maxLoanAmount).toBeGreaterThan(200000000);
+
+      // Step 2: Apply for loan
+      const loanApplication = await applyLoanEndpoint({
+        userId: 'new-user-001',
+        loanAmount: 250000000,
+        loanTerm: 240,
+        productId: 'standard-loan-1',
+        coApplicant: { creditScore: creditAssessment.score }
+      });
+
+      expect(loanApplication.status).toBe('approved');
+      expect(loanApplication.approvedAmount).toBe(250000000);
+      expect(loanApplication.monthlyPayment).toBeGreaterThan(0);
+
+      // Step 3: Check repayment schedule for the new loan
+      const schedule = await repaymentScheduleEndpoint({
+        loanId: 'loan-001',
+        format: 'summary'
+      });
+
+      expect(schedule.summary.monthlyPayment).toBeGreaterThan(0);
+      expect(schedule.summary.totalInterest).toBeGreaterThan(0);
+      expect(schedule.earlyRepaymentOptions.possibleFrom).toBe(12);
+
+      // Verify loan application has complete payment info
+      expect(loanApplication.monthlyPayment).toBeGreaterThan(0);
+      expect(loanApplication.totalInterest).toBeGreaterThan(0);
+    });
+
+    it('[T-API-802] 다중 대출 포트폴리오 시나리오', async () => {
+      // Scenario 2: User with multiple loans
+
+      // Step 1: Get portfolio
+      const portfolio = await portfolioEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(portfolio.portfolio.totalLoans).toBeGreaterThan(1);
+      expect(portfolio.portfolio.totalPrincipal).toBeGreaterThan(0);
+      expect(portfolio.portfolio.totalMonthlyPayment).toBeGreaterThan(0);
+      expect(portfolio.portfolio.debtRatio).toBeGreaterThan(0);
+
+      // Step 2: Filter active loans
+      const activeLoans = await portfolioEndpoint({
+        userId: 'user-001',
+        status: 'active'
+      });
+
+      expect(activeLoans.loans.length).toBeGreaterThan(0);
+      expect(activeLoans.loans.every((loan: any) => loan.status === 'active')).toBe(true);
+
+      // Step 3: Check repayment schedule for largest loan
+      const largestLoan = activeLoans.loans.reduce((max: any, current: any) =>
+        current.principal > max.principal ? current : max
+      );
+
+      const schedule = await repaymentScheduleEndpoint({
+        loanId: largestLoan.loanId,
+        format: 'summary'
+      });
+
+      expect(schedule.loanDetails.principal).toBe(largestLoan.principal);
+      expect(schedule.summary.monthlyPayment).toBeGreaterThan(0);
+
+      // Step 4: Check credit history
+      const creditHistory = await creditHistoryEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(creditHistory.currentScore).toBeGreaterThan(0);
+      expect(creditHistory.history.length).toBeGreaterThan(0);
+
+      // Verify debt ratio is reasonable
+      expect(portfolio.portfolio.debtRatio).toBeLessThan(100);
+    });
+
+    it('[T-API-803] 부채 관리 및 신용도 개선 시나리오', async () => {
+      // Scenario 3: Debt management and credit improvement
+
+      // Step 1: Get current credit state
+      const initialCredit = await creditHistoryEndpoint({
+        userId: 'user-001',
+        format: 'detailed'
+      });
+
+      expect(initialCredit.history.length).toBeGreaterThan(0);
+      const initialScore = initialCredit.currentScore;
+      expect(initialScore).toBeGreaterThan(0);
+
+      // Step 2: Check portfolio for improvement opportunities
+      const portfolio = await portfolioEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(portfolio.portfolio.delinquencyCount).toBeLessThanOrEqual(portfolio.loans.length);
+      const delinquentLoans = portfolio.loans.filter((loan: any) => loan.delinquencyDays > 0);
+      expect(delinquentLoans.length).toBeLessThanOrEqual(portfolio.portfolio.delinquencyCount);
+
+      // Step 3: Verify recommendations
+      const creditHistory = await creditHistoryEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(creditHistory.recommendations).toBeDefined();
+      expect(creditHistory.recommendations.length).toBeGreaterThan(0);
+
+      // Step 4: Check trend
+      expect(creditHistory.trend).toMatch(/improving|declining|stable/);
+
+      // Step 5: Verify composition impacts
+      const composition = creditHistory.composition;
+      expect(Object.keys(composition).length).toBe(5);
+      const totalComposition = Object.values(composition).reduce((a: any, b: any) => a + b, 0);
+      expect(totalComposition).toBe(100);
+
+      // Step 6: Check if early repayment could help (for largest loan)
+      const largestLoan = portfolio.loans.reduce((max: any, current: any) =>
+        current.principal > max.principal ? current : max
+      );
+
+      const schedule = await repaymentScheduleEndpoint({
+        loanId: largestLoan.loanId,
+        format: 'summary'
+      });
+
+      expect(schedule.earlyRepaymentOptions.estimatedSavings).toBeGreaterThan(0);
+      expect(schedule.earlyRepaymentOptions.penaltyPercentage).toBe(0);
+    });
+  });
+});
