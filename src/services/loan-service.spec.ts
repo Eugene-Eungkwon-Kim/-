@@ -10,19 +10,19 @@ describe('LoanService.filterLoanProducts()', () => {
 
   describe('[T-L001~L004] 신용도별 필터링 (핵심 5개)', () => {
 
-    it('[T-L001] 신용등급 A(800+): 프리미엄 + 표준 모두 조회', async () => {
+    it('[T-L001] 신용등급 A(800+): 프리미엄 + 표준 + 조건부 조회', async () => {
       const result = await filterLoanProducts({ creditScore: 820 });
 
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(3);
       expect(result[0].name).toBe('프리미엄 전월세');
       expect(result[0].rate).toBe(2.5);
       expect(result[1].name).toBe('표준 전세');
     });
 
-    it('[T-L002] 신용등급 B(700-799): 표준만 조회', async () => {
+    it('[T-L002] 신용등급 B(700-799): 표준 + 조건부 조회', async () => {
       const result = await filterLoanProducts({ creditScore: 750 });
 
-      expect(result).toHaveLength(1);
+      expect(result).toHaveLength(2);
       expect(result[0].name).toBe('표준 전세');
       expect(result[0].rate).toBe(3.2);
     });
