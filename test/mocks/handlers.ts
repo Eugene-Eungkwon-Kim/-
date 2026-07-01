@@ -151,6 +151,82 @@ export const loanHandlers = [
     }
   }),
 
+  // 서류 검증
+  rest.post('/api/v1/documents/validate', async (req, res, ctx) => {
+    const body = await req.json() as {
+      files: Array<{
+        name: string;
+        type: string;
+        size: number;
+      }>;
+    };
+
+    const VALID_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const MAX_TOTAL_SIZE = 500 * 1024 * 1024;
+
+    const validations = [];
+    let totalSize = 0;
+    let allValid = true;
+
+    if (!body.files || body.files.length === 0) {
+      return res(ctx.json({
+        allValid: false,
+        documentCount: 0,
+        totalSize: 0,
+        validations: [{
+          filename: 'unknown',
+          valid: false,
+          errors: ['At least one file is required']
+        }],
+        message: 'No files provided'
+      }));
+    }
+
+    for (const file of body.files) {
+      const errors: string[] = [];
+      let fileValid = true;
+
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`File size exceeds 50MB limit`);
+        fileValid = false;
+        allValid = false;
+      }
+
+      if (!VALID_TYPES.includes(file.type)) {
+        errors.push(`File type ${file.type} not allowed. Must be PDF, JPEG, or PNG`);
+        fileValid = false;
+        allValid = false;
+      }
+
+      totalSize += file.size;
+
+      validations.push({
+        filename: file.name,
+        valid: fileValid,
+        size: file.size,
+        type: file.type,
+        errors
+      });
+    }
+
+    if (totalSize > MAX_TOTAL_SIZE) {
+      allValid = false;
+      for (const validation of validations) {
+        validation.errors = validation.errors || [];
+        validation.errors.push('Total file size exceeds 500MB limit');
+      }
+    }
+
+    return res(ctx.json({
+      allValid,
+      documentCount: body.files.length,
+      totalSize,
+      validations,
+      message: allValid ? 'All documents valid' : 'Some documents failed validation'
+    }));
+  }),
+
   // 이자율 계산 (고급 기능 포함)
   rest.post('/api/v1/loans/calculate', async (req, res, ctx) => {
     const body = await req.json() as {

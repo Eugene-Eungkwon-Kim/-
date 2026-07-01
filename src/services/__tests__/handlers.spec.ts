@@ -357,3 +357,185 @@ describe('MSW Handlers: Advanced Loan Calculation Endpoint (Task 2)', () => {
     });
   });
 });
+
+// Document validation endpoint logic (extracted from handlers for testing)
+async function validateDocumentsEndpoint(input: {
+  files: Array<{
+    name: string;
+    type: string;
+    size: number;
+  }>;
+}): Promise<any> {
+  const VALID_TYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+  const MAX_FILE_SIZE = 50 * 1024 * 1024;
+  const MAX_TOTAL_SIZE = 500 * 1024 * 1024;
+
+  const validations = [];
+  let totalSize = 0;
+  let allValid = true;
+
+  if (!input.files || input.files.length === 0) {
+    return {
+      allValid: false,
+      documentCount: 0,
+      totalSize: 0,
+      validations: [{
+        filename: 'unknown',
+        valid: false,
+        errors: ['At least one file is required']
+      }],
+      message: 'No files provided'
+    };
+  }
+
+  for (const file of input.files) {
+    const errors: string[] = [];
+    let fileValid = true;
+
+    if (file.size > MAX_FILE_SIZE) {
+      errors.push(`File size exceeds 50MB limit`);
+      fileValid = false;
+      allValid = false;
+    }
+
+    if (!VALID_TYPES.includes(file.type)) {
+      errors.push(`File type ${file.type} not allowed. Must be PDF, JPEG, or PNG`);
+      fileValid = false;
+      allValid = false;
+    }
+
+    totalSize += file.size;
+
+    validations.push({
+      filename: file.name,
+      valid: fileValid,
+      size: file.size,
+      type: file.type,
+      errors
+    });
+  }
+
+  if (totalSize > MAX_TOTAL_SIZE) {
+    allValid = false;
+    for (const validation of validations) {
+      validation.errors = validation.errors || [];
+      validation.errors.push('Total file size exceeds 500MB limit');
+    }
+  }
+
+  return {
+    allValid,
+    documentCount: input.files.length,
+    totalSize,
+    validations,
+    message: allValid ? 'All documents valid' : 'Some documents failed validation'
+  };
+}
+
+describe('MSW Handlers: Document Validation Endpoint (Task 3)', () => {
+
+  describe('[T-API-201~205] 서류 검증 기능', () => {
+
+    it('[T-API-201] 유효한 PDF 파일 검증', async () => {
+      const data = await validateDocumentsEndpoint({
+        files: [
+          {
+            name: 'contract.pdf',
+            type: 'application/pdf',
+            size: 2 * 1024 * 1024
+          }
+        ]
+      });
+
+      expect(data.allValid).toBe(true);
+      expect(data.documentCount).toBe(1);
+      expect(data.totalSize).toBe(2 * 1024 * 1024);
+      expect(data.validations[0].valid).toBe(true);
+      expect(data.validations[0].errors).toHaveLength(0);
+      expect(data.message).toContain('valid');
+    });
+
+    it('[T-API-202] 유효하지 않은 파일 형식 (image/gif)', async () => {
+      const data = await validateDocumentsEndpoint({
+        files: [
+          {
+            name: 'document.gif',
+            type: 'image/gif',
+            size: 1 * 1024 * 1024
+          }
+        ]
+      });
+
+      expect(data.allValid).toBe(false);
+      expect(data.validations[0].valid).toBe(false);
+      expect(data.validations[0].errors.length).toBeGreaterThan(0);
+      expect(data.validations[0].errors[0]).toContain('not allowed');
+    });
+
+    it('[T-API-203] 파일 크기 초과 (60MB > 50MB)', async () => {
+      const data = await validateDocumentsEndpoint({
+        files: [
+          {
+            name: 'large_file.pdf',
+            type: 'application/pdf',
+            size: 60 * 1024 * 1024
+          }
+        ]
+      });
+
+      expect(data.allValid).toBe(false);
+      expect(data.validations[0].valid).toBe(false);
+      expect(data.validations[0].errors.some((e: string) => e.includes('exceeds 50MB'))).toBe(true);
+    });
+
+    it('[T-API-204] 여러 파일 검증 (혼합 유효성)', async () => {
+      const data = await validateDocumentsEndpoint({
+        files: [
+          {
+            name: 'contract.pdf',
+            type: 'application/pdf',
+            size: 2 * 1024 * 1024
+          },
+          {
+            name: 'photo.png',
+            type: 'image/png',
+            size: 3 * 1024 * 1024
+          },
+          {
+            name: 'invalid.doc',
+            type: 'application/msword',
+            size: 1 * 1024 * 1024
+          }
+        ]
+      });
+
+      expect(data.allValid).toBe(false);
+      expect(data.documentCount).toBe(3);
+      expect(data.validations[0].valid).toBe(true);
+      expect(data.validations[1].valid).toBe(true);
+      expect(data.validations[2].valid).toBe(false);
+      expect(data.totalSize).toBe(6 * 1024 * 1024);
+    });
+
+    it('[T-API-205] 전체 용량 초과 (600MB > 500MB)', async () => {
+      const data = await validateDocumentsEndpoint({
+        files: [
+          {
+            name: 'file1.pdf',
+            type: 'application/pdf',
+            size: 300 * 1024 * 1024
+          },
+          {
+            name: 'file2.pdf',
+            type: 'application/pdf',
+            size: 300 * 1024 * 1024
+          }
+        ]
+      });
+
+      expect(data.allValid).toBe(false);
+      expect(data.totalSize).toBe(600 * 1024 * 1024);
+      expect(data.validations.every((v: any) => v.errors.some((e: string) => e.includes('500MB')))).toBe(true);
+    });
+  });
+});
