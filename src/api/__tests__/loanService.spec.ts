@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '@db/connection';
 import { registerUser } from '@api/userService';
-import { applyForLoan, getLoanPortfolio, getLoanPortfolioSummary, recordLoanPayment } from '@api/loanService';
+import { applyForLoan, detectDelinquentLoans, getLoanPortfolio, getLoanPortfolioSummary, recordLoanPayment } from '@api/loanService';
 
 describe('loanService (Day 6 - Task 2: 대출 서비스 계층, δ=1600)', () => {
   let db: Database.Database;
@@ -95,6 +95,34 @@ describe('loanService (Day 6 - Task 2: 대출 서비스 계층, δ=1600)', () =>
         expect(result.data.loanCount).toBe(2);
         expect(result.data.totalOriginalAmount).toBe(150000000);
       }
+    });
+  });
+
+  describe('[T-SVC-811~813] 연체 감지 서비스 진입점 (Day 7 - Task 2, δ=1010)', () => {
+    it('[T-SVC-811] 연체 대출을 감지해 delinquent로 전환한다', async () => {
+      const loan = await applyForLoan(db, { userId, productId: 'p1', originalAmount: 50000000, interestRate: 3.2, termMonths: 60, startDate: '2020-01-01' });
+      const loanId = loan.success ? loan.data.id : '';
+
+      const result = detectDelinquentLoans(db, '2026-07-01');
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.some((l) => l.id === loanId)).toBe(true);
+        expect(result.data.find((l) => l.id === loanId)?.status).toBe('delinquent');
+      }
+    });
+
+    it('[T-SVC-812] 연체가 없으면 빈 배열을 반환한다', async () => {
+      await applyForLoan(db, { userId, productId: 'p1', originalAmount: 50000000, interestRate: 3.2, termMonths: 60, startDate: '2026-01-01' });
+
+      const result = detectDelinquentLoans(db, '2026-01-15'); // 아직 다음 상환일(2026-02-01) 이전
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.length).toBe(0);
+    });
+
+    it('[T-SVC-813] 존재하지 않는 대출은 영향을 주지 않는다 (빈 포트폴리오)', () => {
+      const result = detectDelinquentLoans(db, '2026-07-01');
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data).toEqual([]);
     });
   });
 });

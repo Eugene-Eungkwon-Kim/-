@@ -5,7 +5,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { createDatabase } from '@db/connection';
 import { getUserProfile, registerUser, updateUserProfile } from '@api/userService';
-import { applyForLoan, getLoanPortfolio, recordLoanPayment } from '@api/loanService';
+import { applyForLoan, detectDelinquentLoans, getLoanPortfolio, recordLoanPayment } from '@api/loanService';
 import { recordTransaction, getTransactionSummary } from '@api/transactionService';
 import { getSnapshotTrend, runRiskAssessment } from '@api/financialAnalyticsService';
 import { createBackup, runIntegrityCheck } from '@api/adminService';
@@ -89,13 +89,14 @@ describe('End-to-End Service Integration (Day 6 - Task 7: 종단 통합 테스�
       expect(loan.success).toBe(true);
       const loanId = loan.success ? loan.data.id : '';
 
-      // 서비스 계층에는 별도 delinquency 엔드포인트가 없으므로 리포지토리를 직접 사용해
-      // 연체 배치를 실행한다 (실제 운영에서는 스케줄러가 호출)
-      const loanRepo = new LoanRepository(db);
-      const delinquent = loanRepo.detectDelinquentLoans('2026-07-01');
-      expect(delinquent.some((l) => l.id === loanId)).toBe(true);
+      // Day7 Task2에서 서비스 계층에 노출된 연체 감지 배치 진입점을 사용한다
+      const delinquent = detectDelinquentLoans(db, '2026-07-01');
+      expect(delinquent.success).toBe(true);
+      if (delinquent.success) {
+        expect(delinquent.data.some((l) => l.id === loanId)).toBe(true);
+      }
 
-      const history = loanRepo.getLoanHistory(loanId);
+      const history = new LoanRepository(db).getLoanHistory(loanId);
       expect(history.some((h) => h.action === 'STATUS_CHANGE')).toBe(true);
 
       const integrity = await runIntegrityCheck(db, '2026-07-01');

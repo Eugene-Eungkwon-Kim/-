@@ -23,3 +23,8 @@ export function recordLoanPayment(
 export function getLoanPortfolioSummary(db: Database.Database, userId: string): ServiceResult<PortfolioSummary> {
   return toServiceResult(() => new LoanRepository(db).getPortfolioSummary(userId));
 }
+
+/** 연체 감지 배치 진입점 (Day 7 - Task 2, δ=1010). 운영에서는 스케줄러가 이 함수를 주기 호출한다 */
+export function detectDelinquentLoans(db: Database.Database, asOfDate: string): ServiceResult<LoanRecord[]> {
+  return toServiceResult(() => new LoanRepository(db).detectDelinquentLoans(asOfDate));
+}
