@@ -159,6 +159,118 @@ async function repaymentScheduleEndpoint(input: {
   };
 }
 
+// Portfolio inquiry endpoint logic (extracted from handlers for testing)
+async function portfolioEndpoint(input: {
+  userId: string;
+  status?: string;
+  sortBy?: 'date' | 'amount' | 'rate';
+  limit?: number;
+  offset?: number;
+}): Promise<any> {
+  const sortBy = input.sortBy || 'date';
+  const limit = input.limit || 10;
+  const offset = input.offset || 0;
+
+  let userLoans: any[] = [];
+  if (input.userId === 'user-001') {
+    userLoans = [
+      {
+        loanId: 'loan-001',
+        productName: '표준 전세',
+        principal: 300000000,
+        rate: 3.2,
+        term: 240,
+        remainingTerm: 220,
+        status: 'active',
+        monthlyPayment: 1693988,
+        startDate: '2026-01-01',
+        delinquencyDays: 0
+      },
+      {
+        loanId: 'loan-002',
+        productName: '조건부 대출',
+        principal: 150000000,
+        rate: 4.5,
+        term: 180,
+        remainingTerm: 170,
+        status: 'active',
+        monthlyPayment: 930000,
+        startDate: '2026-02-01',
+        delinquencyDays: 0
+      },
+      {
+        loanId: 'loan-003',
+        productName: '프리미엄 전월세',
+        principal: 200000000,
+        rate: 2.8,
+        term: 300,
+        remainingTerm: 280,
+        status: 'active',
+        monthlyPayment: 885000,
+        startDate: '2025-06-01',
+        delinquencyDays: 15
+      }
+    ];
+  } else if (input.userId === 'user-002') {
+    userLoans = [
+      {
+        loanId: 'loan-004',
+        productName: '표준 전세',
+        principal: 100000000,
+        rate: 3.5,
+        term: 120,
+        remainingTerm: 60,
+        status: 'active',
+        monthlyPayment: 877000,
+        startDate: '2024-06-01',
+        delinquencyDays: 0
+      }
+    ];
+  }
+
+  let filtered = userLoans;
+  if (input.status) {
+    filtered = userLoans.filter(loan => loan.status === input.status);
+  }
+
+  if (sortBy === 'amount') {
+    filtered.sort((a, b) => b.principal - a.principal);
+  } else if (sortBy === 'rate') {
+    filtered.sort((a, b) => a.rate - b.rate);
+  } else {
+    filtered.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+  }
+
+  const total = filtered.length;
+  const paginated = filtered.slice(offset, offset + limit);
+  const hasMore = offset + limit < total;
+
+  const totalPrincipal = userLoans.reduce((sum, loan) => sum + loan.principal, 0);
+  const totalMonthlyPayment = userLoans.reduce((sum, loan) => sum + loan.monthlyPayment, 0);
+  const estimatedMonthlyIncome = 4000000;
+  const debtRatio = (totalMonthlyPayment / estimatedMonthlyIncome) * 100;
+  const delinquencyCount = userLoans.filter(loan => loan.delinquencyDays > 0).length;
+
+  return {
+    userId: input.userId,
+    portfolio: {
+      totalLoans: total,
+      totalPrincipal,
+      totalMonthlyPayment,
+      debtRatio: Math.round(debtRatio * 100) / 100,
+      delinquencyCount,
+      averageRate: Math.round(userLoans.reduce((sum, loan) => sum + loan.rate, 0) / userLoans.length * 100) / 100
+    },
+    loans: paginated,
+    pagination: {
+      total,
+      limit,
+      offset,
+      hasMore
+    }
+  };
+}
+
 // Credit assessment endpoint logic (extracted from handlers for testing)
 async function assessCreditEndpoint(input: {
   income: number;
@@ -1066,6 +1178,113 @@ describe('MSW Handlers: Repayment Schedule Endpoint (Task 2 - Day 3)', () => {
       const exchangeRate = 0.00075;
       expect(dataUSD.summary.monthlyPayment).toBe(Math.round(dataKRW.summary.monthlyPayment * exchangeRate));
       expect(dataUSD.loanDetails.principal).toBe(Math.round(dataKRW.loanDetails.principal * exchangeRate));
+    });
+  });
+});
+
+describe('MSW Handlers: Portfolio Inquiry Endpoint (Task 3 - Day 3)', () => {
+
+  describe('[T-API-601~605] 포트폴리오 조회 기능', () => {
+
+    it('[T-API-601] 포트폴리오 필터링 (status 필터)', async () => {
+      const data = await portfolioEndpoint({
+        userId: 'user-001',
+        status: 'active'
+      });
+
+      expect(data.userId).toBe('user-001');
+      expect(data.loans).toBeDefined();
+      expect(Array.isArray(data.loans)).toBe(true);
+      expect(data.loans.length).toBeGreaterThan(0);
+
+      // 모든 대출이 'active' 상태여야 함
+      for (const loan of data.loans) {
+        expect(loan.status).toBe('active');
+      }
+
+      expect(data.pagination.total).toBeGreaterThan(0);
+    });
+
+    it('[T-API-602] 포트폴리오 정렬 (sortBy: amount)', async () => {
+      const data = await portfolioEndpoint({
+        userId: 'user-001',
+        sortBy: 'amount'
+      });
+
+      expect(data.loans).toBeDefined();
+      expect(data.loans.length).toBeGreaterThan(0);
+
+      // 대출액 내림차순 정렬 확인
+      for (let i = 0; i < data.loans.length - 1; i++) {
+        expect(data.loans[i].principal).toBeGreaterThanOrEqual(data.loans[i + 1].principal);
+      }
+    });
+
+    it('[T-API-603] 포트폴리오 페이징 (limit, offset)', async () => {
+      const data1 = await portfolioEndpoint({
+        userId: 'user-001',
+        limit: 2,
+        offset: 0
+      });
+
+      expect(data1.pagination.total).toBeGreaterThan(0);
+      expect(data1.pagination.limit).toBe(2);
+      expect(data1.pagination.offset).toBe(0);
+      expect(data1.loans.length).toBeLessThanOrEqual(2);
+
+      if (data1.pagination.total > 2) {
+        expect(data1.pagination.hasMore).toBe(true);
+
+        const data2 = await portfolioEndpoint({
+          userId: 'user-001',
+          limit: 2,
+          offset: 2
+        });
+
+        expect(data2.pagination.offset).toBe(2);
+        expect(data2.loans.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('[T-API-604] 포트폴리오 분석 정보 (portfolio 객체)', async () => {
+      const data = await portfolioEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(data.portfolio).toBeDefined();
+      expect(data.portfolio.totalLoans).toBeGreaterThan(0);
+      expect(data.portfolio.totalPrincipal).toBeGreaterThan(0);
+      expect(data.portfolio.totalMonthlyPayment).toBeGreaterThan(0);
+      expect(data.portfolio.debtRatio).toBeGreaterThan(0);
+      expect(data.portfolio.delinquencyCount).toBeGreaterThanOrEqual(0);
+      expect(data.portfolio.averageRate).toBeGreaterThan(0);
+
+      // 부채비율이 합리적인 범위인지 확인
+      expect(data.portfolio.debtRatio).toBeLessThan(100);
+    });
+
+    it('[T-API-605] 포트폴리오 연체 추적 (delinquencyDays)', async () => {
+      const data = await portfolioEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(data.loans).toBeDefined();
+      expect(Array.isArray(data.loans)).toBe(true);
+
+      // 각 대출에 delinquencyDays 정보가 있는지 확인
+      for (const loan of data.loans) {
+        expect(loan.delinquencyDays).toBeDefined();
+        expect(loan.delinquencyDays).toBeGreaterThanOrEqual(0);
+      }
+
+      // portfolio 요약에 연체 건수가 포함되어 있는지 확인
+      expect(data.portfolio.delinquencyCount).toBeGreaterThanOrEqual(0);
+
+      // user-001은 loan-003에서 15일 연체 중
+      const delinquentLoans = data.loans.filter(loan => loan.delinquencyDays > 0);
+      if (delinquentLoans.length > 0) {
+        expect(data.portfolio.delinquencyCount).toBe(delinquentLoans.length);
+      }
     });
   });
 });

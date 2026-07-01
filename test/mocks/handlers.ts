@@ -574,4 +574,117 @@ export const loanHandlers = [
       term: body.term
     }));
   }),
+
+  // 포트폴리오 조회
+  rest.get('/api/v1/users/:userId/loans', (req, res, ctx) => {
+    const { userId } = req.params;
+    const status = req.url.searchParams.get('status');
+    const sortBy = req.url.searchParams.get('sortBy') || 'date';
+    const limit = parseInt(req.url.searchParams.get('limit') || '10');
+    const offset = parseInt(req.url.searchParams.get('offset') || '0');
+
+    // 모의 사용자 대출 포트폴리오
+    let userLoans: any[] = [];
+    if (userId === 'user-001') {
+      userLoans = [
+        {
+          loanId: 'loan-001',
+          productName: '표준 전세',
+          principal: 300000000,
+          rate: 3.2,
+          term: 240,
+          remainingTerm: 220,
+          status: 'active',
+          monthlyPayment: 1693988,
+          startDate: '2026-01-01',
+          delinquencyDays: 0
+        },
+        {
+          loanId: 'loan-002',
+          productName: '조건부 대출',
+          principal: 150000000,
+          rate: 4.5,
+          term: 180,
+          remainingTerm: 170,
+          status: 'active',
+          monthlyPayment: 930000,
+          startDate: '2026-02-01',
+          delinquencyDays: 0
+        },
+        {
+          loanId: 'loan-003',
+          productName: '프리미엄 전월세',
+          principal: 200000000,
+          rate: 2.8,
+          term: 300,
+          remainingTerm: 280,
+          status: 'active',
+          monthlyPayment: 885000,
+          startDate: '2025-06-01',
+          delinquencyDays: 15
+        }
+      ];
+    } else if (userId === 'user-002') {
+      userLoans = [
+        {
+          loanId: 'loan-004',
+          productName: '표준 전세',
+          principal: 100000000,
+          rate: 3.5,
+          term: 120,
+          remainingTerm: 60,
+          status: 'active',
+          monthlyPayment: 877000,
+          startDate: '2024-06-01',
+          delinquencyDays: 0
+        }
+      ];
+    }
+
+    // 필터링
+    let filtered = userLoans;
+    if (status) {
+      filtered = userLoans.filter(loan => loan.status === status);
+    }
+
+    // 정렬
+    if (sortBy === 'amount') {
+      filtered.sort((a, b) => b.principal - a.principal);
+    } else if (sortBy === 'rate') {
+      filtered.sort((a, b) => a.rate - b.rate);
+    } else {
+      filtered.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    }
+
+    // 페이징
+    const total = filtered.length;
+    const paginated = filtered.slice(offset, offset + limit);
+    const hasMore = offset + limit < total;
+
+    // 포트폴리오 분석
+    const totalPrincipal = userLoans.reduce((sum, loan) => sum + loan.principal, 0);
+    const totalMonthlyPayment = userLoans.reduce((sum, loan) => sum + loan.monthlyPayment, 0);
+    const estimatedMonthlyIncome = 4000000;
+    const debtRatio = (totalMonthlyPayment / estimatedMonthlyIncome) * 100;
+    const delinquencyCount = userLoans.filter(loan => loan.delinquencyDays > 0).length;
+
+    return res(ctx.json({
+      userId,
+      portfolio: {
+        totalLoans: total,
+        totalPrincipal,
+        totalMonthlyPayment,
+        debtRatio: Math.round(debtRatio * 100) / 100,
+        delinquencyCount,
+        averageRate: Math.round(userLoans.reduce((sum, loan) => sum + loan.rate, 0) / userLoans.length * 100) / 100
+      },
+      loans: paginated,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore
+      }
+    }));
+  }),
 ];
