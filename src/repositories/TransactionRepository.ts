@@ -132,16 +132,22 @@ export class TransactionRepository {
       .prepare("SELECT * FROM transactions WHERE user_id = ? AND status = 'completed' AND amount > ?")
       .all(userId, threshold) as TransactionRow[];
 
-    for (const row of candidates) {
-      this.db.prepare("UPDATE transactions SET status = 'flagged' WHERE id = ?").run(row.id);
-      this.auditLogger.record(
-        'transaction',
-        row.id,
-        'FLAGGED',
-        { reason: 'income_threshold_rescan', threshold },
-        userId
-      );
-    }
+    // 여러 건을 개별 statement로 갱신하면 건당 암묵적 트랜잭션이 생겨 느리고,
+    // 중간에 실패하면 일부만 flagged된 채로 남는다. 하나의 트랜잭션으로 묶어
+    // 전부 성공하거나 전부 롤백되도록 한다.
+    const flagBatch = this.db.transaction(() => {
+      for (const row of candidates) {
+        this.db.prepare("UPDATE transactions SET status = 'flagged' WHERE id = ?").run(row.id);
+        this.auditLogger.record(
+          'transaction',
+          row.id,
+          'FLAGGED',
+          { reason: 'income_threshold_rescan', threshold },
+          userId
+        );
+      }
+    });
+    flagBatch();
 
     return candidates.map((row) => this.getTransactionOrThrow(row.id));
   }

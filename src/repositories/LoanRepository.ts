@@ -216,12 +216,17 @@ export class LoanRepository {
   /** next_payment_date가 오늘보다 과거인 active 대출을 delinquent로 전환한다 */
   detectDelinquentLoans(asOfDate: string): LoanRecord[] {
     const overdue = this.db
-      .prepare("SELECT * FROM loans WHERE status = 'active' AND next_payment_date < ?")
+      .prepare("SELECT * FROM loans WHERE status = 'active' AND next_payment_date < ? ORDER BY next_payment_date ASC")
       .all(asOfDate) as LoanRow[];
 
-    for (const row of overdue) {
-      this.updateLoanStatus(row.id, 'delinquent');
-    }
+    // updateLoanStatus를 건별로 호출하면 N개의 개별 트랜잭션이 생긴다. 배치 전체를
+    // 하나의 트랜잭션으로 묶어 원자성을 보장하고(중간 실패 시 부분 반영 방지) 커밋 횟수를 줄인다.
+    const flagBatch = this.db.transaction(() => {
+      for (const row of overdue) {
+        this.updateLoanStatus(row.id, 'delinquent');
+      }
+    });
+    flagBatch();
 
     return overdue.map((row) => this.getLoanOrThrow(row.id));
   }
