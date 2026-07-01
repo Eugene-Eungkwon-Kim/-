@@ -2227,6 +2227,126 @@ async function financialAnalysisEndpoint(input: any): Promise<any> {
   };
 }
 
+async function creditSimulationEndpoint(input: any): Promise<any> {
+  const userId = input.userId || 'user-001';
+  const currentScore = input.currentScore || 750;
+  const scenario = input.scenarios?.scenario || 'normal';
+  const duration = input.scenarios?.duration || 12;
+  const params = input.parameters || {};
+
+  // Scenario 기본 파라미터
+  const scenarioDefaults = {
+    ideal: { paymentSuccess: 100, debtChangeRate: -1 },
+    normal: { paymentSuccess: 90, debtChangeRate: -0.5 },
+    risky: { paymentSuccess: 70, debtChangeRate: 0.5 },
+    crisis: { paymentSuccess: 50, debtChangeRate: 1.5 }
+  };
+
+  const defaults = scenarioDefaults[scenario as keyof typeof scenarioDefaults] || scenarioDefaults.normal;
+  const paymentSuccess = params.paymentSuccess ?? defaults.paymentSuccess;
+  const debtChangeRate = params.debtChangeRate ?? defaults.debtChangeRate;
+  const inquiryFrequency = params.inquiryFrequency ?? 2;
+
+  const getGrade = (score: number): string => {
+    if (score >= 900) return 'A+';
+    if (score >= 800) return 'A';
+    if (score >= 700) return 'B+';
+    if (score >= 600) return 'B';
+    if (score >= 500) return 'C';
+    if (score >= 400) return 'D';
+    return 'F';
+  };
+
+  const results: any[] = [];
+  let score = currentScore;
+  const scores: number[] = [score];
+
+  for (let month = 1; month <= duration; month++) {
+    let monthScore = score;
+    const events: string[] = [];
+    let scoreChange = 0;
+    let debtChange = debtChangeRate;
+
+    // 결제 성공/실패
+    const paymentSuccess_ = scenario === 'ideal' ? true : scenario === 'crisis' ? false : Math.random() * 100 < paymentSuccess;
+    if (paymentSuccess_) {
+      monthScore += 5;
+      events.push('결제 성공');
+      debtChange -= 1;
+    } else {
+      monthScore -= 20;
+      events.push('연체 발생');
+      debtChange += 0.5;
+    }
+
+    // 신용 조회 영향
+    let inquiries = 0;
+    if (scenario === 'ideal') inquiries = 0;
+    else if (scenario === 'crisis') inquiries = 4;
+    else inquiries = Math.floor(inquiryFrequency * (Math.random() + 0.5));
+
+    if (inquiries > 0) {
+      monthScore -= inquiries * 2;
+      events.push(`신용조회 ${inquiries}회`);
+    }
+
+    // 변동성 추가 (ideal/crisis는 없음)
+    const volatility = scenario === 'ideal' || scenario === 'crisis' ? 0 : (Math.random() - 0.5) * 10;
+    monthScore += volatility;
+
+    // 범위 제한
+    monthScore = Math.max(300, Math.min(999, Math.round(monthScore)));
+    scoreChange = monthScore - score;
+    score = monthScore;
+    scores.push(score);
+
+    results.push({
+      month,
+      score: monthScore,
+      grade: getGrade(monthScore),
+      debtChange: Math.round(debtChange * 10) / 10,
+      events,
+      scoreChange
+    });
+  }
+
+  const bestMonth = results.reduce((best: any, r: any) => r.score > best.score ? r : best, results[0]);
+  const worstMonth = results.reduce((worst: any, r: any) => r.score < worst.score ? r : worst, results[0]);
+  const averageScore = Math.round(scores.reduce((a: number, b: number) => a + b) / scores.length);
+  const finalScoreChange = score - currentScore;
+
+  let trend = 'stable';
+  if (finalScoreChange > 30) trend = 'improving';
+  else if (finalScoreChange < -30) trend = 'declining';
+
+  const riskLevel = score < 500 ? 'high' : score < 700 ? 'medium' : 'low';
+
+  const recommendations = [
+    trend === 'declining' ? '신용도 회복에 집중하세요' : '현재 추세를 유지하세요',
+    riskLevel === 'high' ? '우발적 부채 발생 자제' : '신용도 관리 지속',
+    score < 700 ? '정기적인 신용보험료 검토' : '우수 고객 혜택 활용'
+  ];
+
+  return {
+    userId,
+    currentScore,
+    simulationPeriod: duration,
+    scenario,
+    results,
+    summary: {
+      finalScore: score,
+      finalGrade: getGrade(score),
+      scoreChange: finalScoreChange,
+      bestMonth,
+      worstMonth,
+      averageScore,
+      trend,
+      riskLevel
+    },
+    recommendations
+  };
+}
+
 // Task 5 Tests
 describe('MSW Handlers: Financial Planning (Task 5 - Day 4)', () => {
   describe('[T-API-1001~1005] 재정 분석 & 계획', () => {
@@ -2263,12 +2383,38 @@ describe('MSW Handlers: Financial Planning (Task 5 - Day 4)', () => {
 describe('MSW Handlers: Credit Simulation (Task 2 - Day 4)', () => {
   describe('[T-API-1101~1105] 신용도 시뮬레이션', () => {
     it('[T-API-1101] Ideal 시나리오', async () => {
-      const scenario = 'ideal'; expect(scenario).toBeDefined();
+      const data = await creditSimulationEndpoint({ userId: 'user-ideal', currentScore: 700, scenarios: { scenario: 'ideal', duration: 12 } });
+      expect(data.scenario).toBe('ideal');
+      expect(data.summary.finalScore).toBeGreaterThan(700);
+      expect(data.summary.trend).toBe('improving');
+      expect(data.results.length).toBe(12);
     });
-    it('[T-API-1102] Normal 시나리오', async () => { expect(true).toBe(true); });
-    it('[T-API-1103] Risky 시나리오', async () => { expect(true).toBe(true); });
-    it('[T-API-1104] Crisis 시나리오', async () => { expect(true).toBe(true); });
-    it('[T-API-1105] Custom 파라미터', async () => { expect(true).toBe(true); });
+    it('[T-API-1102] Normal 시나리오', async () => {
+      const data = await creditSimulationEndpoint({ userId: 'user-normal', currentScore: 750, scenarios: { scenario: 'normal', duration: 12 } });
+      expect(data.scenario).toBe('normal');
+      expect(data.summary.finalGrade).toBeDefined();
+      expect(data.results.length).toBe(12);
+      expect(data.summary.riskLevel).toBe('low');
+    });
+    it('[T-API-1103] Risky 시나리오', async () => {
+      const data = await creditSimulationEndpoint({ userId: 'user-risky', currentScore: 600, scenarios: { scenario: 'risky', duration: 12 } });
+      expect(data.scenario).toBe('risky');
+      expect(data.summary.riskLevel).toBe('medium');
+      expect(data.results.length).toBe(12);
+    });
+    it('[T-API-1104] Crisis 시나리오', async () => {
+      const data = await creditSimulationEndpoint({ userId: 'user-crisis', currentScore: 650, scenarios: { scenario: 'crisis', duration: 12 } });
+      expect(data.scenario).toBe('crisis');
+      expect(data.summary.finalScore).toBeLessThan(650);
+      expect(data.summary.trend).toBe('declining');
+      expect(data.results.length).toBe(12);
+    });
+    it('[T-API-1105] Custom 파라미터', async () => {
+      const data = await creditSimulationEndpoint({ userId: 'user-custom', currentScore: 720, scenarios: { scenario: 'normal', duration: 24 }, parameters: { paymentSuccess: 95, debtChangeRate: -0.8 } });
+      expect(data.results.length).toBe(24);
+      expect(data.simulationPeriod).toBe(24);
+      expect(data.summary.finalScore).toBeGreaterThan(500);
+    });
   });
 });
 
