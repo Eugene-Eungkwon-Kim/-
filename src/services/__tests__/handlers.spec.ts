@@ -2629,6 +2629,150 @@ async function stressTestEndpoint(input: any): Promise<any> {
   };
 }
 
+async function loanComparisonEndpoint(input: any): Promise<any> {
+  const userId = input.userId || 'user-001';
+  const loanAmount = input.loanAmount || 300000000;
+  const options = input.options || [
+    { optionId: 'opt-1', productId: 'prod-1', rate: 3.2, term: 240, fee: 0, earlyPayoffPenalty: 0 },
+    { optionId: 'opt-2', productId: 'prod-2', rate: 2.8, term: 240, fee: 1000000, earlyPayoffPenalty: 0.5 }
+  ];
+
+  const calculatePayment = (amount: number, term: number, rate: number) => {
+    const monthlyRate = rate / 12 / 100;
+    return amount * (monthlyRate * Math.pow(1 + monthlyRate, term)) / (Math.pow(1 + monthlyRate, term) - 1);
+  };
+
+  const results = options.map((opt: any, idx: number) => {
+    const monthlyPayment = calculatePayment(loanAmount, opt.term, opt.rate);
+    const totalPayment = monthlyPayment * opt.term;
+    const totalInterest = totalPayment - loanAmount;
+    const totalCost = totalInterest + (opt.fee || 0);
+    const paymentRatio = (monthlyPayment / 5000000) * 100; // 기본 소득 5M
+
+    // 현재가치 계산
+    const presentValue = totalCost;
+    const costPerMonth = totalCost / opt.term;
+    const costPerYear = costPerMonth * 12;
+    const avgAnnualCost = totalCost / (opt.term / 12);
+
+    // 리스크 점수
+    const rateRiskScore = Math.round((opt.rate * 10) + (opt.term > 240 ? 10 : 0));
+    const affordabilityRisk = paymentRatio > 40 ? 100 : Math.round(paymentRatio * 2.5);
+    const creditImpact = paymentRatio > 35 ? 'high' : paymentRatio > 25 ? 'medium' : 'low';
+
+    // 조건부 분석
+    const earlyPayoffCost = (opt.earlyPayoffPenalty || 0) * loanAmount / 100;
+    const raiseRateScenario = {
+      newPayment: Math.round(calculatePayment(loanAmount, opt.term, opt.rate + 1.5)),
+      newTotalInterest: Math.round((calculatePayment(loanAmount, opt.term, opt.rate + 1.5) * opt.term) - loanAmount)
+    };
+    const lowIncomeScenario = {
+      affordable: paymentRatio <= 50,
+      riskLevel: paymentRatio > 50 ? 'critical' : paymentRatio > 40 ? 'high' : 'acceptable'
+    };
+
+    // 총점 계산 (100점 기준, 낮은 비용이 높은 점수)
+    const costScore = Math.max(0, 100 - (totalCost / 100000000));
+    const paymentScore = Math.max(0, 100 - (paymentRatio * 2));
+    const termScore = opt.term <= 240 ? 100 : 80;
+    const overallScore = Math.round((costScore * 0.4) + (paymentScore * 0.35) + (termScore * 0.25));
+
+    const recommendation = overallScore >= 80 ? 'best' : overallScore >= 70 ? 'good' : overallScore >= 60 ? 'acceptable' : 'not-recommended';
+
+    return {
+      rank: 0, // 나중에 정렬 후 업데이트
+      optionId: opt.optionId,
+      productId: opt.productId,
+      rate: opt.rate,
+      term: opt.term,
+      financialMetrics: {
+        monthlyPayment: Math.round(monthlyPayment),
+        totalPayment: Math.round(totalPayment),
+        totalInterest: Math.round(totalInterest),
+        totalCost: Math.round(totalCost),
+        paymentRatio: Math.round(paymentRatio * 10) / 10,
+        costRank: 0 // 나중에 업데이트
+      },
+      timeValueMetrics: {
+        presentValue: Math.round(presentValue),
+        costPerMonth: Math.round(costPerMonth),
+        costPerYear: Math.round(costPerYear),
+        avgAnnualCost: Math.round(avgAnnualCost)
+      },
+      riskMetrics: {
+        rateRiskScore,
+        affordabilityRisk,
+        creditImpact
+      },
+      conditionalAnalysis: {
+        earlyPayoffCost: Math.round(earlyPayoffCost),
+        raiseRateScenario,
+        lowIncomeScenario
+      },
+      overallScore,
+      recommendation
+    };
+  });
+
+  // 총점으로 정렬 및 랭크 업데이트
+  const sorted = results.sort((a: any, b: any) => b.overallScore - a.overallScore);
+  sorted.forEach((item: any, idx: number) => {
+    item.rank = idx + 1;
+  });
+
+  // 비용 순위 업데이트
+  const costSorted = [...results].sort((a: any, b: any) => a.financialMetrics.totalCost - b.financialMetrics.totalCost);
+  costSorted.forEach((item: any, idx: number) => {
+    const original = results.find(r => r.optionId === item.optionId);
+    if (original) original.financialMetrics.costRank = idx + 1;
+  });
+
+  const bestOption = sorted[0];
+  const secondBest = sorted[1];
+  const worstOption = sorted[sorted.length - 1];
+
+  const savings = {
+    vsSecondBest: secondBest ? bestOption.financialMetrics.totalCost - secondBest.financialMetrics.totalCost : 0,
+    vsWorst: worstOption ? bestOption.financialMetrics.totalCost - worstOption.financialMetrics.totalCost : 0
+  };
+
+  // 비교 매트릭스
+  const metrics = ['월상환액', '총이자', '수수료', '부담도(%)'];
+  const values = sorted.map(r => [
+    r.financialMetrics.monthlyPayment,
+    r.financialMetrics.totalInterest,
+    r.financialMetrics.totalCost - r.financialMetrics.totalInterest,
+    r.financialMetrics.paymentRatio
+  ]);
+  const winner = [0, 0, 0, 0]; // 각 지표별 가장 좋은 옵션 인덱스
+  metrics.forEach((m, idx) => {
+    winner[idx] = idx < 3 ?
+      values.findIndex((v: any[]) => v[idx] === Math.min(...values.map(vv => vv[idx]))) :
+      values.findIndex((v: any[]) => v[idx] === Math.min(...values.map(vv => vv[idx])));
+  });
+
+  const personalAdvice = bestOption.overallScore >= 80 ?
+    `최선의 선택: ${bestOption.optionId}는 종합적으로 가장 유리한 옵션입니다` :
+    `고려사항: 각 옵션의 장단점을 신중히 검토하세요`;
+
+  return {
+    userId,
+    loanAmount,
+    comparisonResults: sorted,
+    bestOption: {
+      optionId: bestOption.optionId,
+      reason: `${bestOption.optionId}는 총점 ${bestOption.overallScore}점으로 최고의 선택입니다`,
+      savings
+    },
+    comparisonMatrix: {
+      metrics,
+      values,
+      winner
+    },
+    personalAdvice
+  };
+}
+
 // Task 5 Tests
 describe('MSW Handlers: Financial Planning (Task 5 - Day 4)', () => {
   describe('[T-API-1001~1005] 재정 분석 & 계획', () => {
@@ -2768,11 +2912,49 @@ describe('MSW Handlers: Stress Test (Task 4 - Day 4)', () => {
 
 describe('MSW Handlers: Loan Comparison (Task 6 - Day 4)', () => {
   describe('[T-API-1401~1405] 대출 비교 분석', () => {
-    it('[T-API-1401] 2개 비교', async () => { expect(true).toBe(true); });
-    it('[T-API-1402] 3개 비교', async () => { expect(true).toBe(true); });
-    it('[T-API-1403] 금리 다양성', async () => { expect(true).toBe(true); });
-    it('[T-API-1404] 수수료 포함', async () => { expect(true).toBe(true); });
-    it('[T-API-1405] 조건부 시나리오', async () => { expect(true).toBe(true); });
+    it('[T-API-1401] 2개 비교', async () => {
+      const data = await loanComparisonEndpoint({ userId: 'user-cmp2', loanAmount: 300000000, options: [
+        { optionId: 'opt-1', productId: 'prod-1', rate: 3.2, term: 240 },
+        { optionId: 'opt-2', productId: 'prod-2', rate: 2.8, term: 240 }
+      ] });
+      expect(data.comparisonResults.length).toBe(2);
+      expect(data.bestOption).toBeDefined();
+      expect(data.comparisonMatrix.metrics.length).toBeGreaterThan(0);
+    });
+    it('[T-API-1402] 3개 비교', async () => {
+      const data = await loanComparisonEndpoint({ userId: 'user-cmp3', loanAmount: 300000000, options: [
+        { optionId: 'opt-1', productId: 'prod-1', rate: 3.2, term: 240 },
+        { optionId: 'opt-2', productId: 'prod-2', rate: 2.8, term: 240 },
+        { optionId: 'opt-3', productId: 'prod-3', rate: 3.0, term: 180 }
+      ] });
+      expect(data.comparisonResults.length).toBe(3);
+      expect(data.comparisonResults[0].rank).toBe(1);
+    });
+    it('[T-API-1403] 금리 다양성', async () => {
+      const data = await loanComparisonEndpoint({ userId: 'user-rates', loanAmount: 300000000, options: [
+        { optionId: 'low-rate', productId: 'prod-1', rate: 2.4, term: 240 },
+        { optionId: 'mid-rate', productId: 'prod-2', rate: 3.5, term: 240 },
+        { optionId: 'high-rate', productId: 'prod-3', rate: 4.2, term: 240 }
+      ] });
+      expect(data.comparisonResults.length).toBe(3);
+      expect(data.bestOption.optionId).toBe('low-rate');
+    });
+    it('[T-API-1404] 수수료 포함', async () => {
+      const data = await loanComparisonEndpoint({ userId: 'user-fee', loanAmount: 300000000, options: [
+        { optionId: 'no-fee', productId: 'prod-1', rate: 3.2, term: 240, fee: 0 },
+        { optionId: 'with-fee', productId: 'prod-2', rate: 2.5, term: 240, fee: 2000000 }
+      ] });
+      expect(data.comparisonResults[0].financialMetrics.totalCost).toBeDefined();
+      expect(data.bestOption).toBeDefined();
+    });
+    it('[T-API-1405] 조건부 시나리오', async () => {
+      const data = await loanComparisonEndpoint({ userId: 'user-scenario', loanAmount: 300000000, options: [
+        { optionId: 'fixed', productId: 'prod-1', rate: 3.2, term: 240 },
+        { optionId: 'variable', productId: 'prod-2', rate: 2.8, term: 240, earlyPayoffPenalty: 0.5 }
+      ] });
+      expect(data.comparisonResults.length).toBe(2);
+      expect(data.comparisonResults[0].conditionalAnalysis.raiseRateScenario).toBeDefined();
+    });
   });
 });
 

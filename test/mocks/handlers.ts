@@ -1558,4 +1558,138 @@ export const loanHandlers = [
       }
     }));
   }),
+
+  // 대출 비교 분석
+  rest.post('/api/v1/analysis/loan-comparison', async (req, res, ctx) => {
+    const body = await req.json() as any;
+    const userId = body.userId || 'user-001';
+    const loanAmount = body.loanAmount || 300000000;
+    const options = body.options || [];
+
+    const calculatePayment = (amount: number, term: number, rate: number) => {
+      const monthlyRate = rate / 12 / 100;
+      return amount * (monthlyRate * Math.pow(1 + monthlyRate, term)) / (Math.pow(1 + monthlyRate, term) - 1);
+    };
+
+    const results = options.map((opt: any) => {
+      const monthlyPayment = calculatePayment(loanAmount, opt.term, opt.rate);
+      const totalPayment = monthlyPayment * opt.term;
+      const totalInterest = totalPayment - loanAmount;
+      const totalCost = totalInterest + (opt.fee || 0);
+      const paymentRatio = (monthlyPayment / 5000000) * 100;
+
+      const presentValue = totalCost;
+      const costPerMonth = totalCost / opt.term;
+      const costPerYear = costPerMonth * 12;
+      const avgAnnualCost = totalCost / (opt.term / 12);
+
+      const rateRiskScore = Math.round((opt.rate * 10) + (opt.term > 240 ? 10 : 0));
+      const affordabilityRisk = paymentRatio > 40 ? 100 : Math.round(paymentRatio * 2.5);
+      const creditImpact = paymentRatio > 35 ? 'high' : paymentRatio > 25 ? 'medium' : 'low';
+
+      const earlyPayoffCost = (opt.earlyPayoffPenalty || 0) * loanAmount / 100;
+      const raiseRateScenario = {
+        newPayment: Math.round(calculatePayment(loanAmount, opt.term, opt.rate + 1.5)),
+        newTotalInterest: Math.round((calculatePayment(loanAmount, opt.term, opt.rate + 1.5) * opt.term) - loanAmount)
+      };
+      const lowIncomeScenario = {
+        affordable: paymentRatio <= 50,
+        riskLevel: paymentRatio > 50 ? 'critical' : paymentRatio > 40 ? 'high' : 'acceptable'
+      };
+
+      const costScore = Math.max(0, 100 - (totalCost / 100000000));
+      const paymentScore = Math.max(0, 100 - (paymentRatio * 2));
+      const termScore = opt.term <= 240 ? 100 : 80;
+      const overallScore = Math.round((costScore * 0.4) + (paymentScore * 0.35) + (termScore * 0.25));
+
+      const recommendation = overallScore >= 80 ? 'best' : overallScore >= 70 ? 'good' : overallScore >= 60 ? 'acceptable' : 'not-recommended';
+
+      return {
+        rank: 0,
+        optionId: opt.optionId,
+        productId: opt.productId,
+        rate: opt.rate,
+        term: opt.term,
+        financialMetrics: {
+          monthlyPayment: Math.round(monthlyPayment),
+          totalPayment: Math.round(totalPayment),
+          totalInterest: Math.round(totalInterest),
+          totalCost: Math.round(totalCost),
+          paymentRatio: Math.round(paymentRatio * 10) / 10,
+          costRank: 0
+        },
+        timeValueMetrics: {
+          presentValue: Math.round(presentValue),
+          costPerMonth: Math.round(costPerMonth),
+          costPerYear: Math.round(costPerYear),
+          avgAnnualCost: Math.round(avgAnnualCost)
+        },
+        riskMetrics: {
+          rateRiskScore,
+          affordabilityRisk,
+          creditImpact
+        },
+        conditionalAnalysis: {
+          earlyPayoffCost: Math.round(earlyPayoffCost),
+          raiseRateScenario,
+          lowIncomeScenario
+        },
+        overallScore,
+        recommendation
+      };
+    });
+
+    const sorted = results.sort((a: any, b: any) => b.overallScore - a.overallScore);
+    sorted.forEach((item: any, idx: number) => {
+      item.rank = idx + 1;
+    });
+
+    const costSorted = [...results].sort((a: any, b: any) => a.financialMetrics.totalCost - b.financialMetrics.totalCost);
+    costSorted.forEach((item: any, idx: number) => {
+      const original = results.find((r: any) => r.optionId === item.optionId);
+      if (original) original.financialMetrics.costRank = idx + 1;
+    });
+
+    const bestOption = sorted[0];
+    const secondBest = sorted[1];
+    const worstOption = sorted[sorted.length - 1];
+
+    const savings = {
+      vsSecondBest: secondBest ? bestOption.financialMetrics.totalCost - secondBest.financialMetrics.totalCost : 0,
+      vsWorst: worstOption ? bestOption.financialMetrics.totalCost - worstOption.financialMetrics.totalCost : 0
+    };
+
+    const metrics = ['월상환액', '총이자', '수수료', '부담도(%)'];
+    const values = sorted.map((r: any) => [
+      r.financialMetrics.monthlyPayment,
+      r.financialMetrics.totalInterest,
+      r.financialMetrics.totalCost - r.financialMetrics.totalInterest,
+      r.financialMetrics.paymentRatio
+    ]);
+    const winner = [0, 0, 0, 0];
+    metrics.forEach((m, idx) => {
+      winner[idx] = values.findIndex((v: any[]) => v[idx] === Math.min(...values.map(vv => vv[idx])));
+    });
+
+    const personalAdvice = bestOption.overallScore >= 80 ?
+      `최선의 선택: ${bestOption.optionId}는 종합적으로 가장 유리한 옵션입니다` :
+      `고려사항: 각 옵션의 장단점을 신중히 검토하세요`;
+
+    return res(ctx.json({
+      userId,
+      loanAmount,
+      comparisonResults: sorted,
+      bestOption: {
+        optionId: bestOption.optionId,
+        reason: `${bestOption.optionId}는 총점 ${bestOption.overallScore}점으로 최고의 선택입니다`,
+        savings
+      },
+      comparisonMatrix: {
+        metrics,
+        values,
+        winner
+      },
+      personalAdvice
+    }));
+  }),
 ];
