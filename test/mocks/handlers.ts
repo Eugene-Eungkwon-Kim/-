@@ -1,6 +1,147 @@
 import { rest } from 'msw';
 
 export const loanHandlers = [
+  // 대출 신청
+  rest.post('/api/v1/loans/apply', async (req, res, ctx) => {
+    const body = await req.json() as {
+      userId: string;
+      loanAmount: number;
+      loanTerm: number;
+      productId: string;
+      purpose: string;
+      collateral?: { type: string; value: number };
+      coApplicant?: { name: string; creditScore: number };
+    };
+
+    // 입력 검증
+    if (!body.userId) {
+      return res(ctx.status(400), ctx.json({
+        error: 'userId is required'
+      }));
+    }
+    if (body.loanAmount <= 0) {
+      return res(ctx.status(400), ctx.json({
+        error: 'loanAmount must be greater than 0'
+      }));
+    }
+    if (body.loanTerm <= 0) {
+      return res(ctx.status(400), ctx.json({
+        error: 'loanTerm must be greater than 0'
+      }));
+    }
+
+    // 제품별 한도 설정
+    const products: { [key: string]: { maxAmount: number; maxTerm: number } } = {
+      'prime-loan-1': { maxAmount: 500000000, maxTerm: 360 },
+      'standard-loan-1': { maxAmount: 300000000, maxTerm: 240 },
+      'conditional-loan-1': { maxAmount: 150000000, maxTerm: 180 }
+    };
+
+    const product = products[body.productId];
+    if (!product) {
+      return res(ctx.status(400), ctx.json({
+        error: 'Invalid productId'
+      }));
+    }
+
+    // 신용도 기반 승인 한도 결정
+    const creditScore = body.coApplicant?.creditScore || 750;
+    let maxLoanAmount = 0;
+    let grade = 'D';
+
+    if (creditScore >= 800) {
+      grade = 'A';
+      maxLoanAmount = 470000000;
+    } else if (creditScore >= 700) {
+      grade = 'B';
+      maxLoanAmount = 280000000;
+    } else if (creditScore >= 650) {
+      grade = 'C';
+      maxLoanAmount = 130000000;
+    } else {
+      return res(ctx.json({
+        applicationId: `APP-${Date.now()}`,
+        status: 'rejected',
+        approvedAmount: 0,
+        approvedTerm: 0,
+        monthlyPayment: 0,
+        totalInterest: 0,
+        message: 'Credit score too low for loan approval',
+        expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        nextSteps: ['Improve your credit score', 'Try again in 3 months']
+      }));
+    }
+
+    // 신청액이 한도를 초과하는 경우
+    if (body.loanAmount > maxLoanAmount) {
+      return res(ctx.json({
+        applicationId: `APP-${Date.now()}`,
+        status: 'rejected',
+        approvedAmount: maxLoanAmount,
+        approvedTerm: Math.min(body.loanTerm, product.maxTerm),
+        monthlyPayment: 0,
+        totalInterest: 0,
+        message: `Requested amount ${body.loanAmount} exceeds maximum ${maxLoanAmount}`,
+        expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        nextSteps: ['Reduce loan amount', 'Apply with lower amount']
+      }));
+    }
+
+    // 신청 기간이 상품 최대 기간을 초과하는 경우
+    if (body.loanTerm > product.maxTerm) {
+      return res(ctx.json({
+        applicationId: `APP-${Date.now()}`,
+        status: 'rejected',
+        approvedAmount: body.loanAmount,
+        approvedTerm: product.maxTerm,
+        monthlyPayment: 0,
+        totalInterest: 0,
+        message: `Requested term ${body.loanTerm} exceeds maximum ${product.maxTerm}`,
+        expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        nextSteps: ['Reduce loan term', 'Apply with shorter term']
+      }));
+    }
+
+    // 월상환액 계산
+    const monthlyRate = 3.2 / 12 / 100; // 기본 3.2% 이자율
+    const monthlyPayment = body.loanAmount *
+      (monthlyRate * Math.pow(1 + monthlyRate, body.loanTerm)) /
+      (Math.pow(1 + monthlyRate, body.loanTerm) - 1);
+
+    // 월상환액 가능성 검증 (월상환 < 월소득의 40%)
+    const estimatedMonthlyIncome = 4000000; // 예상 월소득 기본값
+    const paymentRatio = (monthlyPayment / estimatedMonthlyIncome) * 100;
+
+    if (paymentRatio > 40) {
+      // 조건부 승인
+      return res(ctx.json({
+        applicationId: `APP-${Date.now()}`,
+        status: 'conditional',
+        approvedAmount: body.loanAmount,
+        approvedTerm: body.loanTerm,
+        monthlyPayment: Math.round(monthlyPayment),
+        totalInterest: Math.round(monthlyPayment * body.loanTerm - body.loanAmount),
+        conditions: ['Provide collateral worth 30% of loan amount', 'Co-applicant approval required'],
+        message: 'Conditional approval: requires collateral or co-applicant',
+        expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        nextSteps: ['Provide collateral', 'Add co-applicant', 'Verify income documents']
+      }));
+    }
+
+    // 완전 승인
+    return res(ctx.json({
+      applicationId: `APP-${Date.now()}`,
+      status: 'approved',
+      approvedAmount: body.loanAmount,
+      approvedTerm: body.loanTerm,
+      monthlyPayment: Math.round(monthlyPayment),
+      totalInterest: Math.round(monthlyPayment * body.loanTerm - body.loanAmount),
+      message: `Loan approved for ${body.loanAmount.toLocaleString()}원 at Grade ${grade}`,
+      expirationDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      nextSteps: ['Review loan terms', 'Sign documents', 'Complete verification']
+    }));
+  }),
+
   // 신용도 평가
   rest.post('/api/v1/credit/assess', async (req, res, ctx) => {
     const body = await req.json() as {

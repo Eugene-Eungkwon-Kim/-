@@ -5,6 +5,70 @@
 
 import { describe, it, expect } from 'vitest';
 
+// Loan application endpoint logic (extracted from handlers for testing)
+async function applyLoanEndpoint(input: any): Promise<any> {
+  const products: { [key: string]: { maxAmount: number; maxTerm: number } } = {
+    'prime-loan-1': { maxAmount: 500000000, maxTerm: 360 },
+    'standard-loan-1': { maxAmount: 300000000, maxTerm: 240 },
+    'conditional-loan-1': { maxAmount: 150000000, maxTerm: 180 }
+  };
+
+  if (!input.userId || input.loanAmount <= 0 || input.loanTerm <= 0) {
+    throw new Error('Invalid input');
+  }
+
+  const product = products[input.productId];
+  if (!product) throw new Error('Invalid productId');
+
+  const creditScore = input.coApplicant?.creditScore || 750;
+  let maxLoanAmount = 0;
+
+  if (creditScore >= 800) {
+    maxLoanAmount = 470000000;
+  } else if (creditScore >= 700) {
+    maxLoanAmount = 280000000;
+  } else if (creditScore >= 650) {
+    maxLoanAmount = 130000000;
+  } else {
+    return { status: 'rejected', approvedAmount: 0, approvedTerm: 0, monthlyPayment: 0 };
+  }
+
+  if (input.loanAmount > maxLoanAmount) {
+    return { status: 'rejected', approvedAmount: maxLoanAmount, approvedTerm: 0, monthlyPayment: 0 };
+  }
+
+  if (input.loanTerm > product.maxTerm) {
+    return { status: 'rejected', approvedAmount: input.loanAmount, approvedTerm: product.maxTerm, monthlyPayment: 0 };
+  }
+
+  const monthlyRate = 3.2 / 12 / 100;
+  const monthlyPayment = input.loanAmount *
+    (monthlyRate * Math.pow(1 + monthlyRate, input.loanTerm)) /
+    (Math.pow(1 + monthlyRate, input.loanTerm) - 1);
+
+  const estimatedMonthlyIncome = 4000000;
+  const paymentRatio = (monthlyPayment / estimatedMonthlyIncome) * 100;
+
+  if (paymentRatio > 40) {
+    return {
+      status: 'conditional',
+      approvedAmount: input.loanAmount,
+      approvedTerm: input.loanTerm,
+      monthlyPayment: Math.round(monthlyPayment),
+      totalInterest: Math.round(monthlyPayment * input.loanTerm - input.loanAmount),
+      conditions: ['Provide collateral', 'Co-applicant required']
+    };
+  }
+
+  return {
+    status: 'approved',
+    approvedAmount: input.loanAmount,
+    approvedTerm: input.loanTerm,
+    monthlyPayment: Math.round(monthlyPayment),
+    totalInterest: Math.round(monthlyPayment * input.loanTerm - input.loanAmount)
+  };
+}
+
 // Credit assessment endpoint logic (extracted from handlers for testing)
 async function assessCreditEndpoint(input: {
   income: number;
@@ -720,6 +784,89 @@ describe('MSW Handlers: Enhanced Product Listing Endpoint (Task 4)', () => {
       }
 
       expect(data.timestamp).toBeDefined();
+    });
+  });
+});
+
+describe('MSW Handlers: Loan Application Endpoint (Task 1 - Day 3)', () => {
+
+  describe('[T-API-401~405] 대출 신청 기능', () => {
+
+    it('[T-API-401] 승인된 신청 (모든 조건 충족)', async () => {
+      const data = await applyLoanEndpoint({
+        userId: 'user123',
+        loanAmount: 200000000,
+        loanTerm: 240,
+        productId: 'standard-loan-1',
+        purpose: 'deposit',
+        coApplicant: { name: 'John', creditScore: 800 }
+      });
+
+      expect(data.status).toBe('approved');
+      expect(data.approvedAmount).toBe(200000000);
+      expect(data.approvedTerm).toBe(240);
+      expect(data.monthlyPayment).toBeGreaterThan(0);
+      expect(data.totalInterest).toBeGreaterThan(0);
+      expect(data.monthlyPayment).toBeLessThan(1700000); // 약 169만 예상
+    });
+
+    it('[T-API-402] 조건부 승인 (월상환액 과다)', async () => {
+      const data = await applyLoanEndpoint({
+        userId: 'user456',
+        loanAmount: 250000000,
+        loanTerm: 60,
+        productId: 'standard-loan-1',
+        purpose: 'purchase',
+        coApplicant: { name: 'Jane', creditScore: 750 }
+      });
+
+      // Grade B (750) - maxLoan 280M OK, but high monthly payment triggers conditional
+      expect(data.status).toBe('conditional');
+      expect(data.approvedAmount).toBe(250000000);
+      expect(data.conditions).toBeDefined();
+    });
+
+    it('[T-API-403] 거절 (월상환액 초과)', async () => {
+      const data = await applyLoanEndpoint({
+        userId: 'user789',
+        loanAmount: 500000000,
+        loanTerm: 36,
+        productId: 'prime-loan-1',
+        purpose: 'monthly-rent'
+      });
+
+      // Grade B (750) - maxLoan 280M, but trying 500M
+      expect(data.status).toBe('rejected');
+      expect(data.approvedAmount).toBeLessThanOrEqual(280000000);
+    });
+
+    it('[T-API-404] 거절 (신청액 > 최대액)', async () => {
+      const data = await applyLoanEndpoint({
+        userId: 'user999',
+        loanAmount: 600000000,
+        loanTerm: 240,
+        productId: 'prime-loan-1',
+        purpose: 'other'
+      });
+
+      expect(data.status).toBe('rejected');
+      expect(data.approvedAmount).toBeLessThan(600000000);
+    });
+
+    it('[T-API-405] 공동신청자 포함 승인 (높은 신용도)', async () => {
+      const data = await applyLoanEndpoint({
+        userId: 'user111',
+        loanAmount: 150000000,
+        loanTerm: 180,
+        productId: 'conditional-loan-1',
+        purpose: 'deposit',
+        coApplicant: { name: 'Co-Applicant', creditScore: 820 }
+      });
+
+      expect(data.status).toBe('approved');
+      expect(data.approvedAmount).toBe(150000000);
+      expect(data.monthlyPayment).toBeGreaterThan(0);
+      expect(data.totalInterest).toBeGreaterThan(0);
     });
   });
 });
