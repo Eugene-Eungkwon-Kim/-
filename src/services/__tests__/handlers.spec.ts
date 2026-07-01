@@ -159,6 +159,185 @@ async function repaymentScheduleEndpoint(input: {
   };
 }
 
+// Validation endpoint logic (extracted from handlers for testing)
+async function validationEndpoint(input: any): Promise<any> {
+  const startTime = Date.now();
+  const errors: any[] = [];
+  const warnings: any[] = [];
+
+  // 필드 존재성 검증
+  const requiredFields = ['userId', 'loanAmount', 'loanTerm', 'productId', 'income', 'creditScore', 'purpose'];
+  for (const field of requiredFields) {
+    if (input[field] === undefined || input[field] === null) {
+      errors.push({
+        field,
+        message: `${field} is required`,
+        code: 'REQUIRED'
+      });
+    }
+  }
+
+  // 타입 검증
+  if (input.userId && typeof input.userId !== 'string') {
+    errors.push({
+      field: 'userId',
+      message: 'userId must be a string',
+      code: 'TYPE'
+    });
+  }
+  if (input.loanAmount && typeof input.loanAmount !== 'number') {
+    errors.push({
+      field: 'loanAmount',
+      message: 'loanAmount must be a number',
+      code: 'TYPE'
+    });
+  }
+  if (input.loanTerm && typeof input.loanTerm !== 'number') {
+    errors.push({
+      field: 'loanTerm',
+      message: 'loanTerm must be a number',
+      code: 'TYPE'
+    });
+  }
+  if (input.income && typeof input.income !== 'number') {
+    errors.push({
+      field: 'income',
+      message: 'income must be a number',
+      code: 'TYPE'
+    });
+  }
+  if (input.creditScore && typeof input.creditScore !== 'number') {
+    errors.push({
+      field: 'creditScore',
+      message: 'creditScore must be a number',
+      code: 'TYPE'
+    });
+  }
+
+  // 범위 검증
+  if (input.loanAmount !== undefined && (input.loanAmount < 10000000 || input.loanAmount > 500000000)) {
+    errors.push({
+      field: 'loanAmount',
+      message: 'loanAmount must be between 10M and 500M',
+      code: 'RANGE'
+    });
+  }
+  if (input.loanTerm !== undefined && (input.loanTerm < 6 || input.loanTerm > 360)) {
+    errors.push({
+      field: 'loanTerm',
+      message: 'loanTerm must be between 6 and 360 months',
+      code: 'RANGE'
+    });
+  }
+  if (input.creditScore !== undefined && (input.creditScore < 0 || input.creditScore > 999)) {
+    errors.push({
+      field: 'creditScore',
+      message: 'creditScore must be between 0 and 999',
+      code: 'RANGE'
+    });
+  }
+  if (input.income !== undefined && input.income <= 0) {
+    errors.push({
+      field: 'income',
+      message: 'income must be greater than 0',
+      code: 'RANGE'
+    });
+  }
+
+  // 비즈니스 규칙 검증
+  const debt = input.debt || 0;
+  if (input.loanAmount && input.income && input.loanAmount > input.income * 3) {
+    warnings.push({
+      field: 'loanAmount',
+      message: 'Loan amount is more than 3x annual income'
+    });
+  }
+  if (input.income && debt > input.income * 0.5) {
+    warnings.push({
+      field: 'debt',
+      message: 'Debt exceeds 50% of annual income'
+    });
+  }
+  if (input.creditScore && input.creditScore < 650) {
+    warnings.push({
+      field: 'creditScore',
+      message: 'Credit score is below recommended threshold'
+    });
+  }
+
+  // 제품 유효성 검증
+  const validProducts = ['prime-loan-1', 'standard-loan-1', 'conditional-loan-1'];
+  if (input.productId && !validProducts.includes(input.productId)) {
+    errors.push({
+      field: 'productId',
+      message: 'Invalid productId',
+      code: 'BUSINESS_RULE'
+    });
+  }
+
+  // 목적 검증
+  const validPurposes = ['deposit', 'purchase', 'monthly-rent', 'other'];
+  if (input.purpose && !validPurposes.includes(input.purpose)) {
+    errors.push({
+      field: 'purpose',
+      message: 'Invalid purpose',
+      code: 'BUSINESS_RULE'
+    });
+  }
+
+  // 일관성 검증
+  if (input.loanAmount && input.loanTerm && input.productId) {
+    const products: { [key: string]: { maxAmount: number; maxTerm: number } } = {
+      'prime-loan-1': { maxAmount: 500000000, maxTerm: 360 },
+      'standard-loan-1': { maxAmount: 300000000, maxTerm: 240 },
+      'conditional-loan-1': { maxAmount: 150000000, maxTerm: 180 }
+    };
+
+    const product = products[input.productId];
+    if (product) {
+      if (input.loanAmount > product.maxAmount) {
+        errors.push({
+          field: 'loanAmount',
+          message: `Loan amount exceeds product maximum (${product.maxAmount})`,
+          code: 'CONSISTENCY'
+        });
+      }
+      if (input.loanTerm > product.maxTerm) {
+        errors.push({
+          field: 'loanTerm',
+          message: `Loan term exceeds product maximum (${product.maxTerm} months)`,
+          code: 'CONSISTENCY'
+        });
+      }
+    }
+  }
+
+  const validationTime = Date.now() - startTime;
+  const valid = errors.length === 0;
+
+  return {
+    valid,
+    errors,
+    warnings,
+    validatedData: valid ? {
+      userId: input.userId,
+      loanAmount: input.loanAmount,
+      loanTerm: input.loanTerm,
+      productId: input.productId,
+      income: input.income,
+      debt: input.debt,
+      creditScore: input.creditScore,
+      purpose: input.purpose
+    } : undefined,
+    validationDetails: {
+      fieldsChecked: requiredFields.length,
+      errorsFound: errors.length,
+      warningsFound: warnings.length,
+      validationTime
+    }
+  };
+}
+
 // Portfolio inquiry endpoint logic (extracted from handlers for testing)
 async function portfolioEndpoint(input: {
   userId: string;
@@ -1613,6 +1792,135 @@ describe('MSW Handlers: Integration Testing & Validation (Task 5 - Day 3)', () =
 
       expect(schedule.earlyRepaymentOptions.estimatedSavings).toBeGreaterThan(0);
       expect(schedule.earlyRepaymentOptions.penaltyPercentage).toBe(0);
+    });
+  });
+});
+
+describe('MSW Handlers: Input Validation Enhancement (Task 1 - Day 4)', () => {
+
+  describe('[T-API-901~905] 입력 데이터 검증 기능', () => {
+
+    it('[T-API-901] 모든 필드 유효 (통과)', async () => {
+      const data = await validationEndpoint({
+        userId: 'user-001',
+        loanAmount: 100000000,
+        loanTerm: 240,
+        productId: 'standard-loan-1',
+        income: 50000000,
+        debt: 10000000,
+        creditScore: 750,
+        purpose: 'deposit'
+      });
+
+      expect(data.valid).toBe(true);
+      expect(data.errors).toHaveLength(0);
+      expect(data.warnings).toHaveLength(0);
+      expect(data.validatedData).toBeDefined();
+      expect(data.validatedData.userId).toBe('user-001');
+      expect(data.validatedData.loanAmount).toBe(100000000);
+      expect(data.validationDetails.fieldsChecked).toBeGreaterThan(0);
+      expect(data.validationDetails.errorsFound).toBe(0);
+      expect(data.validationDetails.warningsFound).toBe(0);
+      expect(data.validationDetails.validationTime).toBeGreaterThan(-1);
+    });
+
+    it('[T-API-902] 필수 필드 누락 (실패)', async () => {
+      const data = await validationEndpoint({
+        userId: 'user-002',
+        loanAmount: 200000000,
+        // loanTerm 누락
+        productId: 'standard-loan-1',
+        income: 40000000,
+        creditScore: 720
+        // purpose 누락
+      });
+
+      expect(data.valid).toBe(false);
+      expect(data.errors.length).toBeGreaterThan(0);
+      expect(data.validatedData).toBeUndefined();
+
+      // loanTerm과 purpose 누락으로 인한 에러 확인
+      const errorFields = data.errors.map((e: any) => e.field);
+      expect(errorFields).toContain('loanTerm');
+      expect(errorFields).toContain('purpose');
+
+      // 모든 에러의 code가 REQUIRED
+      for (const error of data.errors) {
+        if (error.field === 'loanTerm' || error.field === 'purpose') {
+          expect(error.code).toBe('REQUIRED');
+        }
+      }
+    });
+
+    it('[T-API-903] 범위 초과 (실패)', async () => {
+      const data = await validationEndpoint({
+        userId: 'user-003',
+        loanAmount: 600000000, // 500M 초과
+        loanTerm: 400, // 360개월 초과
+        productId: 'standard-loan-1',
+        income: 30000000,
+        creditScore: 500, // 0-999 범위 내
+        purpose: 'purchase'
+      });
+
+      expect(data.valid).toBe(false);
+      expect(data.errors.length).toBeGreaterThan(0);
+
+      // 범위 초과 에러 확인
+      const rangeErrors = data.errors.filter((e: any) => e.code === 'RANGE');
+      expect(rangeErrors.length).toBeGreaterThan(0);
+
+      const errorFields = data.errors.map((e: any) => e.field);
+      expect(errorFields).toContain('loanAmount');
+      expect(errorFields).toContain('loanTerm');
+    });
+
+    it('[T-API-904] 비즈니스 규칙 위반 (경고)', async () => {
+      const data = await validationEndpoint({
+        userId: 'user-004',
+        loanAmount: 300000000, // income의 6배 (3배 초과)
+        loanTerm: 240,
+        productId: 'standard-loan-1',
+        income: 50000000,
+        debt: 30000000, // income의 60% (50% 초과)
+        creditScore: 620, // 650 미만
+        purpose: 'monthly-rent'
+      });
+
+      expect(data.valid).toBe(true); // 경고만이므로 valid는 true
+      expect(data.errors).toHaveLength(0);
+      expect(data.warnings.length).toBeGreaterThan(0);
+
+      // 경고 내용 확인
+      const warningMessages = data.warnings.map((w: any) => w.message);
+      expect(warningMessages.some((msg: string) => msg.includes('3x'))).toBe(true);
+      expect(warningMessages.some((msg: string) => msg.includes('50%'))).toBe(true);
+      expect(warningMessages.some((msg: string) => msg.includes('threshold'))).toBe(true);
+    });
+
+    it('[T-API-905] 복합 검증 (여러 오류)', async () => {
+      const data = await validationEndpoint({
+        userId: 123, // 타입 오류 (string이어야 함)
+        loanAmount: '250000000', // 타입 오류 (number여야 함)
+        loanTerm: -10, // 범위 오류 (6 이상)
+        productId: 'invalid-product', // 비즈니스 규칙 오류
+        income: -5000000, // 범위 오류 (> 0)
+        creditScore: 1500, // 범위 오류 (0-999)
+        purpose: 'invalid-purpose' // 비즈니스 규칙 오류
+      });
+
+      expect(data.valid).toBe(false);
+      expect(data.errors.length).toBeGreaterThan(0);
+      expect(data.validatedData).toBeUndefined();
+
+      // 여러 종류의 에러 확인
+      const errorCodes = data.errors.map((e: any) => e.code);
+      expect(errorCodes).toContain('TYPE');
+      expect(errorCodes).toContain('RANGE');
+      expect(errorCodes).toContain('BUSINESS_RULE');
+
+      // 에러 개수 확인 (최소 5개 이상)
+      expect(data.validationDetails.errorsFound).toBeGreaterThanOrEqual(5);
     });
   });
 });

@@ -754,4 +754,185 @@ export const loanHandlers = [
       recommendations
     }));
   }),
+
+  // 입력 검증 강화
+  rest.post('/api/v1/validation/check', async (req, res, ctx) => {
+    const body = await req.json() as any;
+    const startTime = Date.now();
+
+    const errors: any[] = [];
+    const warnings: any[] = [];
+
+    // 필드 존재성 검증
+    const requiredFields = ['userId', 'loanAmount', 'loanTerm', 'productId', 'income', 'creditScore', 'purpose'];
+    for (const field of requiredFields) {
+      if (body[field] === undefined || body[field] === null) {
+        errors.push({
+          field,
+          message: `${field} is required`,
+          code: 'REQUIRED'
+        });
+      }
+    }
+
+    // 타입 검증
+    if (body.userId && typeof body.userId !== 'string') {
+      errors.push({
+        field: 'userId',
+        message: 'userId must be a string',
+        code: 'TYPE'
+      });
+    }
+    if (body.loanAmount && typeof body.loanAmount !== 'number') {
+      errors.push({
+        field: 'loanAmount',
+        message: 'loanAmount must be a number',
+        code: 'TYPE'
+      });
+    }
+    if (body.loanTerm && typeof body.loanTerm !== 'number') {
+      errors.push({
+        field: 'loanTerm',
+        message: 'loanTerm must be a number',
+        code: 'TYPE'
+      });
+    }
+    if (body.income && typeof body.income !== 'number') {
+      errors.push({
+        field: 'income',
+        message: 'income must be a number',
+        code: 'TYPE'
+      });
+    }
+    if (body.creditScore && typeof body.creditScore !== 'number') {
+      errors.push({
+        field: 'creditScore',
+        message: 'creditScore must be a number',
+        code: 'TYPE'
+      });
+    }
+
+    // 범위 검증
+    if (body.loanAmount !== undefined && (body.loanAmount < 10000000 || body.loanAmount > 500000000)) {
+      errors.push({
+        field: 'loanAmount',
+        message: 'loanAmount must be between 10M and 500M',
+        code: 'RANGE'
+      });
+    }
+    if (body.loanTerm !== undefined && (body.loanTerm < 6 || body.loanTerm > 360)) {
+      errors.push({
+        field: 'loanTerm',
+        message: 'loanTerm must be between 6 and 360 months',
+        code: 'RANGE'
+      });
+    }
+    if (body.creditScore !== undefined && (body.creditScore < 0 || body.creditScore > 999)) {
+      errors.push({
+        field: 'creditScore',
+        message: 'creditScore must be between 0 and 999',
+        code: 'RANGE'
+      });
+    }
+    if (body.income !== undefined && body.income <= 0) {
+      errors.push({
+        field: 'income',
+        message: 'income must be greater than 0',
+        code: 'RANGE'
+      });
+    }
+
+    // 비즈니스 규칙 검증
+    const debt = body.debt || 0;
+    if (body.loanAmount && body.income && body.loanAmount > body.income * 3) {
+      warnings.push({
+        field: 'loanAmount',
+        message: 'Loan amount is more than 3x annual income'
+      });
+    }
+    if (body.income && debt > body.income * 0.5) {
+      warnings.push({
+        field: 'debt',
+        message: 'Debt exceeds 50% of annual income'
+      });
+    }
+    if (body.creditScore && body.creditScore < 650) {
+      warnings.push({
+        field: 'creditScore',
+        message: 'Credit score is below recommended threshold'
+      });
+    }
+
+    // 제품 유효성 검증
+    const validProducts = ['prime-loan-1', 'standard-loan-1', 'conditional-loan-1'];
+    if (body.productId && !validProducts.includes(body.productId)) {
+      errors.push({
+        field: 'productId',
+        message: 'Invalid productId',
+        code: 'BUSINESS_RULE'
+      });
+    }
+
+    // 목적 검증
+    const validPurposes = ['deposit', 'purchase', 'monthly-rent', 'other'];
+    if (body.purpose && !validPurposes.includes(body.purpose)) {
+      errors.push({
+        field: 'purpose',
+        message: 'Invalid purpose',
+        code: 'BUSINESS_RULE'
+      });
+    }
+
+    // 일관성 검증
+    if (body.loanAmount && body.loanTerm && body.productId) {
+      const products: { [key: string]: { maxAmount: number; maxTerm: number } } = {
+        'prime-loan-1': { maxAmount: 500000000, maxTerm: 360 },
+        'standard-loan-1': { maxAmount: 300000000, maxTerm: 240 },
+        'conditional-loan-1': { maxAmount: 150000000, maxTerm: 180 }
+      };
+
+      const product = products[body.productId];
+      if (product) {
+        if (body.loanAmount > product.maxAmount) {
+          errors.push({
+            field: 'loanAmount',
+            message: `Loan amount exceeds product maximum (${product.maxAmount})`,
+            code: 'CONSISTENCY'
+          });
+        }
+        if (body.loanTerm > product.maxTerm) {
+          errors.push({
+            field: 'loanTerm',
+            message: `Loan term exceeds product maximum (${product.maxTerm} months)`,
+            code: 'CONSISTENCY'
+          });
+        }
+      }
+    }
+
+    const validationTime = Date.now() - startTime;
+    const valid = errors.length === 0;
+
+    return res(ctx.json({
+      valid,
+      errors,
+      warnings,
+      validatedData: valid ? {
+        userId: body.userId,
+        loanAmount: body.loanAmount,
+        loanTerm: body.loanTerm,
+        productId: body.productId,
+        income: body.income,
+        debt: body.debt,
+        creditScore: body.creditScore,
+        purpose: body.purpose
+      } : undefined,
+      validationDetails: {
+        fieldsChecked: requiredFields.length,
+        errorsFound: errors.length,
+        warningsFound: warnings.length,
+        validationTime
+      }
+    }));
+  }),
 ];
