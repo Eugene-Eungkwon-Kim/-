@@ -1086,4 +1086,90 @@ export const loanHandlers = [
       }
     }));
   }),
+
+  // 재정 분석 & 계획
+  rest.post('/api/v1/planning/financial-analysis', async (req, res, ctx) => {
+    const body = await req.json() as any;
+    const monthlyIncome = body.monthlyIncome || 4000000;
+    const monthlyExpenses = body.monthlyExpenses || 1500000;
+    const totalDebt = body.totalDebt || 100000000;
+    const totalAssets = body.totalAssets || 500000000;
+    const savingsGoal = body.savingsGoal || 100000000;
+    const savingsDuration = body.savingsDuration || 36;
+
+    const monthlyLoanPayments = totalDebt / 240; // 240개월 평균
+    const monthlySurplus = monthlyIncome - monthlyExpenses - monthlyLoanPayments;
+    const debtToIncomeRatio = totalDebt / (monthlyIncome * 12);
+    const assetToDebtRatio = totalAssets / totalDebt;
+    const netWorth = totalAssets - totalDebt;
+
+    // 재정 건강도 점수 (0-100)
+    const debtRatioScore = Math.max(0, 100 - (debtToIncomeRatio * 100));
+    const surplusScore = monthlySurplus > 0 ? Math.min(100, (monthlySurplus / monthlyIncome) * 300) : 0;
+    const assetScore = Math.min(100, (assetToDebtRatio) * 20);
+    const creditScore = Math.min(100, 100 - debtToIncomeRatio * 50);
+    const healthScore = Math.round(
+      (debtRatioScore * 0.3) +
+      (surplusScore * 0.3) +
+      (assetScore * 0.2) +
+      (creditScore * 0.2)
+    );
+
+    let healthGrade = 'A';
+    if (healthScore >= 80) healthGrade = 'A';
+    else if (healthScore >= 60) healthGrade = 'B';
+    else if (healthScore >= 40) healthGrade = 'C';
+    else if (healthScore >= 20) healthGrade = 'D';
+    else healthGrade = 'F';
+
+    const monthlyRequiredSavings = savingsGoal / savingsDuration;
+    const currentMonthlySavings = Math.max(0, monthlySurplus);
+    const monthsToGoal = currentMonthlySavings > 0 ? savingsGoal / currentMonthlySavings : Infinity;
+
+    const quickestPayoffMonths = totalDebt > 0 ? Math.ceil(totalDebt / Math.max(monthlyIncome * 0.5, 1)) : 0;
+    const balancedPayoffMonths = totalDebt > 0 ? Math.ceil(totalDebt / (monthlyIncome * 0.2)) : 0;
+
+    return res(ctx.json({
+      userId: body.userId,
+      currentStatus: {
+        monthlyIncome,
+        monthlyExpenses,
+        monthlyLoanPayments: Math.round(monthlyLoanPayments),
+        monthlySurplus: Math.round(monthlySurplus),
+        totalDebt,
+        totalAssets,
+        netWorth,
+        debtToIncomeRatio: Math.round(debtToIncomeRatio * 1000) / 1000,
+        assetToDebtRatio: Math.round(assetToDebtRatio * 100) / 100
+      },
+      financialHealthScore: healthScore,
+      healthGrade,
+      healthBreakdown: {
+        debtRatioScore: Math.round(debtRatioScore),
+        surplusCashScore: Math.round(surplusScore),
+        assetScore: Math.round(assetScore),
+        creditScore: Math.round(creditScore)
+      },
+      savingsAnalysis: {
+        currentMonthlySavings: Math.round(currentMonthlySavings),
+        projectedSavings12Months: Math.round(currentMonthlySavings * 12),
+        savingsGoal,
+        savingsGoalMonths: monthsToGoal === Infinity ? 999 : Math.round(monthsToGoal),
+        monthlyRequiredSavings: Math.round(monthlyRequiredSavings),
+        achievable: currentMonthlySavings >= monthlyRequiredSavings
+      },
+      debtRepaymentPlan: {
+        totalDebt,
+        quickestPayoffMonths,
+        balancedPayoffMonths,
+        debtFreeDate: new Date(Date.now() + balancedPayoffMonths * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        estimatedInterestSavings: Math.round((monthlyIncome * 0.1) * balancedPayoffMonths * 0.3)
+      },
+      recommendations: [
+        monthlySurplus > 0 ? '긍정적인 월 여유금 유지' : '지출 감소 필요',
+        debtToIncomeRatio > 0.5 ? '부채 감소 우선' : '균형잡힌 저축',
+        healthScore > 70 ? '현재 추세 유지' : '재정 개선 필요'
+      ]
+    }));
+  }),
 ];
