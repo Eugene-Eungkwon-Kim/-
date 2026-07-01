@@ -159,6 +159,155 @@ async function repaymentScheduleEndpoint(input: {
   };
 }
 
+// Risk assessment endpoint logic (extracted from handlers for testing)
+async function riskAssessmentEndpoint(input: any): Promise<any> {
+  const creditScore = input.creditScore || 700;
+  const income = input.income || 4000000;
+  const debt = input.debt || 0;
+  const loanAmount = input.loanAmount || 300000000;
+  const loanTerm = input.loanTerm || 240;
+  const employmentStability = input.employmentStability || 'stable';
+
+  // 신용 리스크 (30%)
+  let creditRiskScore = 50;
+  if (creditScore >= 800) creditRiskScore = 10;
+  else if (creditScore >= 700) creditRiskScore = 25;
+  else if (creditScore >= 650) creditRiskScore = 40;
+  else creditRiskScore = 70;
+
+  // 소득 리스크 (25%)
+  let incomeRiskScore = 30;
+  if (employmentStability === 'stable') incomeRiskScore = 15;
+  else if (employmentStability === 'moderate') incomeRiskScore = 40;
+  else incomeRiskScore = 70;
+
+  // 상환 리스크 (25%)
+  const monthlyRate = 3.2 / 12 / 100;
+  const monthlyPayment = loanAmount *
+    (monthlyRate * Math.pow(1 + monthlyRate, loanTerm)) /
+    (Math.pow(1 + monthlyRate, loanTerm) - 1);
+  const paymentRatio = (monthlyPayment / income) * 100;
+  let repaymentRiskScore = paymentRatio > 50 ? 70 : paymentRatio > 40 ? 50 : 30;
+
+  // 시스템 리스크 (10%) - 경제 상황
+  const systemRiskScore = 25;
+
+  // 행동 리스크 (10%)
+  const savingsRate = input.savingsRate || 15;
+  let behavioralRiskScore = savingsRate < 10 ? 60 : savingsRate < 20 ? 40 : 20;
+
+  // 종합 리스크 점수
+  const overallRiskScore = Math.round(
+    (creditRiskScore * 0.3) +
+    (incomeRiskScore * 0.25) +
+    (repaymentRiskScore * 0.25) +
+    (systemRiskScore * 0.1) +
+    (behavioralRiskScore * 0.1)
+  );
+
+  // 부도 확률 (PD) 계산
+  const basePD = creditScore >= 800 ? 0.5 : creditScore >= 700 ? 1.5 : creditScore >= 650 ? 3.5 : 8.0;
+  const pdAdjustment = (overallRiskScore / 100) * 5;
+  const probabilityOfDefault = Math.min(100, basePD + pdAdjustment);
+
+  // 리스크 레벨 판정
+  let riskLevel: string;
+  if (overallRiskScore < 20) riskLevel = 'very-low';
+  else if (overallRiskScore < 35) riskLevel = 'low';
+  else if (overallRiskScore < 55) riskLevel = 'medium';
+  else if (overallRiskScore < 75) riskLevel = 'high';
+  else riskLevel = 'very-high';
+
+  // 완화 전략
+  const mitigations = {
+    immediate: [] as string[],
+    shortTerm: [] as string[],
+    mediumTerm: [] as string[]
+  };
+
+  if (paymentRatio > 40) {
+    mitigations.immediate.push('월상환액 감소 검토 (기간 연장)');
+  }
+  if (debt > income * 0.3) {
+    mitigations.immediate.push('기존 부채 정리');
+  }
+  if (creditScore < 700) {
+    mitigations.shortTerm.push('신용점수 개선 노력');
+    mitigations.shortTerm.push('정시 결제 습관 형성');
+  }
+  if (savingsRate < 15) {
+    mitigations.mediumTerm.push('월 저축률 15% 이상 목표 설정');
+  }
+
+  return {
+    userId: input.userId,
+    overallRiskLevel: riskLevel,
+    probabilityOfDefault: Math.round(probabilityOfDefault * 100) / 100,
+    riskScore: overallRiskScore,
+    riskComponents: {
+      creditRisk: {
+        score: creditRiskScore,
+        assessment: creditScore >= 800 ? 'Excellent' : creditScore >= 700 ? 'Good' : 'Poor',
+        factors: [`Credit Score: ${creditScore}`]
+      },
+      incomeRisk: {
+        score: incomeRiskScore,
+        stabilityIndex: employmentStability === 'stable' ? 0.9 : 0.5,
+        factorsOfConcern: []
+      },
+      repaymentRisk: {
+        score: repaymentRiskScore,
+        paymentRatio,
+        affordabilityIndex: paymentRatio <= 40 ? 0.8 : 0.4
+      },
+      systemRisk: {
+        score: systemRiskScore,
+        macroFactors: ['경제 성장률', '금리 환경'],
+        industryFactors: [input.industry || '금융']
+      },
+      behavioralRisk: {
+        score: behavioralRiskScore,
+        savingsRate,
+        creditDiscipline: savingsRate > 20 ? 'Excellent' : 'Moderate'
+      }
+    },
+    scenarioAnalysis: {
+      bestCase: {
+        description: '신용도 개선 + 수입 증가 시나리오',
+        probabilityOfDefault: Math.max(0, probabilityOfDefault * 0.5)
+      },
+      baseCase: {
+        description: '현재 추세 유지',
+        probabilityOfDefault
+      },
+      worstCase: {
+        description: '경제 악화 + 실직 시나리오',
+        probabilityOfDefault: Math.min(100, probabilityOfDefault * 2)
+      }
+    },
+    mitigationStrategies: mitigations,
+    loanDecision: {
+      recommendation: riskLevel === 'very-low' || riskLevel === 'low' ? 'approve' : riskLevel === 'medium' ? 'approve-with-conditions' : 'decline',
+      reasoning: riskLevel === 'very-low' ? 'Excellent credit profile' : riskLevel === 'low' ? 'Good credit profile' : 'High risk factors',
+      conditions: riskLevel === 'medium' ? {
+        requiredCollateral: Math.round(loanAmount * 0.3),
+        coApplicantRequired: true,
+        rateAdjustment: 1.5,
+        maxLoanAmount: loanAmount
+      } : undefined
+    },
+    monitoringPlan: {
+      checkpoints: [
+        {
+          period: 6,
+          metrics: ['Credit Score', 'Payment Status'],
+          triggers: ['Score drop > 50점', 'Payment delay']
+        }
+      ]
+    }
+  };
+}
+
 // Validation endpoint logic (extracted from handlers for testing)
 async function validationEndpoint(input: any): Promise<any> {
   const startTime = Date.now();
@@ -1792,6 +1941,129 @@ describe('MSW Handlers: Integration Testing & Validation (Task 5 - Day 3)', () =
 
       expect(schedule.earlyRepaymentOptions.estimatedSavings).toBeGreaterThan(0);
       expect(schedule.earlyRepaymentOptions.penaltyPercentage).toBe(0);
+    });
+  });
+});
+
+describe('MSW Handlers: Advanced Risk Analysis (Task 7 - Day 4)', () => {
+
+  describe('[T-API-961~965] 고급 리스크 분석 기능', () => {
+
+    it('[T-API-961] 저위험 사용자 분석', async () => {
+      const data = await riskAssessmentEndpoint({
+        userId: 'user-low-risk',
+        creditScore: 820,
+        income: 60000000,
+        debt: 10000000,
+        loanAmount: 200000000,
+        loanTerm: 240,
+        employmentStability: 'stable',
+        savingsRate: 25
+      });
+
+      expect(data.overallRiskLevel).toMatch(/very-low|low/);
+      expect(data.probabilityOfDefault).toBeLessThan(5);
+      expect(data.riskScore).toBeLessThan(40);
+      expect(data.loanDecision.recommendation).toBe('approve');
+      expect(data.riskComponents.creditRisk.score).toBeLessThan(30);
+      expect(data.riskComponents.incomeRisk.score).toBeLessThan(30);
+    });
+
+    it('[T-API-962] 중간 위험 사용자 분석', async () => {
+      const data = await riskAssessmentEndpoint({
+        userId: 'user-medium-risk',
+        creditScore: 680,
+        income: 40000000,
+        debt: 20000000,
+        loanAmount: 300000000,
+        loanTerm: 240,
+        employmentStability: 'moderate',
+        savingsRate: 8
+      });
+
+      expect(data.overallRiskLevel).toBe('medium');
+      expect(data.probabilityOfDefault).toBeGreaterThan(1);
+      expect(data.probabilityOfDefault).toBeLessThan(10);
+      expect(data.riskScore).toBeGreaterThan(35);
+      expect(data.riskScore).toBeLessThan(55);
+      expect(data.loanDecision.recommendation).toBe('approve-with-conditions');
+      expect(data.loanDecision.conditions).toBeDefined();
+    });
+
+    it('[T-API-963] 고위험 사용자 분석', async () => {
+      const data = await riskAssessmentEndpoint({
+        userId: 'user-high-risk',
+        creditScore: 600,
+        income: 30000000,
+        debt: 20000000,
+        loanAmount: 350000000,
+        loanTerm: 300,
+        employmentStability: 'unstable',
+        savingsRate: 5
+      });
+
+      expect(data.overallRiskLevel).toMatch(/high|very-high/);
+      expect(data.probabilityOfDefault).toBeGreaterThan(5);
+      expect(data.riskScore).toBeGreaterThan(50);
+      expect(data.loanDecision.recommendation).toBe('decline');
+      expect(data.riskComponents.creditRisk.score).toBeGreaterThan(40);
+    });
+
+    it('[T-API-964] 시나리오 분석 (best/worst case)', async () => {
+      const data = await riskAssessmentEndpoint({
+        userId: 'user-scenario',
+        creditScore: 750,
+        income: 50000000,
+        debt: 15000000,
+        loanAmount: 250000000,
+        loanTerm: 240,
+        employmentStability: 'stable',
+        savingsRate: 18
+      });
+
+      expect(data.scenarioAnalysis).toBeDefined();
+      expect(data.scenarioAnalysis.bestCase).toBeDefined();
+      expect(data.scenarioAnalysis.baseCase).toBeDefined();
+      expect(data.scenarioAnalysis.worstCase).toBeDefined();
+
+      // 시나리오 분석 검증
+      const basePD = data.scenarioAnalysis.baseCase.probabilityOfDefault;
+      const bestPD = data.scenarioAnalysis.bestCase.probabilityOfDefault;
+      const worstPD = data.scenarioAnalysis.worstCase.probabilityOfDefault;
+
+      expect(bestPD).toBeLessThan(basePD);
+      expect(worstPD).toBeGreaterThan(basePD);
+      expect(basePD).toBe(data.probabilityOfDefault);
+    });
+
+    it('[T-API-965] 위험 완화 전략 제시', async () => {
+      const data = await riskAssessmentEndpoint({
+        userId: 'user-mitigation',
+        creditScore: 680,
+        income: 40000000,
+        debt: 20000000,
+        loanAmount: 300000000,
+        loanTerm: 240,
+        employmentStability: 'moderate',
+        savingsRate: 10
+      });
+
+      expect(data.mitigationStrategies).toBeDefined();
+      expect(Array.isArray(data.mitigationStrategies.immediate)).toBe(true);
+      expect(Array.isArray(data.mitigationStrategies.shortTerm)).toBe(true);
+      expect(Array.isArray(data.mitigationStrategies.mediumTerm)).toBe(true);
+
+      // 전략이 하나 이상 있어야 함
+      const totalStrategies =
+        data.mitigationStrategies.immediate.length +
+        data.mitigationStrategies.shortTerm.length +
+        data.mitigationStrategies.mediumTerm.length;
+      expect(totalStrategies).toBeGreaterThan(0);
+
+      // 모니터링 계획 확인
+      expect(data.monitoringPlan).toBeDefined();
+      expect(Array.isArray(data.monitoringPlan.checkpoints)).toBe(true);
+      expect(data.monitoringPlan.checkpoints.length).toBeGreaterThan(0);
     });
   });
 });
