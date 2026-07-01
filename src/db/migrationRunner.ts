@@ -110,3 +110,79 @@ export function getMigrationStatus(
     applied: applied.has(m.version)
   }));
 }
+
+export interface MigrationIntegrityIssue {
+  version: string;
+  message: string;
+}
+
+/** DB에 손대지 않고 마이그레이션 파일 자체의 결함(중복 버전, 빈 UP/DOWN)을 미리 잡아낸다 */
+export function validateMigrationsIntegrity(migrationsDir: string): MigrationIntegrityIssue[] {
+  const migrations = loadMigrations(migrationsDir);
+  const issues: MigrationIntegrityIssue[] = [];
+  const seenVersions = new Set<string>();
+
+  for (const migration of migrations) {
+    if (seenVersions.has(migration.version)) {
+      issues.push({
+        version: migration.version,
+        message: `Duplicate migration version ${migration.version} (${migration.filename})`
+      });
+    }
+    seenVersions.add(migration.version);
+
+    if (migration.up.length === 0) {
+      issues.push({ version: migration.version, message: `${migration.filename} has an empty UP section` });
+    }
+    if (migration.down.length === 0) {
+      issues.push({ version: migration.version, message: `${migration.filename} has an empty DOWN section` });
+    }
+  }
+
+  return issues;
+}
+
+export interface DryRunResult {
+  wouldApply: string[];
+  errors: { version: string; message: string }[];
+}
+
+const DRY_RUN_ABORT = Symbol('DRY_RUN_ABORT');
+
+/**
+ * 대기 중인 마이그레이션을 트랜잭션 안에서 실제로 실행해 SQL 오류를 미리 잡아내되,
+ * 성공 여부와 무관하게 항상 롤백해 DB에 아무 흔적도 남기지 않는다.
+ */
+export function dryRunMigrations(db: Database.Database, migrationsDir: string): DryRunResult {
+  const migrations = loadMigrations(migrationsDir);
+  const wouldApply: string[] = [];
+  const errors: { version: string; message: string }[] = [];
+
+  try {
+    // schema_migrations 생성까지 트랜잭션 안에서 수행해야, 완전히 새 DB에 대한
+    // dry-run이 롤백 후 정말로 아무 흔적도 남기지 않는다.
+    const attempt = db.transaction(() => {
+      ensureMigrationsTable(db);
+      const applied = getAppliedVersions(db);
+      const pending = migrations.filter((m) => !applied.has(m.version));
+
+      for (const migration of pending) {
+        try {
+          db.exec(migration.up);
+          wouldApply.push(migration.version);
+        } catch (error) {
+          errors.push({ version: migration.version, message: error instanceof Error ? error.message : String(error) });
+          throw error;
+        }
+      }
+      throw DRY_RUN_ABORT;
+    });
+    attempt();
+  } catch (error) {
+    if (error !== DRY_RUN_ABORT && errors.length === 0) {
+      errors.push({ version: 'unknown', message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  return { wouldApply, errors };
+}
