@@ -58,7 +58,10 @@ class ModelRegistry:
         try:
             with open(self.registry_file, 'r') as f:
                 data = json.load(f)
-                return [RegistryEntry(**entry) for entry in data]
+                return [
+                    RegistryEntry(**{**entry, 'metadata': ModelMetadata(**entry['metadata'])})
+                    for entry in data
+                ]
         except Exception as e:
             log.warning(f"Failed to load registry: {e}")
             return []

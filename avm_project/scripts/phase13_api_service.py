@@ -60,7 +60,7 @@ async def startup_event() -> None:
     """Initialize NPU inference engine on startup."""
     global inference_engine
     try:
-        from scripts.phase13_npu_inference import NPUInferenceEngine
+        from phase13_npu_inference import NPUInferenceEngine
 
         ir_dir = Path("output/models_ir")
         if not ir_dir.exists():
