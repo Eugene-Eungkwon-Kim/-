@@ -2960,9 +2960,167 @@ describe('MSW Handlers: Loan Comparison (Task 6 - Day 4)', () => {
 
 describe('MSW Handlers: Advanced Integration (Task 8 - Day 4)', () => {
   describe('[T-API-1501~1504] 통합 고급 시나리오', () => {
-    it('[T-API-1501] 재정 컨설팅', async () => { expect(true).toBe(true); });
-    it('[T-API-1502] 대출 비교 선택', async () => { expect(true).toBe(true); });
-    it('[T-API-1503] 위기 관리', async () => { expect(true).toBe(true); });
-    it('[T-API-1504] 포트폴리오 최적화', async () => { expect(true).toBe(true); });
+    it('[T-API-1501] 전체 재정 컨설팅 워크플로우', async () => {
+      // Step 1: 입력 데이터 검증
+      const validation = await validationEndpoint({
+        userId: 'user-consult', loanAmount: 300000000, loanTerm: 240, productId: 'standard-loan-1', income: 5000000,
+        creditScore: 750, purpose: 'purchase'
+      });
+      expect(validation.valid).toBe(true);
+
+      // Step 2: 신용도 시뮬레이션
+      const creditSim = await creditSimulationEndpoint({
+        currentScore: 750, scenarios: { scenario: 'normal', duration: 12 }
+      });
+      expect(creditSim.summary.finalScore).toBeDefined();
+
+      // Step 3: 재정 분석
+      const financialAnalysis = await financialAnalysisEndpoint({
+        monthlyIncome: 5000000, monthlyExpenses: 2000000, totalDebt: 50000000
+      });
+      expect(financialAnalysis.financialHealthScore).toBeDefined();
+
+      // Step 4: 스트레스 테스트
+      const stressTest = await stressTestEndpoint({
+        loanAmount: 300000000, currentRate: 3.2, currentIncome: 5000000,
+        scenarios: { scenario: 'rate-increase' }
+      });
+      expect(stressTest.summary.breakEvenRate).toBeDefined();
+
+      // Step 5: 리스크 평가
+      const riskAssessment = await riskAssessmentEndpoint({
+        creditScore: 750, income: 5000000, savingsRate: 15
+      });
+      expect(riskAssessment.overallRiskLevel).toBeDefined();
+
+      // Step 6: 상품 추천
+      const recommendations = await loanProductRecommendationEndpoint({
+        creditScore: 750, income: 5000000, purpose: 'purchase'
+      });
+      expect(recommendations.recommendedProducts.length).toBe(3);
+
+      // Complete workflow
+      expect(validation.valid).toBe(true);
+      expect(creditSim.results.length).toBe(12);
+      expect(financialAnalysis.healthGrade).toBeDefined();
+      expect(stressTest.baseCase).toBeDefined();
+      expect(riskAssessment.overallRiskLevel).toBeDefined();
+      expect(recommendations.recommendedProducts[0]).toBeDefined();
+    });
+
+    it('[T-API-1502] 대출 비교 & 선택 워크플로우', async () => {
+      // Step 1: 여러 상품 비교 분석
+      const comparison = await loanComparisonEndpoint({
+        loanAmount: 300000000,
+        options: [
+          { optionId: 'opt-1', productId: 'prod-1', rate: 3.2, term: 240 },
+          { optionId: 'opt-2', productId: 'prod-2', rate: 2.8, term: 240 },
+          { optionId: 'opt-3', productId: 'prod-3', rate: 3.0, term: 180 }
+        ]
+      });
+      expect(comparison.bestOption).toBeDefined();
+      const bestOptionId = comparison.bestOption.optionId;
+
+      // Step 2: 선택 상품별 스트레스 테스트
+      const stressTest1 = await stressTestEndpoint({
+        loanAmount: 300000000, currentRate: 2.8, currentIncome: 5000000,
+        scenarios: { scenario: 'both', stressLevel: 'moderate' }
+      });
+      expect(stressTest1.stressScenarios.length).toBeGreaterThan(0);
+
+      // Step 3: 재정 계획 수립
+      const financialPlan = await financialAnalysisEndpoint({
+        monthlyIncome: 5000000, monthlyExpenses: 2000000, totalDebt: 50000000
+      });
+      expect(financialPlan.debtRepaymentPlan).toBeDefined();
+
+      // Step 4: 리스크 확인
+      const riskAssessment = await riskAssessmentEndpoint({
+        creditScore: 750, income: 5000000, debt: 50000000, savingsRate: 15
+      });
+      expect(riskAssessment.riskScore).toBeDefined();
+
+      // Complete workflow
+      expect(comparison.comparisonResults.length).toBe(3);
+      expect(stressTest1.summary).toBeDefined();
+      expect(financialPlan.healthGrade).toBeDefined();
+      expect(riskAssessment.overallRiskLevel).toBeDefined();
+      expect(bestOptionId).toBeDefined();
+    });
+
+    it('[T-API-1503] 위기 관리 시나리오', async () => {
+      // Step 1: 현재 재정 상태 진단 (위기 상황)
+      const financialStatus = await financialAnalysisEndpoint({
+        monthlyIncome: 2000000, monthlyExpenses: 1800000, totalDebt: 300000000, totalAssets: 50000000
+      });
+      expect(financialStatus.financialHealthScore).toBeLessThan(40);
+
+      // Step 2: 위험 평가
+      const riskAssessment = await riskAssessmentEndpoint({
+        creditScore: 550, income: 2000000, debt: 300000000, savingsRate: 2, employmentStability: 'unstable'
+      });
+      expect(riskAssessment.overallRiskLevel).toBe('high');
+
+      // Step 3: 신용도 시뮬레이션 (crisis scenario)
+      const creditSim = await creditSimulationEndpoint({
+        currentScore: 550, scenarios: { scenario: 'crisis', duration: 12 }
+      });
+      expect(creditSim.summary.trend).toBe('declining');
+
+      // Step 4: 위험 완화 전략
+      const recommendations = [
+        '긴급 기금 확보',
+        '부채 감소 우선',
+        '지출 감축 필요',
+        '소득 증대 방안 검토'
+      ];
+
+      // Crisis management complete
+      expect(financialStatus.currentStatus.monthlySurplus).toBeLessThanOrEqual(0);
+      expect(riskAssessment.overallRiskLevel).toBe('high');
+      expect(creditSim.summary.trend).toBe('declining');
+      expect(recommendations.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it('[T-API-1504] 다중 대출 포트폴리오 최적화', async () => {
+      // Step 1: 전체 포트폴리오 분석 (여러 상품 비교)
+      const portfolio = await loanComparisonEndpoint({
+        loanAmount: 500000000,
+        options: [
+          { optionId: 'existing-1', productId: 'prod-1', rate: 4.0, term: 240 },
+          { optionId: 'existing-2', productId: 'prod-2', rate: 3.5, term: 180 },
+          { optionId: 'existing-3', productId: 'prod-3', rate: 3.8, term: 120 },
+          { optionId: 'new-option', productId: 'prod-4', rate: 2.9, term: 240 }
+        ]
+      });
+      expect(portfolio.comparisonResults.length).toBe(4);
+      const bestNewOption = portfolio.bestOption.optionId;
+
+      // Step 2: 상환 계획 최적화
+      const financialPlan = await financialAnalysisEndpoint({
+        monthlyIncome: 6000000, monthlyExpenses: 2500000, totalDebt: 500000000, totalAssets: 800000000
+      });
+      expect(financialPlan.debtRepaymentPlan).toBeDefined();
+
+      // Step 3: 신용도 영향 분석
+      const creditSimulation = await creditSimulationEndpoint({
+        currentScore: 780, scenarios: { scenario: 'normal', duration: 24 }
+      });
+      expect(creditSimulation.results.length).toBe(24);
+
+      // Step 4: 최종 포트폴리오 구성 확인
+      const finalValidation = await validationEndpoint({
+        userId: 'user-portfolio', loanAmount: 300000000, loanTerm: 240, productId: 'prime-loan-1', income: 6000000,
+        creditScore: 780, purpose: 'purchase'
+      });
+      expect(finalValidation.valid).toBe(true);
+
+      // Portfolio optimization complete
+      expect(portfolio.comparisonResults.length).toBe(4);
+      expect(financialPlan.debtRepaymentPlan.balancedPayoffMonths).toBeGreaterThan(0);
+      expect(creditSimulation.summary.finalScore).toBeGreaterThan(700);
+      expect(finalValidation.valid).toBe(true);
+      expect(bestNewOption).toBeDefined();
+    });
   });
 });
