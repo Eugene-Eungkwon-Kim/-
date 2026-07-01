@@ -1,14 +1,13 @@
-import { http, HttpResponse } from 'msw';
+import { rest } from 'msw';
 
 export const loanHandlers = [
   // 대출상품 조회
-  http.get('/api/v1/loans/products', ({ request }) => {
-    const url = new URL(request.url);
-    const creditScore = parseInt(url.searchParams.get('creditScore') || '700');
+  rest.get('/api/v1/loans/products', (req, res, ctx) => {
+    const creditScore = parseInt(req.url.searchParams.get('creditScore') || '700');
 
     // 신용점수에 따라 다른 상품 반환
     if (creditScore >= 800) {
-      return HttpResponse.json({
+      return res(ctx.json({
         products: [
           {
             id: 'prime-loan-1',
@@ -23,9 +22,9 @@ export const loanHandlers = [
             maxAmount: 300000000
           }
         ]
-      });
+      }));
     } else if (creditScore >= 700) {
-      return HttpResponse.json({
+      return res(ctx.json({
         products: [
           {
             id: 'standard-loan-1',
@@ -34,9 +33,9 @@ export const loanHandlers = [
             maxAmount: 300000000
           }
         ]
-      });
+      }));
     } else if (creditScore >= 650) {
-      return HttpResponse.json({
+      return res(ctx.json({
         products: [
           {
             id: 'conditional-loan-1',
@@ -45,18 +44,17 @@ export const loanHandlers = [
             maxAmount: 150000000
           }
         ]
-      });
+      }));
     } else {
-      return HttpResponse.json(
-        { error: '조건에 맞는 상품이 없습니다.' },
-        { status: 400 }
-      );
+      return res(ctx.status(400), ctx.json({
+        error: '조건에 맞는 상품이 없습니다.'
+      }));
     }
   }),
 
   // 이자율 계산
-  http.post('/api/v1/loans/calculate', async ({ request }) => {
-    const body = await request.json() as {
+  rest.post('/api/v1/loans/calculate', async (req, res, ctx) => {
+    const body = await req.json() as {
       principal: number;
       rate: number;
       term: number;
@@ -67,10 +65,10 @@ export const loanHandlers = [
       (monthlyRate * Math.pow(1 + monthlyRate, body.term)) /
       (Math.pow(1 + monthlyRate, body.term) - 1);
 
-    return HttpResponse.json({
+    return res(ctx.json({
       monthlyPayment: Math.round(monthlyPayment),
       totalPayment: Math.round(monthlyPayment * body.term),
       totalInterest: Math.round(monthlyPayment * body.term - body.principal)
-    });
+    }));
   }),
 ];
