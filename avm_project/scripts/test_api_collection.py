@@ -3,9 +3,11 @@ AVM 프로젝트 - Data.go.kr API 테스트 및 데이터 수집 시작
 Test Korean Real Estate Data Collection with API Key
 """
 
+import os
 import sys
 sys.path.insert(0, '/home/user/-')
 
+from dotenv import load_dotenv
 from avm_project.scripts.data_collection_handler import KoreanRealEstateDataCollector
 import logging
 
@@ -15,8 +17,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# API 키 설정
-API_KEY = '9+Sz4Yn+RoH4bEhkrqfzS+AJz9ldaehP57wEhL3sEKmDMZW5t7UnTs7rPOA3BNcczF8AI/OX0YJ51PmPAAEZFw=='
+# API 키 설정 (avm_project/.env, git에 커밋되지 않음)
+load_dotenv('/home/user/-/avm_project/.env')
+API_KEY = os.getenv('DATAGOVKR_API_KEY')
+
+if not API_KEY:
+    print("❌ DATAGOVKR_API_KEY가 설정되지 않았습니다. avm_project/.env를 확인하세요.")
+    sys.exit(1)
 
 def main():
     print("\n" + "="*70)
