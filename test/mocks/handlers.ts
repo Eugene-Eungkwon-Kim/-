@@ -151,23 +151,79 @@ export const loanHandlers = [
     }
   }),
 
-  // 이자율 계산
+  // 이자율 계산 (고급 기능 포함)
   rest.post('/api/v1/loans/calculate', async (req, res, ctx) => {
     const body = await req.json() as {
       principal: number;
       rate: number;
       term: number;
+      frequency?: 'monthly' | 'quarterly' | 'annual';
+      downPayment?: number;
+      generateSchedule?: boolean;
     };
 
-    const monthlyRate = body.rate / 12 / 100;
-    const monthlyPayment = body.principal *
-      (monthlyRate * Math.pow(1 + monthlyRate, body.term)) /
-      (Math.pow(1 + monthlyRate, body.term) - 1);
+    // 기본값 설정
+    const frequency = body.frequency || 'monthly';
+    const downPayment = body.downPayment || 0;
+    const generateSchedule = body.generateSchedule || false;
+    const actualPrincipal = Math.max(0, body.principal - downPayment);
+
+    // 상환 주기별 기간 계산
+    const periodsPerYear = frequency === 'monthly' ? 12 : frequency === 'quarterly' ? 4 : 1;
+    const periodicRate = (body.rate / 100) / periodsPerYear;
+    const totalPeriods = Math.round((body.term * 12) / (12 / periodsPerYear));
+
+    // 상환액 계산
+    const periodicPayment = actualPrincipal *
+      (periodicRate * Math.pow(1 + periodicRate, totalPeriods)) /
+      (Math.pow(1 + periodicRate, totalPeriods) - 1);
+
+    const totalPayment = Math.round(periodicPayment * totalPeriods);
+    const totalInterest = Math.round(totalPayment - actualPrincipal);
+
+    // 상환 일정 생성 (선택적)
+    let amortizationSchedule = undefined;
+    if (generateSchedule) {
+      amortizationSchedule = [];
+      let balance = actualPrincipal;
+
+      for (let i = 1; i <= Math.min(totalPeriods, 360); i++) {
+        const interestPayment = Math.round(balance * periodicRate);
+        const principalPayment = Math.round(periodicPayment - interestPayment);
+        balance = Math.max(0, balance - principalPayment);
+
+        if (i <= 12 || i % 12 === 0 || i === totalPeriods) {
+          amortizationSchedule.push({
+            period: i,
+            payment: Math.round(periodicPayment),
+            principal: principalPayment,
+            interest: interestPayment,
+            balance: balance
+          });
+        }
+      }
+    }
+
+    // 조기 상환 정보 계산
+    const earlyRepaymentInfo = {
+      possibleFrom: 12,
+      penaltyPercentage: 0,
+      estimatedSavings: Math.round(totalInterest * 0.3)
+    };
 
     return res(ctx.json({
-      monthlyPayment: Math.round(monthlyPayment),
-      totalPayment: Math.round(monthlyPayment * body.term),
-      totalInterest: Math.round(monthlyPayment * body.term - body.principal)
+      monthlyPayment: frequency === 'monthly' ? Math.round(periodicPayment) : undefined,
+      quarterlyPayment: frequency === 'quarterly' ? Math.round(periodicPayment) : undefined,
+      annualPayment: frequency === 'annual' ? Math.round(periodicPayment) : undefined,
+      periodicPayment: Math.round(periodicPayment),
+      totalPayment,
+      totalInterest,
+      downPayment,
+      actualPrincipal,
+      amortizationSchedule,
+      earlyRepaymentInfo,
+      frequency,
+      term: body.term
     }));
   }),
 ];

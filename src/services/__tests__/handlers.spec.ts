@@ -90,6 +90,75 @@ async function assessCreditEndpoint(input: {
   };
 }
 
+// Advanced interest calculation endpoint logic (extracted from handlers for testing)
+async function calculateLoanAdvancedEndpoint(input: {
+  principal: number;
+  rate: number;
+  term: number;
+  frequency?: 'monthly' | 'quarterly' | 'annual';
+  downPayment?: number;
+  generateSchedule?: boolean;
+}): Promise<any> {
+  const frequency = input.frequency || 'monthly';
+  const downPayment = input.downPayment || 0;
+  const generateSchedule = input.generateSchedule || false;
+  const actualPrincipal = Math.max(0, input.principal - downPayment);
+
+  const periodsPerYear = frequency === 'monthly' ? 12 : frequency === 'quarterly' ? 4 : 1;
+  const periodicRate = (input.rate / 100) / periodsPerYear;
+  const totalPeriods = Math.round((input.term * 12) / (12 / periodsPerYear));
+
+  const periodicPayment = actualPrincipal *
+    (periodicRate * Math.pow(1 + periodicRate, totalPeriods)) /
+    (Math.pow(1 + periodicRate, totalPeriods) - 1);
+
+  const totalPayment = Math.round(periodicPayment * totalPeriods);
+  const totalInterest = Math.round(totalPayment - actualPrincipal);
+
+  let amortizationSchedule = undefined;
+  if (generateSchedule) {
+    amortizationSchedule = [];
+    let balance = actualPrincipal;
+
+    for (let i = 1; i <= Math.min(totalPeriods, 360); i++) {
+      const interestPayment = Math.round(balance * periodicRate);
+      const principalPayment = Math.round(periodicPayment - interestPayment);
+      balance = Math.max(0, balance - principalPayment);
+
+      if (i <= 12 || i % 12 === 0 || i === totalPeriods) {
+        amortizationSchedule.push({
+          period: i,
+          payment: Math.round(periodicPayment),
+          principal: principalPayment,
+          interest: interestPayment,
+          balance: balance
+        });
+      }
+    }
+  }
+
+  const earlyRepaymentInfo = {
+    possibleFrom: 12,
+    penaltyPercentage: 0,
+    estimatedSavings: Math.round(totalInterest * 0.3)
+  };
+
+  return {
+    monthlyPayment: frequency === 'monthly' ? Math.round(periodicPayment) : undefined,
+    quarterlyPayment: frequency === 'quarterly' ? Math.round(periodicPayment) : undefined,
+    annualPayment: frequency === 'annual' ? Math.round(periodicPayment) : undefined,
+    periodicPayment: Math.round(periodicPayment),
+    totalPayment,
+    totalInterest,
+    downPayment,
+    actualPrincipal,
+    amortizationSchedule,
+    earlyRepaymentInfo,
+    frequency,
+    term: input.term
+  };
+}
+
 describe('MSW Handlers: Credit Assessment Endpoint (Task 1)', () => {
 
   describe('[T-API-001~004] 신용 등급별 평가', () => {
@@ -191,6 +260,100 @@ describe('MSW Handlers: Credit Assessment Endpoint (Task 1)', () => {
       expect(data.debtRatioPercent).toBeGreaterThan(40);
       expect(data.recommendation).toBe('CONDITIONAL');
       expect(data.grade).toBe('A');
+    });
+  });
+});
+
+describe('MSW Handlers: Advanced Loan Calculation Endpoint (Task 2)', () => {
+
+  describe('[T-API-101~105] 고급 이자 계산 기능', () => {
+
+    it('[T-API-101] 월상환 기본 계산 (frequency: monthly)', async () => {
+      const data = await calculateLoanAdvancedEndpoint({
+        principal: 300000000,
+        rate: 3.2,
+        term: 36,
+        frequency: 'monthly'
+      });
+
+      expect(data.frequency).toBe('monthly');
+      expect(data.monthlyPayment).toBeGreaterThan(0);
+      expect(data.periodicPayment).toBe(data.monthlyPayment);
+      expect(data.totalPayment).toBeGreaterThan(data.actualPrincipal);
+      expect(data.totalInterest).toBeGreaterThan(0);
+      expect(data.downPayment).toBe(0);
+      expect(data.actualPrincipal).toBe(300000000);
+    });
+
+    it('[T-API-102] 분기상환 계산 (frequency: quarterly)', async () => {
+      const data = await calculateLoanAdvancedEndpoint({
+        principal: 300000000,
+        rate: 3.2,
+        term: 36,
+        frequency: 'quarterly'
+      });
+
+      expect(data.frequency).toBe('quarterly');
+      expect(data.quarterlyPayment).toBeGreaterThan(0);
+      expect(data.periodicPayment).toBe(data.quarterlyPayment);
+      expect(data.quarterlyPayment).toBeGreaterThan(0);
+      expect(data.totalPayment).toBeGreaterThan(data.actualPrincipal);
+    });
+
+    it('[T-API-103] 선금 포함 계산 (downPayment: 50M)', async () => {
+      const downPayment = 50000000;
+      const principal = 300000000;
+
+      const data = await calculateLoanAdvancedEndpoint({
+        principal: principal,
+        rate: 3.2,
+        term: 36,
+        frequency: 'monthly',
+        downPayment: downPayment
+      });
+
+      expect(data.downPayment).toBe(downPayment);
+      expect(data.actualPrincipal).toBe(principal - downPayment);
+      expect(data.totalPayment).toBeGreaterThan(data.actualPrincipal);
+      expect(data.totalInterest).toBeGreaterThan(0);
+      expect(data.monthlyPayment).toBeGreaterThan(0);
+    });
+
+    it('[T-API-104] 상환 일정 생성 (generateSchedule: true)', async () => {
+      const data = await calculateLoanAdvancedEndpoint({
+        principal: 100000000,
+        rate: 3.2,
+        term: 12,
+        frequency: 'monthly',
+        generateSchedule: true
+      });
+
+      expect(data.amortizationSchedule).toBeDefined();
+      expect(Array.isArray(data.amortizationSchedule)).toBe(true);
+      expect(data.amortizationSchedule!.length).toBeGreaterThan(0);
+
+      const firstSchedule = data.amortizationSchedule![0];
+      expect(firstSchedule.period).toBe(1);
+      expect(firstSchedule.payment).toBeGreaterThan(0);
+      expect(firstSchedule.principal).toBeGreaterThan(0);
+      expect(firstSchedule.interest).toBeGreaterThan(0);
+      expect(firstSchedule.balance).toBeGreaterThan(0);
+      expect(firstSchedule.balance).toBeLessThan(data.actualPrincipal);
+    });
+
+    it('[T-API-105] 조기 상환 정보 제공', async () => {
+      const data = await calculateLoanAdvancedEndpoint({
+        principal: 300000000,
+        rate: 3.2,
+        term: 240,
+        frequency: 'monthly'
+      });
+
+      expect(data.earlyRepaymentInfo).toBeDefined();
+      expect(data.earlyRepaymentInfo.possibleFrom).toBe(12);
+      expect(data.earlyRepaymentInfo.penaltyPercentage).toBe(0);
+      expect(data.earlyRepaymentInfo.estimatedSavings).toBeGreaterThan(0);
+      expect(data.earlyRepaymentInfo.estimatedSavings).toBeLessThanOrEqual(data.totalInterest);
     });
   });
 });
