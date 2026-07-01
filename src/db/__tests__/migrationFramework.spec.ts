@@ -153,6 +153,8 @@ describe('Migration Framework (Day 5 - Task 8: 데이터 마이그레이션 프�
             encoding: 'utf-8'
           });
 
+        const lastVersion = loadMigrations(MIGRATIONS_DIR).at(-1)?.version;
+
         // CLI 서브프로세스는 두 번만 실행하고, 상태 확인은 직접 DB를 열어 빠르게 검증한다
         const upOutput = runCli('up');
         expect(upOutput).toContain('Applied:');
@@ -162,10 +164,10 @@ describe('Migration Framework (Day 5 - Task 8: 데이터 마이그레이션 프�
         afterUp.close();
 
         const rollbackOutput = runCli('down');
-        expect(rollbackOutput).toContain('Rolled back: 008');
+        expect(rollbackOutput).toContain(`Rolled back: ${lastVersion}`);
 
         const afterRollback = new Database(dbPath);
-        expect(getAppliedVersions(afterRollback).has('008')).toBe(false);
+        expect(getAppliedVersions(afterRollback).has(lastVersion!)).toBe(false);
         afterRollback.close();
 
         fs.rmSync(dbPath, { force: true });
