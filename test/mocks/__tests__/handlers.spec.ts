@@ -4,6 +4,7 @@ import path from 'node:path';
 import { loanHandlers } from '../handlers';
 import { assessRisk } from '@services/riskAssessment';
 import { simulateCreditScore } from '@services/creditSimulation';
+import { analyzeFinancials } from '@services/financialAnalysis';
 
 /**
  * MSW 핸들러의 resolver를 실제 네트워크/서버 없이 직접 호출한다.
@@ -61,6 +62,20 @@ describe('MSW mock ↔ 실서비스 위임 (Day 7 - Task 1, δ=1445)', () => {
       const content = fs.readFileSync(path.resolve(__dirname, '../handlers.ts'), 'utf-8');
       expect(content).toContain("import { assessRisk } from '@services/riskAssessment'");
       expect(content).toContain("import { simulateCreditScore } from '@services/creditSimulation'");
+    });
+  });
+
+  describe('[T-MOCK-05~06] financial-analysis 핸들러 (Day 7 - Task 3, δ=1105)', () => {
+    it('[T-MOCK-05] financial-analysis 핸들러가 실제 모듈과 동일한 결과를 반환한다', async () => {
+      const body = { userId: 'u1', monthlyIncome: 5000000, monthlyExpenses: 2000000, totalDebt: 50000000, totalAssets: 300000000 };
+      const viaHandler = await invokeHandler('POST', '/api/v1/planning/financial-analysis', body);
+      const viaModule = await analyzeFinancials(body);
+      expect(viaHandler).toEqual(viaModule);
+    });
+
+    it('[T-MOCK-06] 핸들러가 analyzeFinancials를 import해 위임한다 (세 번째 독립 구현이었던 회귀 방지)', () => {
+      const content = fs.readFileSync(path.resolve(__dirname, '../handlers.ts'), 'utf-8');
+      expect(content).toContain("import { analyzeFinancials } from '@services/financialAnalysis'");
     });
   });
 });

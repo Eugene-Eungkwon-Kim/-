@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { simulateCreditScore } from '@services/creditSimulation';
 import { assessRisk } from '@services/riskAssessment';
+import { analyzeFinancials } from '@services/financialAnalysis';
 
 // Loan application endpoint logic (extracted from handlers for testing)
 async function applyLoanEndpoint(input: any): Promise<any> {
@@ -2057,32 +2058,8 @@ describe('MSW Handlers: Input Validation Enhancement (Task 1 - Day 4)', () => {
 // Task 5, 2, 3, 4, 6, 8 functions follow
 
 // Financial analysis endpoint (Task 5)
-async function financialAnalysisEndpoint(input: any): Promise<any> {
-  const monthlyIncome = input.monthlyIncome || 4000000;
-  const monthlyExpenses = input.monthlyExpenses || 1500000;
-  const totalDebt = input.totalDebt || 100000000;
-  const totalAssets = input.totalAssets || 500000000;
-  
-  const monthlyLoanPayments = totalDebt / 240;
-  const monthlySurplus = monthlyIncome - monthlyExpenses - monthlyLoanPayments;
-  const debtToIncomeRatio = totalDebt / (monthlyIncome * 12);
-  const assetToDebtRatio = totalAssets / totalDebt;
-  const netWorth = totalAssets - totalDebt;
-  
-  const healthScore = Math.round(Math.max(0, 100 - (debtToIncomeRatio * 50)));
-  const healthGrade = healthScore >= 80 ? 'A' : healthScore >= 60 ? 'B' : healthScore >= 40 ? 'C' : 'F';
-  
-  return {
-    userId: input.userId,
-    currentStatus: { monthlyIncome, monthlyExpenses, monthlyLoanPayments: Math.round(monthlyLoanPayments), monthlySurplus: Math.round(monthlySurplus), totalDebt, totalAssets, netWorth, debtToIncomeRatio: Math.round(debtToIncomeRatio * 1000) / 1000, assetToDebtRatio: Math.round(assetToDebtRatio * 100) / 100 },
-    financialHealthScore: healthScore,
-    healthGrade,
-    healthBreakdown: { debtRatioScore: Math.max(0, 100 - (debtToIncomeRatio * 100)), surplusCashScore: Math.min(100, (monthlySurplus / monthlyIncome) * 300), assetScore: Math.min(100, assetToDebtRatio * 20), creditScore: Math.min(100, 100 - debtToIncomeRatio * 50) },
-    savingsAnalysis: { currentMonthlySavings: Math.round(Math.max(0, monthlySurplus)), projectedSavings12Months: Math.round(Math.max(0, monthlySurplus) * 12), savingsGoal: 100000000, savingsGoalMonths: Math.max(0, monthlySurplus) > 0 ? Math.ceil(100000000 / Math.max(0, monthlySurplus)) : 999, monthlyRequiredSavings: Math.round(100000000 / 36), achievable: Math.max(0, monthlySurplus) >= 100000000 / 36 },
-    debtRepaymentPlan: { totalDebt, quickestPayoffMonths: Math.ceil(totalDebt / (monthlyIncome * 0.5)), balancedPayoffMonths: Math.ceil(totalDebt / (monthlyIncome * 0.2)), debtFreeDate: new Date(Date.now() + Math.ceil(totalDebt / (monthlyIncome * 0.2)) * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], estimatedInterestSavings: Math.round((monthlyIncome * 0.1) * Math.ceil(totalDebt / (monthlyIncome * 0.2)) * 0.3) },
-    recommendations: [healthScore > 70 ? '현재 추세 유지' : '재정 개선 필요']
-  };
-}
+// Day 7: src/services/financialAnalysis.ts로 추출된 실사용 모듈에 위임 (기존 중복 제거)
+const financialAnalysisEndpoint = analyzeFinancials;
 
 // Day 6: src/services/creditSimulation.ts로 추출된 실사용 모듈에 위임 (기존 중복 제거)
 const creditSimulationEndpoint = simulateCreditScore;

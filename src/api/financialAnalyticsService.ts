@@ -4,6 +4,7 @@ import { FinancialSnapshotRepository } from '../repositories/FinancialSnapshotRe
 import { UserNotFoundError } from '../repositories/errors';
 import { simulateCreditScore } from '../services/creditSimulation';
 import { assessRisk } from '../services/riskAssessment';
+import { analyzeFinancials } from '../services/financialAnalysis';
 import { TrendAnalysis, TrendMetric } from '../types/financialSnapshot';
 import { ServiceResult, toServiceResult, toServiceResultAsync } from './errorMapping';
 
@@ -91,6 +92,51 @@ export function runRiskAssessment(
       riskScore: result.riskScore,
       riskLevel: result.overallRiskLevel,
       probabilityOfDefault: result.probabilityOfDefault
+    });
+
+    return result;
+  });
+}
+
+/**
+ * 재정분석(Day4 Task5)을 DB의 실제 income/expenses/debt/assets로 연결한다 (Day7 Task3).
+ * 이 분석은 riskScore/probabilityOfDefault를 계산하지 않으므로, 직전까지 저장된
+ * 최신 스냅샷 값을 그대로 이어받아 upsert 시 리스크 필드가 0으로 덮어써지지 않게 한다.
+ */
+export function runFinancialAnalysis(
+  db: Database.Database,
+  userId: string,
+  snapshotDate: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<ServiceResult<any>> {
+  return toServiceResultAsync(async () => {
+    const profile = new UserRepository(db).getProfile(userId);
+    if (!profile) throw new UserNotFoundError(userId);
+
+    const result = await analyzeFinancials({
+      userId,
+      monthlyIncome: profile.financialSnapshot.monthlyIncome ?? undefined,
+      monthlyExpenses: profile.financialSnapshot.monthlyExpenses ?? undefined,
+      totalDebt: profile.financialSnapshot.totalDebt ?? undefined,
+      totalAssets: profile.financialSnapshot.totalAssets ?? undefined
+    });
+
+    const snapshotRepo = new FinancialSnapshotRepository(db);
+    const history = snapshotRepo.getHistory(userId);
+    const latestExisting = history.length > 0 ? history[history.length - 1] : null;
+
+    snapshotRepo.recordSnapshot({
+      userId,
+      snapshotDate,
+      creditScore: profile.creditProfile.score ?? 700,
+      financialHealthScore: result.financialHealthScore,
+      healthGrade: result.healthGrade,
+      debtToIncomeRatio: result.currentStatus.debtToIncomeRatio,
+      assetToDebtRatio: result.currentStatus.assetToDebtRatio,
+      monthlySurplus: result.currentStatus.monthlySurplus,
+      riskScore: latestExisting?.riskScore ?? 0,
+      riskLevel: latestExisting?.riskLevel ?? 'unknown',
+      probabilityOfDefault: latestExisting?.probabilityOfDefault ?? 0
     });
 
     return result;
