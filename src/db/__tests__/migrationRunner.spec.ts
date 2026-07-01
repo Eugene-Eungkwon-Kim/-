@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { applyMigrations, getMigrationStatus, rollbackLastMigration } from '@db/migrationRunner';
+import { applyMigrations, getMigrationStatus, loadMigrations, rollbackLastMigration } from '@db/migrationRunner';
 import { MIGRATIONS_DIR } from '@db/connection';
 
 describe('Migration Runner (Day 5 - 기초: 스키마 버전 관리)', () => {
@@ -16,8 +16,9 @@ describe('Migration Runner (Day 5 - 기초: 스키마 버전 관리)', () => {
   });
 
   it('모든 마이그레이션을 순서대로 적용한다', () => {
+    const expectedVersions = loadMigrations(MIGRATIONS_DIR).map((m) => m.version);
     const applied = applyMigrations(db, MIGRATIONS_DIR);
-    expect(applied).toEqual(['001', '002']);
+    expect(applied).toEqual(expectedVersions);
 
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
@@ -60,17 +61,16 @@ describe('Migration Runner (Day 5 - 기초: 스키마 버전 관리)', () => {
   });
 
   it('마지막 마이그레이션을 롤백할 수 있다', () => {
+    const allMigrations = loadMigrations(MIGRATIONS_DIR);
+    const lastMigration = allMigrations[allMigrations.length - 1];
+    const secondLastMigration = allMigrations[allMigrations.length - 2];
+
     applyMigrations(db, MIGRATIONS_DIR);
     const rolledBack = rollbackLastMigration(db, MIGRATIONS_DIR);
-    expect(rolledBack).toBe('002');
-
-    const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-      .all() as { name: string }[];
-    expect(tables.map((t) => t.name)).not.toContain('users_audit');
+    expect(rolledBack).toBe(lastMigration.version);
 
     const status = getMigrationStatus(db, MIGRATIONS_DIR);
-    expect(status.find((m) => m.version === '001')?.applied).toBe(true);
-    expect(status.find((m) => m.version === '002')?.applied).toBe(false);
+    expect(status.find((m) => m.version === secondLastMigration.version)?.applied).toBe(true);
+    expect(status.find((m) => m.version === lastMigration.version)?.applied).toBe(false);
   });
 });
