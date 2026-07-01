@@ -6,7 +6,7 @@ import Database from 'better-sqlite3';
 import { createDatabase } from '@db/connection';
 import { UserRepository } from '@repositories/UserRepository';
 import { TransactionRepository } from '@repositories/TransactionRepository';
-import { BackupManager } from '@repositories/BackupManager';
+import { BackupManager, shouldRunBackup } from '@repositories/BackupManager';
 
 describe('BackupManager (Day 5 - Task 7: 백업 & 복구 시스템, δ=1005)', () => {
   let db: Database.Database;
@@ -118,6 +118,34 @@ describe('BackupManager (Day 5 - Task 7: 백업 & 복구 시스템, δ=1005)', (
       backups.restoreFromBackup(oldBackup.id, restoredPath);
 
       expect(countUsersIn(restoredPath)).toBe(1);
+    });
+  });
+
+  describe('[T-SVC-821~822] 백업 스케줄링 & 보존정책 (Day 7 - Task 4, δ=945)', () => {
+    it('[T-SVC-821] shouldRunBackup이 RPO 경과 여부를 정확히 판단한다', () => {
+      expect(shouldRunBackup(null, '2026-07-01T00:00:00Z', 24)).toBe(true); // 백업 이력 없음 → 항상 필요
+      expect(shouldRunBackup('2026-07-01T00:00:00Z', '2026-07-01T12:00:00Z', 24)).toBe(false); // 12시간 경과, 주기 24시간
+      expect(shouldRunBackup('2026-07-01T00:00:00Z', '2026-07-02T01:00:00Z', 24)).toBe(true); // 25시간 경과
+    });
+
+    it('[T-SVC-822] pruneExpiredBackups가 보존기간 초과 백업만 정리한다', async () => {
+      users.register({ email: 'prune-user@example.com', name: 'Prune User' });
+      const backup = await backups.createFullBackup();
+      expect(fs.existsSync(backup.backupPath)).toBe(true);
+
+      // 보존기간(7일) 이내이므로 아직 정리 대상 아님
+      const notYetExpired = backups.pruneExpiredBackups(7, '2026-07-03T00:00:00Z');
+      expect(notYetExpired.prunedCount).toBe(0);
+      expect(fs.existsSync(backup.backupPath)).toBe(true);
+
+      // 보존기간을 초과한 미래 시점 기준으로는 정리되어야 한다
+      const createdAt = backups.getBackup(backup.id)?.createdAt ?? '';
+      const farFuture = new Date(new Date(createdAt.replace(' ', 'T') + 'Z').getTime() + 10 * 24 * 60 * 60 * 1000).toISOString();
+      const expired = backups.pruneExpiredBackups(7, farFuture);
+      expect(expired.prunedCount).toBe(1);
+      expect(expired.prunedIds).toContain(backup.id);
+      expect(fs.existsSync(backup.backupPath)).toBe(false);
+      expect(backups.getBackup(backup.id)).toBeNull();
     });
   });
 });

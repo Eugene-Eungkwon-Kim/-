@@ -6,7 +6,7 @@ import type Database from 'better-sqlite3';
 import { createDatabase } from '@db/connection';
 import { registerUser } from '@api/userService';
 import { applyForLoan } from '@api/loanService';
-import { createBackup, listBackups, runIntegrityCheck, verifyBackup } from '@api/adminService';
+import { checkBackupDue, createBackup, listBackups, pruneOldBackups, runIntegrityCheck, verifyBackup } from '@api/adminService';
 
 describe('adminService (Day 6 - Task 6: 관리자 서비스, δ=1140)', () => {
   let db: Database.Database;
@@ -90,6 +90,29 @@ describe('adminService (Day 6 - Task 6: 관리자 서비스, δ=1140)', () => {
       if (!result.success) {
         expect(result.error.code).toBe('BACKUP_NOT_FOUND');
       }
+    });
+  });
+
+  describe('[T-SVC-823~824] 백업 스케줄링 & 보존정책 서비스 (Day 7 - Task 4, δ=945)', () => {
+    it('[T-SVC-823] 백업 이력이 없으면 즉시 백업이 필요하다고 판단한다', () => {
+      const result = checkBackupDue(db, backupDir, 24, '2026-07-01T00:00:00Z');
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data).toBe(true);
+    });
+
+    it('[T-SVC-824] 보존기간 초과 백업을 서비스 계층에서 정리할 수 있다', async () => {
+      registerUser(db, { email: 'prune-svc@example.com', name: 'Prune Svc User' });
+      const created = await createBackup(db, backupDir);
+      const createdAt = created.success ? created.data.createdAt : '';
+
+      const farFuture = new Date(new Date(createdAt.replace(' ', 'T') + 'Z').getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const result = pruneOldBackups(db, backupDir, 7, farFuture);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data.prunedCount).toBe(1);
+
+      const remaining = listBackups(db, backupDir);
+      expect(remaining.success).toBe(true);
+      if (remaining.success) expect(remaining.data.length).toBe(0);
     });
   });
 });

@@ -32,6 +32,22 @@ export class BackupNotFoundError extends Error {
   }
 }
 
+export interface PruneResult {
+  prunedCount: number;
+  prunedIds: string[];
+}
+
+/**
+ * RPO(마지막 백업 이후 허용 가능한 데이터 손실 시간) 기준으로 다음 백업이
+ * 필요한지 판단하는 순수 함수. 실제 cron 배선은 이 환경에서 검증할 수 없으므로
+ * (배포 인프라 몫), 판단 로직만 여기서 구현하고 테스트로 보장한다.
+ */
+export function shouldRunBackup(lastBackupAt: string | null, now: string, intervalHours: number): boolean {
+  if (!lastBackupAt) return true;
+  const elapsedMs = new Date(now).getTime() - new Date(lastBackupAt).getTime();
+  return elapsedMs >= intervalHours * 60 * 60 * 1000;
+}
+
 /**
  * 백업 & 복구 (Day 5 - Task 7, δ=1005)
  *
@@ -105,6 +121,24 @@ export class BackupManager {
   restoreFromBackup(backupId: string, targetPath: string): void {
     const record = this.getBackupOrThrow(backupId);
     fs.copyFileSync(record.backupPath, targetPath);
+  }
+
+  /** 보존기간(retentionDays)을 초과한 백업 파일과 기록을 정리한다 */
+  pruneExpiredBackups(retentionDays: number, now: string): PruneResult {
+    const expired = this.db
+      .prepare(`SELECT id, backup_path FROM backup_history WHERE created_at < datetime(?, '-' || ? || ' days')`)
+      .all(now, retentionDays) as { id: string; backup_path: string }[];
+
+    for (const row of expired) {
+      if (fs.existsSync(row.backup_path)) fs.unlinkSync(row.backup_path);
+    }
+
+    if (expired.length > 0) {
+      const placeholders = expired.map(() => '?').join(',');
+      this.db.prepare(`DELETE FROM backup_history WHERE id IN (${placeholders})`).run(...expired.map((r) => r.id));
+    }
+
+    return { prunedCount: expired.length, prunedIds: expired.map((r) => r.id) };
   }
 
   private getBackupOrThrow(backupId: string): BackupRecord {
