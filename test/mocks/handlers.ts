@@ -1289,4 +1289,136 @@ export const loanHandlers = [
       recommendations
     }));
   }),
+
+  // 대출 상품 추천
+  rest.post('/api/v1/recommendations/loan-products', async (req, res, ctx) => {
+    const body = await req.json() as any;
+    const userId = body.userId || 'user-001';
+    const creditScore = body.creditScore || 750;
+    const income = body.income || 5000000;
+    const debt = body.debt || 50000000;
+    const assets = body.assets || 300000000;
+    const purpose = body.purpose || 'purchase';
+    const preferenceType = body.preferenceType || 'balanced';
+    const maxMonthlyPaymentRatio = body.maxMonthlyPaymentRatio ?? 40;
+
+    let userGrade = 'D';
+    if (creditScore >= 800) userGrade = 'A';
+    else if (creditScore >= 700) userGrade = 'B';
+    else if (creditScore >= 600) userGrade = 'C';
+
+    const allProducts = [
+      { id: 'product-1', name: '표준 전세', minScore: 550, rate: 3.2, maxAmount: 500000000, maxTerm: 240 },
+      { id: 'product-2', name: '우대 전세', minScore: 650, rate: 2.8, maxAmount: 600000000, maxTerm: 240 },
+      { id: 'product-3', name: 'VIP 대출', minScore: 800, rate: 2.4, maxAmount: 800000000, maxTerm: 300 },
+      { id: 'product-4', name: '신한 월세', minScore: 500, rate: 4.2, maxAmount: 300000000, maxTerm: 120 },
+      { id: 'product-5', name: '안심 구매', minScore: 600, rate: 3.8, maxAmount: 400000000, maxTerm: 180 }
+    ];
+
+    const availableProducts = allProducts.filter(p => creditScore >= p.minScore);
+    const loanAmount = Math.min(income * 3, availableProducts[0]?.maxAmount || 500000000);
+    const loanTerm = 240;
+
+    const productScores = availableProducts.map(product => {
+      const monthlyRate = product.rate / 12 / 100;
+      const monthlyPayment = loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, loanTerm)) / (Math.pow(1 + monthlyRate, loanTerm) - 1);
+      const totalPayment = monthlyPayment * loanTerm;
+      const totalInterest = totalPayment - loanAmount;
+      const paymentRatio = (monthlyPayment / income) * 100;
+
+      let matchScore = 100;
+      matchScore -= (product.rate * 2);
+      matchScore -= (paymentRatio > maxMonthlyPaymentRatio ? (paymentRatio - maxMonthlyPaymentRatio) : 0);
+      matchScore = Math.max(0, Math.min(100, matchScore));
+
+      if (preferenceType === 'lowest-rate' && product.rate < 3.5) matchScore += 10;
+      if (preferenceType === 'lowest-payment' && paymentRatio < 30) matchScore += 10;
+      if (preferenceType === 'shortest-term' && product.maxTerm <= 180) matchScore += 10;
+      if (preferenceType === 'balanced' && product.rate < 3.5 && paymentRatio < 35) matchScore += 10;
+
+      matchScore = Math.min(100, matchScore);
+
+      const purposeBoost: { [key: string]: number } = {
+        'deposit': product.rate <= 3.2 ? 10 : 0,
+        'purchase': product.name.includes('구매') ? 10 : 0,
+        'monthly-rent': product.name.includes('월세') ? 10 : 0,
+        'other': 0
+      };
+      matchScore += purposeBoost[purpose] || 0;
+      matchScore = Math.min(100, matchScore);
+
+      const approvalRate = Math.min(99, Math.max(50, 80 + (creditScore - 700) * 0.1));
+
+      return {
+        product,
+        loanAmount,
+        monthlyPayment: Math.round(monthlyPayment),
+        totalInterest: Math.round(totalInterest),
+        totalPayment: Math.round(totalPayment),
+        paymentRatio: Math.round(paymentRatio * 10) / 10,
+        approvalRate: Math.round(approvalRate),
+        matchScore: Math.round(matchScore)
+      };
+    });
+
+    const sorted = productScores.sort((a, b) => b.matchScore - a.matchScore);
+    const recommended = sorted.slice(0, 3).map((item, idx) => ({
+      rank: idx + 1,
+      productId: item.product.id,
+      productName: item.product.name,
+      rate: item.product.rate,
+      maxAmount: item.product.maxAmount,
+      maxTerm: item.product.maxTerm,
+      matchScore: item.matchScore,
+      analysis: {
+        monthlyPayment: item.monthlyPayment,
+        totalInterest: item.totalInterest,
+        totalPayment: item.totalPayment,
+        paymentRatio: item.paymentRatio,
+        estimatedApprovalRate: item.approvalRate,
+        pros: [
+          item.paymentRatio < maxMonthlyPaymentRatio ? '월상환액 부담 낮음' : '',
+          item.product.rate < 3.5 ? '경쟁력 있는 금리' : '',
+          item.matchScore > 80 ? '사용자 맞춤형 상품' : ''
+        ].filter(Boolean),
+        cons: [
+          item.paymentRatio >= 35 ? '월상환액 부담 높음' : '',
+          item.product.maxTerm < 240 ? '상환 기간 제한' : ''
+        ].filter(Boolean),
+        bestFor: purpose === 'deposit' ? '전세자금 조달' : purpose === 'purchase' ? '주택 구매' : '자금 운용'
+      }
+    }));
+
+    const alternatives = sorted.slice(3, 5).map((item, idx) => ({
+      rank: idx + 4,
+      productId: item.product.id,
+      productName: item.product.name,
+      rate: item.product.rate,
+      matchScore: item.matchScore
+    }));
+
+    const comparisonMatrix = {
+      productIds: recommended.map(r => r.productId),
+      metrics: {
+        rate: recommended.map(r => r.rate),
+        monthlyPayment: recommended.map(r => r.analysis.monthlyPayment),
+        totalInterest: recommended.map(r => r.analysis.totalInterest),
+        paymentRatio: recommended.map(r => r.analysis.paymentRatio)
+      }
+    };
+
+    const personalizedAdvice = creditScore >= 800 ? 'VIP 고객으로서 최우대 조건 제공 가능합니다' :
+      creditScore >= 700 ? '우대 상품으로 합리적인 금리 제공합니다' :
+      creditScore >= 600 ? '기본 상품으로 안정적인 대출이 가능합니다' :
+      '신용도 개선을 통해 더 좋은 상품 이용이 가능합니다';
+
+    return res(ctx.json({
+      userId,
+      userGrade,
+      recommendedProducts: recommended,
+      alternativeProducts: alternatives,
+      comparisonMatrix,
+      personalizedAdvice
+    }));
+  }),
 ];
