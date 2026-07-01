@@ -1,6 +1,93 @@
 import { rest } from 'msw';
 
 export const loanHandlers = [
+  // 상환 일정 조회
+  rest.get('/api/v1/loans/:loanId/repayment-schedule', (req, res, ctx) => {
+    const { loanId } = req.params;
+    const format = req.url.searchParams.get('format') || 'summary';
+    const currency = req.url.searchParams.get('currency') || 'KRW';
+
+    // 모의 대출 정보
+    const loanInfo: { [key: string]: any } = {
+      'loan-001': {
+        principal: 300000000,
+        rate: 3.2,
+        term: 240,
+        startDate: '2026-01-01',
+        productName: '표준 전세'
+      },
+      'loan-002': {
+        principal: 150000000,
+        rate: 4.5,
+        term: 180,
+        startDate: '2026-02-01',
+        productName: '조건부 대출'
+      }
+    };
+
+    const loan = loanInfo[loanId];
+    if (!loan) {
+      return res(ctx.status(404), ctx.json({ error: 'Loan not found' }));
+    }
+
+    // 상환 일정 생성
+    const monthlyRate = loan.rate / 12 / 100;
+    const monthlyPayment = loan.principal *
+      (monthlyRate * Math.pow(1 + monthlyRate, loan.term)) /
+      (Math.pow(1 + monthlyRate, loan.term) - 1);
+
+    const schedule = [];
+    let balance = loan.principal;
+
+    for (let i = 1; i <= loan.term; i++) {
+      const interestPayment = Math.round(balance * monthlyRate);
+      const principalPayment = Math.round(monthlyPayment - interestPayment);
+      balance = Math.max(0, balance - principalPayment);
+
+      if (i <= 12 || i % 12 === 0 || i === loan.term) {
+        const dueDate = new Date(new Date(loan.startDate).getTime() + i * 30 * 24 * 60 * 60 * 1000).toISOString();
+        schedule.push({
+          period: i,
+          dueDate: dueDate.split('T')[0],
+          payment: Math.round(monthlyPayment),
+          principal: principalPayment,
+          interest: interestPayment,
+          remainingBalance: balance,
+          status: i <= 3 ? 'paid' : i === 4 ? 'pending' : 'pending'
+        });
+      }
+    }
+
+    // 환율 적용
+    const exchangeRate = currency === 'USD' ? 0.00075 : 1;
+
+    const summary = {
+      monthlyPayment: Math.round(monthlyPayment * exchangeRate),
+      totalPayment: Math.round(monthlyPayment * loan.term * exchangeRate),
+      totalInterest: Math.round((monthlyPayment * loan.term - loan.principal) * exchangeRate),
+      paidAmount: Math.round(monthlyPayment * 3 * exchangeRate),
+      remainingAmount: Math.round((monthlyPayment * loan.term - monthlyPayment * 3) * exchangeRate),
+      remainingInterest: Math.round(((monthlyPayment * loan.term - loan.principal) - (monthlyPayment * 3)) * exchangeRate)
+    };
+
+    return res(ctx.json({
+      loanId,
+      productName: loan.productName,
+      principal: loan.principal,
+      rate: loan.rate,
+      term: loan.term,
+      startDate: loan.startDate,
+      endDate: new Date(new Date(loan.startDate).getTime() + loan.term * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      summary,
+      schedule,
+      earlyRepaymentOptions: {
+        prepaymentPenalty: 0,
+        prepaymentAllowedAfter: 12,
+        estimatedSavings: Math.round(summary.totalInterest * 0.3 * exchangeRate)
+      }
+    }));
+  }),
+
   // 대출 신청
   rest.post('/api/v1/loans/apply', async (req, res, ctx) => {
     const body = await req.json() as {

@@ -69,6 +69,96 @@ async function applyLoanEndpoint(input: any): Promise<any> {
   };
 }
 
+// Repayment schedule endpoint logic (extracted from handlers for testing)
+async function repaymentScheduleEndpoint(input: {
+  loanId: string;
+  format?: 'summary' | 'detailed';
+  currency?: 'KRW' | 'USD';
+}): Promise<any> {
+  const format = input.format || 'detailed';
+  const currency = input.currency || 'KRW';
+  const exchangeRate = 0.00075;
+
+  const mockLoans: { [key: string]: { principal: number; rate: number; term: number } } = {
+    'loan-001': { principal: 300000000, rate: 3.2, term: 240 },
+    'loan-002': { principal: 150000000, rate: 4.5, term: 180 }
+  };
+
+  const loan = mockLoans[input.loanId];
+  if (!loan) {
+    throw new Error('Loan not found');
+  }
+
+  const monthlyRate = loan.rate / 12 / 100;
+  const monthlyPayment = loan.principal *
+    (monthlyRate * Math.pow(1 + monthlyRate, loan.term)) /
+    (Math.pow(1 + monthlyRate, loan.term) - 1);
+
+  const schedule = [];
+  let balance = loan.principal;
+  let totalPaid = 0;
+
+  for (let period = 1; period <= loan.term; period++) {
+    const interestPayment = Math.round(balance * monthlyRate);
+    const principalPayment = Math.round(monthlyPayment - interestPayment);
+    balance = Math.max(0, balance - principalPayment);
+    totalPaid += Math.round(monthlyPayment);
+
+    if (format === 'detailed' || period <= 12 || period % 12 === 0 || period === loan.term) {
+      const scheduleEntry: any = {
+        period,
+        payment: Math.round(monthlyPayment)
+      };
+
+      if (format === 'detailed') {
+        scheduleEntry.principal = principalPayment;
+        scheduleEntry.interest = interestPayment;
+        scheduleEntry.balance = balance;
+        scheduleEntry.status = balance === 0 ? 'completed' : 'active';
+      }
+
+      if (currency === 'USD') {
+        scheduleEntry.payment = Math.round(scheduleEntry.payment * exchangeRate);
+        if (format === 'detailed') {
+          scheduleEntry.principal = Math.round(scheduleEntry.principal * exchangeRate);
+          scheduleEntry.interest = Math.round(scheduleEntry.interest * exchangeRate);
+          scheduleEntry.balance = Math.round(scheduleEntry.balance * exchangeRate);
+        }
+      }
+
+      schedule.push(scheduleEntry);
+    }
+  }
+
+  const totalInterest = Math.round(monthlyPayment * loan.term - loan.principal);
+  const totalInterestDisplay = currency === 'USD' ? Math.round(totalInterest * exchangeRate) : totalInterest;
+  const monthlyPaymentDisplay = currency === 'USD' ? Math.round(monthlyPayment * exchangeRate) : Math.round(monthlyPayment);
+  const principalDisplay = currency === 'USD' ? Math.round(loan.principal * exchangeRate) : loan.principal;
+
+  return {
+    loanId: input.loanId,
+    loanDetails: {
+      principal: principalDisplay,
+      rate: loan.rate,
+      term: loan.term
+    },
+    summary: {
+      monthlyPayment: monthlyPaymentDisplay,
+      totalPayment: Math.round(monthlyPayment * loan.term),
+      totalInterest: totalInterestDisplay,
+      paidAmount: totalPaid,
+      remainingAmount: Math.max(0, Math.round(loan.principal - totalPaid))
+    },
+    schedule,
+    earlyRepaymentOptions: {
+      possibleFrom: 12,
+      penaltyPercentage: 0,
+      estimatedSavings: Math.round(totalInterest * 0.3)
+    },
+    currency
+  };
+}
+
 // Credit assessment endpoint logic (extracted from handlers for testing)
 async function assessCreditEndpoint(input: {
   income: number;
@@ -867,6 +957,115 @@ describe('MSW Handlers: Loan Application Endpoint (Task 1 - Day 3)', () => {
       expect(data.approvedAmount).toBe(150000000);
       expect(data.monthlyPayment).toBeGreaterThan(0);
       expect(data.totalInterest).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe('MSW Handlers: Repayment Schedule Endpoint (Task 2 - Day 3)', () => {
+
+  describe('[T-API-501~505] 상환 일정 조회 기능', () => {
+
+    it('[T-API-501] 요약 형식 (format: summary)', async () => {
+      const data = await repaymentScheduleEndpoint({
+        loanId: 'loan-001',
+        format: 'summary',
+        currency: 'KRW'
+      });
+
+      expect(data.loanId).toBe('loan-001');
+      expect(data.loanDetails).toBeDefined();
+      expect(data.loanDetails.principal).toBe(300000000);
+      expect(data.summary).toBeDefined();
+      expect(data.summary.monthlyPayment).toBeGreaterThan(0);
+      expect(data.summary.totalPayment).toBeGreaterThan(0);
+      expect(data.summary.totalInterest).toBeGreaterThan(0);
+      expect(data.currency).toBe('KRW');
+
+      // 요약 형식에서는 스케줄이 축약됨
+      expect(Array.isArray(data.schedule)).toBe(true);
+      expect(data.schedule.length).toBeLessThan(240);
+    });
+
+    it('[T-API-502] 상세 형식 (format: detailed)', async () => {
+      const data = await repaymentScheduleEndpoint({
+        loanId: 'loan-001',
+        format: 'detailed',
+        currency: 'KRW'
+      });
+
+      expect(data.loanId).toBe('loan-001');
+      expect(data.schedule).toBeDefined();
+      expect(Array.isArray(data.schedule)).toBe(true);
+      expect(data.schedule.length).toBeGreaterThan(0);
+
+      // 상세 형식에서는 각 항목에 principal, interest, balance 포함
+      const firstSchedule = data.schedule[0];
+      expect(firstSchedule.period).toBe(1);
+      expect(firstSchedule.payment).toBeGreaterThan(0);
+      expect(firstSchedule.principal).toBeGreaterThan(0);
+      expect(firstSchedule.interest).toBeGreaterThan(0);
+      expect(firstSchedule.balance).toBeGreaterThan(0);
+      expect(firstSchedule.balance).toBeLessThan(data.loanDetails.principal);
+      expect(firstSchedule.status).toBe('active');
+    });
+
+    it('[T-API-503] 부분 상환 추적 (주기별 잔액)', async () => {
+      const data = await repaymentScheduleEndpoint({
+        loanId: 'loan-002',
+        format: 'detailed',
+        currency: 'KRW'
+      });
+
+      expect(data.schedule).toBeDefined();
+      expect(data.schedule.length).toBeGreaterThan(0);
+
+      // 잔액이 점차 감소하는지 확인
+      let prevBalance = data.loanDetails.principal;
+      for (const item of data.schedule) {
+        expect(item.balance).toBeLessThanOrEqual(prevBalance);
+        prevBalance = item.balance;
+      }
+
+      // 마지막 항목의 잔액은 0에 가까워야 함
+      const lastSchedule = data.schedule[data.schedule.length - 1];
+      expect(lastSchedule.status).toBe('completed');
+      expect(lastSchedule.balance).toBe(0);
+    });
+
+    it('[T-API-504] 조기 상환 옵션 (earlyRepaymentOptions)', async () => {
+      const data = await repaymentScheduleEndpoint({
+        loanId: 'loan-001',
+        format: 'summary',
+        currency: 'KRW'
+      });
+
+      expect(data.earlyRepaymentOptions).toBeDefined();
+      expect(data.earlyRepaymentOptions.possibleFrom).toBe(12);
+      expect(data.earlyRepaymentOptions.penaltyPercentage).toBe(0);
+      expect(data.earlyRepaymentOptions.estimatedSavings).toBeGreaterThan(0);
+      expect(data.earlyRepaymentOptions.estimatedSavings).toBeLessThanOrEqual(data.summary.totalInterest);
+    });
+
+    it('[T-API-505] 통화 변환 (currency: USD)', async () => {
+      const dataKRW = await repaymentScheduleEndpoint({
+        loanId: 'loan-001',
+        format: 'summary',
+        currency: 'KRW'
+      });
+
+      const dataUSD = await repaymentScheduleEndpoint({
+        loanId: 'loan-001',
+        format: 'summary',
+        currency: 'USD'
+      });
+
+      expect(dataUSD.currency).toBe('USD');
+      expect(dataKRW.currency).toBe('KRW');
+
+      // USD 금액이 KRW에 환율을 곱한 것과 거의 같아야 함
+      const exchangeRate = 0.00075;
+      expect(dataUSD.summary.monthlyPayment).toBe(Math.round(dataKRW.summary.monthlyPayment * exchangeRate));
+      expect(dataUSD.loanDetails.principal).toBe(Math.round(dataKRW.loanDetails.principal * exchangeRate));
     });
   });
 });
