@@ -687,4 +687,71 @@ export const loanHandlers = [
       }
     }));
   }),
+
+  // 신용도 이력 조회
+  rest.get('/api/v1/users/:userId/credit-history', (req, res, ctx) => {
+    const { userId } = req.params;
+    const months = parseInt(req.url.searchParams.get('months') || '12');
+    const format = req.url.searchParams.get('format') || 'summary';
+
+    const history: any[] = [];
+    const startDate = new Date('2025-08-01');
+
+    for (let i = 0; i < Math.min(months, 12); i++) {
+      const date = new Date(startDate);
+      date.setMonth(date.getMonth() - i);
+      const baseScore = userId === 'user-001' ? 750 : 700;
+      const fluctuation = Math.sin(i * 0.5) * 20;
+      const score = Math.round(baseScore + fluctuation);
+
+      history.push({
+        month: date.toISOString().split('T')[0],
+        score,
+        grade: score >= 800 ? 'A' : score >= 700 ? 'B' : score >= 650 ? 'C' : 'D',
+        inquiries: Math.max(0, Math.floor(Math.random() * 3)),
+        delinquencies: i > 6 ? 1 : 0,
+        accountCount: 3 + Math.floor(i / 3)
+      });
+    }
+
+    const scores = history.map(h => h.score);
+    const currentScore = scores[0];
+    const prevScore = scores[1] || currentScore;
+    const scoreChange = currentScore - prevScore;
+    const trend = scoreChange > 0 ? 'improving' : scoreChange < 0 ? 'declining' : 'stable';
+    const averageScore = Math.round(scores.reduce((a, b) => a + b) / scores.length);
+
+    const composition = {
+      paymentHistory: 35,
+      creditUtilization: 30,
+      creditAge: 15,
+      creditMix: 10,
+      newInquiries: 10
+    };
+
+    const recommendations = [];
+    if (composition.creditUtilization > 30) {
+      recommendations.push('신용 카드 사용률을 30% 이하로 유지하세요.');
+    }
+    if (history.some(h => h.delinquencies > 0)) {
+      recommendations.push('지연된 결제가 있습니다. 정시 납부를 확인하세요.');
+    }
+    if (composition.newInquiries > 5) {
+      recommendations.push('최근 신용 조회가 많습니다. 신규 신용 신청을 자제하세요.');
+    }
+    if (recommendations.length === 0) {
+      recommendations.push('우수한 신용 상태를 유지 중입니다.');
+    }
+
+    return res(ctx.json({
+      userId,
+      currentScore,
+      trend,
+      averageScore,
+      scoreChange,
+      history: format === 'detailed' ? history : history.slice(0, 3),
+      composition,
+      recommendations
+    }));
+  }),
 ];

@@ -271,6 +271,76 @@ async function portfolioEndpoint(input: {
   };
 }
 
+// Credit history endpoint logic (extracted from handlers for testing)
+async function creditHistoryEndpoint(input: {
+  userId: string;
+  months?: number;
+  format?: 'summary' | 'detailed';
+}): Promise<any> {
+  const months = input.months || 12;
+  const format = input.format || 'summary';
+
+  const history: any[] = [];
+  const startDate = new Date('2025-08-01');
+
+  for (let i = 0; i < Math.min(months, 12); i++) {
+    const date = new Date(startDate);
+    date.setMonth(date.getMonth() - i);
+    const baseScore = input.userId === 'user-001' ? 750 : 700;
+    const fluctuation = Math.sin(i * 0.5) * 20;
+    const score = Math.round(baseScore + fluctuation);
+
+    history.push({
+      month: date.toISOString().split('T')[0],
+      score,
+      grade: score >= 800 ? 'A' : score >= 700 ? 'B' : score >= 650 ? 'C' : 'D',
+      inquiries: Math.max(0, Math.floor(Math.random() * 3)),
+      delinquencies: i > 6 ? 1 : 0,
+      accountCount: 3 + Math.floor(i / 3)
+    });
+  }
+
+  const scores = history.map(h => h.score);
+  const currentScore = scores[0];
+  const prevScore = scores[1] || currentScore;
+  const scoreChange = currentScore - prevScore;
+  const trend = scoreChange > 0 ? 'improving' : scoreChange < 0 ? 'declining' : 'stable';
+  const averageScore = Math.round(scores.reduce((a, b) => a + b) / scores.length);
+
+  const composition = {
+    paymentHistory: 35,
+    creditUtilization: 30,
+    creditAge: 15,
+    creditMix: 10,
+    newInquiries: 10
+  };
+
+  const recommendations = [];
+  if (composition.creditUtilization > 30) {
+    recommendations.push('신용 카드 사용률을 30% 이하로 유지하세요.');
+  }
+  if (history.some(h => h.delinquencies > 0)) {
+    recommendations.push('지연된 결제가 있습니다. 정시 납부를 확인하세요.');
+  }
+  if (composition.newInquiries > 5) {
+    recommendations.push('최근 신용 조회가 많습니다. 신규 신용 신청을 자제하세요.');
+  }
+  if (recommendations.length === 0) {
+    recommendations.push('우수한 신용 상태를 유지 중입니다.');
+  }
+
+  return {
+    userId: input.userId,
+    currentScore,
+    trend,
+    averageScore,
+    scoreChange,
+    history: format === 'detailed' ? history : history.slice(0, 3),
+    composition,
+    recommendations
+  };
+}
+
 // Credit assessment endpoint logic (extracted from handlers for testing)
 async function assessCreditEndpoint(input: {
   income: number;
@@ -1284,6 +1354,115 @@ describe('MSW Handlers: Portfolio Inquiry Endpoint (Task 3 - Day 3)', () => {
       const delinquentLoans = data.loans.filter(loan => loan.delinquencyDays > 0);
       if (delinquentLoans.length > 0) {
         expect(data.portfolio.delinquencyCount).toBe(delinquentLoans.length);
+      }
+    });
+  });
+});
+
+describe('MSW Handlers: Credit History Endpoint (Task 4 - Day 3)', () => {
+
+  describe('[T-API-701~705] 신용도 이력 조회 기능', () => {
+
+    it('[T-API-701] 신용도 이력 조회 (기본)', async () => {
+      const data = await creditHistoryEndpoint({
+        userId: 'user-001',
+        format: 'summary'
+      });
+
+      expect(data.userId).toBe('user-001');
+      expect(data.currentScore).toBeGreaterThan(0);
+      expect(data.currentScore).toBeLessThanOrEqual(999);
+      expect(data.history).toBeDefined();
+      expect(Array.isArray(data.history)).toBe(true);
+      expect(data.history.length).toBeGreaterThan(0);
+
+      // 각 이력 항목에 필수 필드 확인
+      for (const entry of data.history) {
+        expect(entry.month).toBeDefined();
+        expect(entry.score).toBeDefined();
+        expect(entry.grade).toMatch(/[A-D]/);
+      }
+    });
+
+    it('[T-API-702] 신용도 추세 분석 (trend)', async () => {
+      const data = await creditHistoryEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(data.trend).toBeDefined();
+      expect(['improving', 'declining', 'stable']).toContain(data.trend);
+      expect(data.scoreChange).toBeDefined();
+      expect(data.averageScore).toBeGreaterThan(0);
+      expect(data.averageScore).toBeLessThanOrEqual(999);
+
+      // 추세가 scoreChange와 일치하는지 확인
+      if (data.scoreChange > 0) {
+        expect(data.trend).toBe('improving');
+      } else if (data.scoreChange < 0) {
+        expect(data.trend).toBe('declining');
+      } else {
+        expect(data.trend).toBe('stable');
+      }
+    });
+
+    it('[T-API-703] 신용도 구성 요소 (composition)', async () => {
+      const data = await creditHistoryEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(data.composition).toBeDefined();
+      expect(data.composition.paymentHistory).toBeGreaterThan(0);
+      expect(data.composition.creditUtilization).toBeGreaterThan(0);
+      expect(data.composition.creditAge).toBeGreaterThan(0);
+      expect(data.composition.creditMix).toBeGreaterThan(0);
+      expect(data.composition.newInquiries).toBeGreaterThan(0);
+
+      // 비중의 합계가 100인지 확인
+      const total = Object.values(data.composition).reduce((a: any, b: any) => a + b, 0);
+      expect(total).toBe(100);
+    });
+
+    it('[T-API-704] 신용도 개선 권고사항 (recommendations)', async () => {
+      const data = await creditHistoryEndpoint({
+        userId: 'user-001'
+      });
+
+      expect(data.recommendations).toBeDefined();
+      expect(Array.isArray(data.recommendations)).toBe(true);
+      expect(data.recommendations.length).toBeGreaterThan(0);
+
+      // 각 권고사항이 문자열인지 확인
+      for (const rec of data.recommendations) {
+        expect(typeof rec).toBe('string');
+        expect(rec.length).toBeGreaterThan(0);
+      }
+    });
+
+    it('[T-API-705] 상세 이력 조회 (format: detailed, months: 6)', async () => {
+      const summaryData = await creditHistoryEndpoint({
+        userId: 'user-001',
+        months: 6,
+        format: 'summary'
+      });
+
+      const detailedData = await creditHistoryEndpoint({
+        userId: 'user-001',
+        months: 6,
+        format: 'detailed'
+      });
+
+      // 상세 형식이 더 많은 데이터를 반환해야 함
+      expect(detailedData.history.length).toBeGreaterThanOrEqual(summaryData.history.length);
+      expect(detailedData.history.length).toBeLessThanOrEqual(6);
+
+      // 상세 형식의 각 항목이 complete한지 확인
+      for (const entry of detailedData.history) {
+        expect(entry.month).toBeDefined();
+        expect(entry.score).toBeDefined();
+        expect(entry.grade).toBeDefined();
+        expect(entry.inquiries).toBeDefined();
+        expect(entry.delinquencies).toBeDefined();
+        expect(entry.accountCount).toBeDefined();
       }
     });
   });
