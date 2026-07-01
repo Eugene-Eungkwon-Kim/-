@@ -33,7 +33,9 @@
       "@services/*": ["src/services/*"],
       "@types/*": ["src/types/*"],
       "@fixtures/*": ["test/fixtures/*"],
-      "@mocks/*": ["test/mocks/*"]
+      "@mocks/*": ["test/mocks/*"],
+      "@db/*": ["src/db/*"],
+      "@repositories/*": ["src/repositories/*"]
     },
 
     /* Emit */

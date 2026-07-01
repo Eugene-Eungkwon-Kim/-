@@ -12,6 +12,8 @@ export default defineConfig({
       '@types': path.resolve(__dirname, './src/types'),
       '@fixtures': path.resolve(__dirname, './test/fixtures'),
       '@mocks': path.resolve(__dirname, './test/mocks'),
+      '@db': path.resolve(__dirname, './src/db'),
+      '@repositories': path.resolve(__dirname, './src/repositories'),
     }
   },
 
