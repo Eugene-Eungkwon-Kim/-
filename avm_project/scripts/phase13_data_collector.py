@@ -42,6 +42,7 @@ class CollectionMetrics:
 
 
 COUNTRIES_CONFIG = {
+    'KR': CountryDataConfig('KR', 'South Korea', 'data.go.kr / MOLIT', expected_records=50000),
     'UK': CountryDataConfig('UK', 'United Kingdom', 'HM Land Registry', expected_records=150000),
     'SG': CountryDataConfig('SG', 'Singapore', 'URA API', expected_records=120000),
     'JP': CountryDataConfig('JP', 'Japan', 'REIT-DB', expected_records=200000),
