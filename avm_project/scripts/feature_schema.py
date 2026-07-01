@@ -1,13 +1,12 @@
 """특성 스키마"""
+import json
+from typing import Any, Dict
 
-def load_schema():
-    return {
-        '면적': float,
-        '지역': int,
-        '건축년도': int,
-        '층수': int,
-        '방_개수': int,
-        '욕실_개수': int,
-        '엘리베이터': int,
-        '주차장': int,
-    }
+from data_path_config import get_models_path
+
+
+def load_schema() -> Dict[str, Any]:
+    """models/feature_schema.json에서 학습 시점 특성 스키마를 로드한다."""
+    schema_path = get_models_path() / "feature_schema.json"
+    with open(schema_path, encoding="utf-8") as f:
+        return json.load(f)

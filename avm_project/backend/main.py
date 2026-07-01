@@ -469,15 +469,28 @@ async def get_retraining_history(limit: int = 50, token: str = Depends(verify_to
 # ============================================
 # WebSocket 엔드포인트
 # ============================================
+def _is_ping(data: str) -> bool:
+    """클라이언트 메시지가 ping인지 확인 (평문 "ping" 또는 {"type": "ping"} JSON 모두 지원)"""
+    if data == "ping":
+        return True
+    try:
+        return json.loads(data).get("type") == "ping"
+    except (json.JSONDecodeError, AttributeError):
+        return False
+
+
 @app.websocket("/ws/dashboard")
 async def websocket_dashboard(websocket: WebSocket):
     """대시보드 실시간 업데이트 WebSocket"""
     await connection_manager.connect(websocket, "dashboard")
+    await connection_manager.send_personal(
+        websocket, {"type": "connection", "status": "connected"}
+    )
     try:
         while True:
             # 클라이언트로부터 메시지 수신 대기
             data = await websocket.receive_text()
-            if data == "ping":
+            if _is_ping(data):
                 await connection_manager.send_personal(
                     websocket,
                     {"type": "pong", "timestamp": datetime.now().isoformat()}
@@ -492,11 +505,14 @@ async def websocket_dashboard(websocket: WebSocket):
 async def websocket_monitoring(websocket: WebSocket):
     """모니터링 실시간 업데이트 WebSocket"""
     await connection_manager.connect(websocket, "monitoring")
+    await connection_manager.send_personal(
+        websocket, {"type": "connection", "status": "connected"}
+    )
     try:
         while True:
             # 클라이언트로부터 메시지 수신 대기
             data = await websocket.receive_text()
-            if data == "ping":
+            if _is_ping(data):
                 await connection_manager.send_personal(
                     websocket,
                     {"type": "pong", "timestamp": datetime.now().isoformat()}

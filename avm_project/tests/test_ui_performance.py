@@ -26,7 +26,7 @@ class TestDashboardPerformance:
     def browser_context(self):
         """Setup Playwright browser"""
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, executable_path="/opt/pw-browsers/chromium")
             context = browser.new_context()
             yield context
             context.close()
@@ -258,7 +258,7 @@ class TestDashboardAccessibility:
     def browser_context(self):
         """Setup Playwright browser"""
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, executable_path="/opt/pw-browsers/chromium")
             context = browser.new_context()
             yield context
             context.close()

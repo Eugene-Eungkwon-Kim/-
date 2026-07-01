@@ -72,14 +72,16 @@ class PredictionCache:
 
 class ConfidenceEstimator:
     """신뢰도 구간 추정"""
+    Z = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}
+
     def __init__(self, model: Any, confidence: float = 0.95,
                  residual_std: Optional[float] = None) -> None:
-        if confidence < 0.9 or confidence >= 1.0:
-            raise ValueError("confidence must be between 0.9 and 1.0")
+        if confidence not in self.Z:
+            raise ValueError(f"confidence는 {list(self.Z)} 중 하나여야 합니다")
         self.model = model
         self.confidence = confidence
         self.residual_std = residual_std
-        self.z_score = 1.96 if confidence == 0.95 else 2.576
+        self.z_score = self.Z[confidence]
 
     def estimate(self, features: List[float]) -> ConfidenceInterval:
         """신뢰도 구간 추정"""
