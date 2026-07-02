@@ -9,6 +9,12 @@ import { ServiceResult } from '../api/errorMapping';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-in-production';
 
+/** 인증 없이 접근 가능한 (method, path) 목록 — 회원가입과 로그인만 예외 */
+const PUBLIC_ROUTES: Array<[string, string]> = [
+  ['POST', '/api/auth/login'],
+  ['POST', '/api/users']
+];
+
 /**
  * 프론트엔드 연동을 위한 최소 HTTP 서버 (Fastify).
  *
@@ -41,6 +47,20 @@ export function buildServer(db: Database.Database): FastifyInstance {
   const app = Fastify({ logger: false });
   app.register(cors, { origin: true });
   app.register(jwt, { secret: JWT_SECRET });
+
+  // 인증 훅 (Day 8 - Task 4, δ=1360): 공개 라우트를 제외한 모든 요청은 유효한
+  // JWT가 있어야 통과한다. 성공 시 request.user에 { userId }가 채워진다.
+  app.addHook('onRequest', async (request, reply) => {
+    const path = request.url.split('?')[0];
+    const isPublic = PUBLIC_ROUTES.some(([method, url]) => request.method === method && path === url);
+    if (isPublic) return;
+
+    try {
+      await request.jwtVerify();
+    } catch {
+      reply.code(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing or invalid authorization token' } });
+    }
+  });
 
   app.post('/api/users', async (request, reply) => {
     respond(reply, registerUser(db, request.body as Parameters<typeof registerUser>[1]));
