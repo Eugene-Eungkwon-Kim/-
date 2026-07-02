@@ -177,11 +177,47 @@ UK_CONFIG = CountryConfig(
     idiosyncratic_sigma=0.12,
 )
 
+# 호주: PHASE_13_1_GBL WBS 상 4순위 확장 국가 (RP Data 상용 API, tolerance 완화로 리스크 낮음)
+AU_CONFIG = CountryConfig(
+    country_code='AU',
+    currency='AUD',
+    region_config={
+        'sydney_east':     (-33.8688, 151.2093, 0.020, 0.020, 1_900_000),
+        'sydney_general':  (-33.8688, 151.0093, 0.060, 0.080, 1_100_000),
+        'melbourne_inner': (-37.8136, 144.9631, 0.020, 0.020, 1_050_000),
+        'melbourne_general': (-37.8136, 144.8631, 0.060, 0.080,  780_000),
+        'brisbane':        (-27.4698, 153.0251, 0.050, 0.060,  750_000),
+        'perth':           (-31.9505, 115.8605, 0.050, 0.060,  620_000),
+        'adelaide':        (-34.9285, 138.6007, 0.045, 0.055,  650_000),
+        'canberra':        (-35.2809, 149.1300, 0.030, 0.030,  850_000),
+        'regional':        (-33.0, 147.0, 0.400, 0.500,  450_000),
+    },
+    region_weights=(0.08, 0.16, 0.08, 0.15, 0.13, 0.11, 0.09, 0.06, 0.14),
+    lat_range=(-38.5, -27.0),
+    lng_range=(112.0, 154.0),
+    market_level={2020: 0.85, 2021: 0.94, 2022: 1.00, 2023: 0.96, 2024: 1.00},
+    price_floor=200_000.0,
+    price_ceiling=5_000_000.0,
+    feature_min=(40.0, 200_000.0, -38.5, 112.0, 1.0),
+    feature_max=(400.0, 5_000_000.0, -27.0, 154.0, 5.0),
+    tolerance=0.10,
+    # 호주는 단독주택(land) 비중이 높아 평형이 크고, 아파트(unit)도 혼재한다
+    area_bins=(
+        (40.0,  70.0, 0.15),
+        (70.0, 100.0, 0.20),
+        (100.0,150.0, 0.25),
+        (150.0,220.0, 0.20),
+        (220.0,300.0, 0.15),
+        (300.0,400.0, 0.05),
+    ),
+)
+
 COUNTRY_CONFIGS: Dict[str, CountryConfig] = {
     'KR': KR_CONFIG,
     'SG': SG_CONFIG,
     'HK': HK_CONFIG,
     'UK': UK_CONFIG,
+    'AU': AU_CONFIG,
 }
 
 
