@@ -17,6 +17,13 @@ MODEL_WEIGHTS = {
     'gradient_boosting': 0.05,
 }
 
+# 앙상블에 포함할 기본 모델 타입(국가 접미사 없이). best_model_{country}(단일
+# 모델 배포용, 중복)과 coldstart_{country}(별도 목적), 그리고 다른 국가의
+# 모델은 반드시 제외해야 한다 — 과거 이 필터가 없어 output/trained_models/에
+# 여러 국가 pkl이 함께 있으면 다른 국가 모델까지 앙상블에 섞여 예측이
+# 크게 오염되는 버그가 있었다(Phase 13.1-GBL에서 발견).
+ENSEMBLE_MODEL_TYPES = ('xgboost', 'lightgbm', 'gradient_boosting')
+
 BASE_CONFIDENCE = 0.90
 STD_PENALTY_FACTOR = 0.10
 MIN_CONFIDENCE = 0.70
@@ -26,8 +33,9 @@ CACHE_MAXSIZE = 10000
 class AVMEnsembleEngine:
     """3-모델 앙상블 예측 엔진."""
 
-    def __init__(self, model_dir: str) -> None:
+    def __init__(self, model_dir: str, country: str = 'KR') -> None:
         self.model_dir = Path(model_dir)
+        self.country = country
         self.models: Dict[str, object] = {}
         self._cache: OrderedDict = OrderedDict()
         self.cache_hits = 0
@@ -36,7 +44,11 @@ class AVMEnsembleEngine:
         self.last_prediction_std = 0.0
         self.latencies: List[float] = []
         self._load_models()
-        log.info(f"Ensemble engine ready: {list(self.models.keys())}")
+        log.info(f"Ensemble engine ready ({country}): {list(self.models.keys())}")
+
+    def _expected_model_names(self) -> List[str]:
+        """이 국가 앙상블에 포함되어야 할 정확한 모델 파일 stem 목록."""
+        return [f"{model_type}_{self.country}" for model_type in ENSEMBLE_MODEL_TYPES]
 
     def _load_models(self) -> None:
         """IR 모델 우선 로드, 없으면 pickle 폴백."""
@@ -53,15 +65,17 @@ class AVMEnsembleEngine:
             log.error(f"No models found in {self.model_dir}")
 
     def _load_ir_models(self, ir_dir: Path) -> None:
-        """OpenVINO IR 모델 로드."""
+        """OpenVINO IR 모델 로드 (이 국가의 3개 기본 모델만)."""
         try:
             from openvino.runtime import Core
             ie = Core()
-            for xml_file in ir_dir.glob('*.xml'):
+            for name in self._expected_model_names():
+                xml_file = ir_dir / f"{name}.xml"
+                if not xml_file.exists():
+                    continue
                 try:
                     model = ie.read_model(str(xml_file))
                     compiled = ie.compile_model(model, 'CPU')
-                    name = xml_file.stem
                     self.models[name] = compiled
                     log.info(f"Loaded IR model: {name}")
                 except Exception as e:
@@ -70,12 +84,14 @@ class AVMEnsembleEngine:
             log.debug("OpenVINO not available, using pickle fallback")
 
     def _load_pickled_models(self, pkl_dir: Path) -> None:
-        """Pickle sklearn 모델 로드."""
-        for pkl_file in sorted(pkl_dir.glob('*.pkl')):
+        """Pickle sklearn 모델 로드 (이 국가의 3개 기본 모델만)."""
+        for name in self._expected_model_names():
+            pkl_file = pkl_dir / f"{name}.pkl"
+            if not pkl_file.exists():
+                continue
             try:
                 with open(pkl_file, 'rb') as f:
                     model = pickle.load(f)
-                name = pkl_file.stem
                 self.models[name] = model
                 log.info(f"Loaded pickled model: {name}")
             except Exception as e:

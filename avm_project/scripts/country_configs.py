@@ -37,6 +37,10 @@ class CountryConfig:
     feature_max: Tuple[float, float, float, float, float]
     tolerance: float = 0.10  # CLAUDE.md TOLERANCE_MAP 기준
     area_bins: Tuple[Tuple[float, float, float], ...] = DEFAULT_AREA_BINS
+    # 거래가 idiosyncratic 변동성(개별 협상/급매/층향 차이, new/old 독립).
+    # 지역 클러스터가 촘촘한 국가(예: HK)는 펀더멘털 분산이 작아 old_price-
+    # new_price 상관계수가 누수 임계값(0.985)에 근접할 수 있어 값을 높인다.
+    idiosyncratic_sigma: float = 0.08
 
 
 KR_CONFIG = CountryConfig(
@@ -99,9 +103,46 @@ SG_CONFIG = CountryConfig(
     ),
 )
 
+# 홍콩: PHASE_13_1_GBL WBS 상 2순위 확장 국가 (Centaline 데이터 신뢰도 높음, SG와 유사 규모)
+HK_CONFIG = CountryConfig(
+    country_code='HK',
+    currency='HKD',
+    region_config={
+        'the_peak':          (22.271, 114.150, 0.006, 0.006, 45_000_000),
+        'central_midlevels': (22.280, 114.155, 0.008, 0.008, 28_000_000),
+        'wan_chai':          (22.277, 114.172, 0.008, 0.008, 16_000_000),
+        'causeway_bay':      (22.280, 114.185, 0.007, 0.007, 15_000_000),
+        'tsim_sha_tsui':     (22.297, 114.172, 0.010, 0.010, 13_000_000),
+        'mong_kok':          (22.319, 114.169, 0.012, 0.012,  9_500_000),
+        'sha_tin':           (22.382, 114.188, 0.020, 0.020,  7_000_000),
+        'tsuen_wan':         (22.371, 114.113, 0.020, 0.020,  6_200_000),
+        'tung_chung':        (22.289, 113.943, 0.018, 0.018,  5_500_000),
+    },
+    region_weights=(0.03, 0.08, 0.12, 0.10, 0.14, 0.16, 0.15, 0.13, 0.09),
+    lat_range=(22.15, 22.55),
+    lng_range=(113.83, 114.40),
+    market_level={2020: 0.92, 2021: 0.95, 2022: 0.90, 2023: 0.94, 2024: 1.00},
+    price_floor=2_000_000.0,
+    price_ceiling=80_000_000.0,
+    feature_min=(15.0, 2_000_000.0, 22.15, 113.83, 1.0),
+    feature_max=(220.0, 80_000_000.0, 22.55, 114.40, 5.0),
+    tolerance=0.08,
+    # 홍콩 주택은 세계에서 가장 작은 축 — 20~50sqm(200~500sqft)이 주력 평형
+    area_bins=(
+        (15.0,  30.0, 0.22),
+        (30.0,  45.0, 0.28),
+        (45.0,  65.0, 0.24),
+        (65.0,  95.0, 0.16),
+        (95.0, 150.0, 0.07),
+        (150.0,220.0, 0.03),
+    ),
+    idiosyncratic_sigma=0.11,
+)
+
 COUNTRY_CONFIGS: Dict[str, CountryConfig] = {
     'KR': KR_CONFIG,
     'SG': SG_CONFIG,
+    'HK': HK_CONFIG,
 }
 
 

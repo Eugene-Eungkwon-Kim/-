@@ -28,8 +28,6 @@ YEAR_BINS: List[Tuple[int, int, float]] = [
     (2018, 2024, 0.15),
 ]
 
-IDIOSYNCRATIC_SIGMA = 0.08
-
 
 def _sample_region(config: CountryConfig, rng: np.random.Generator) -> str:
     keys = list(config.region_config.keys())
@@ -72,13 +70,13 @@ def _compute_price(
         market = config.market_level.get(at_year, 1.0)
         return price_per_sqm * area * location_factor * floor_factor * age_factor * market
 
-    new_noise = float(rng.lognormal(0.0, IDIOSYNCRATIC_SIGMA))
+    new_noise = float(rng.lognormal(0.0, config.idiosyncratic_sigma))
     new_price = fundamental(2024) * new_noise
 
     gap = int(rng.integers(1, 5))
     old_year = max(construction_year, 2024 - gap)
     old_year = min(old_year, 2023)
-    old_noise = float(rng.lognormal(0.0, IDIOSYNCRATIC_SIGMA))
+    old_noise = float(rng.lognormal(0.0, config.idiosyncratic_sigma))
     old_price = fundamental(old_year) * old_noise
 
     new_price = max(config.price_floor, min(config.price_ceiling, new_price))

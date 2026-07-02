@@ -1,4 +1,5 @@
-"""Phase 13.1-GBL (8개국 글로벌 확대) 단위 테스트 - SG 파일럿 검증"""
+"""Phase 13.1-GBL (8개국 글로벌 확대) 단위 테스트 - SG/HK 파일럿 검증"""
+import pickle
 import sys
 from pathlib import Path
 
@@ -8,9 +9,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from country_configs import KR_CONFIG, SG_CONFIG, get_country_config
+from country_configs import HK_CONFIG, KR_CONFIG, SG_CONFIG, get_country_config
 from realistic_data_generator import generate_dataset, validate_and_report
 from generate_sg_realistic_data import generate_dataset as generate_sg_dataset
+from generate_hk_realistic_data import generate_dataset as generate_hk_dataset
 
 
 class TestCountryConfigs:
@@ -38,8 +40,11 @@ class TestCountryConfigs:
             assert sum(config.region_weights) == pytest.approx(1.0, abs=1e-9)
 
     def test_region_count_matches_weight_count(self):
-        for config in (KR_CONFIG, SG_CONFIG):
+        for config in (KR_CONFIG, SG_CONFIG, HK_CONFIG):
             assert len(config.region_config) == len(config.region_weights)
+
+    def test_get_country_config_returns_hk(self):
+        assert get_country_config('HK') is HK_CONFIG
 
 
 class TestRealisticDataGeneratorGeneric:
@@ -84,3 +89,83 @@ class TestSgDataGeneration:
     def test_no_null_values(self):
         df = generate_sg_dataset(n_rows=500, seed=42)
         assert df.isnull().sum().sum() == 0
+
+
+class TestHkDataGeneration:
+    def test_prices_in_hkd_scale(self):
+        df = generate_hk_dataset(n_rows=1000, seed=42)
+        assert df['new_price'].min() >= HK_CONFIG.price_floor
+        assert df['new_price'].max() <= HK_CONFIG.price_ceiling
+
+    def test_coordinates_within_hong_kong_bounds(self):
+        df = generate_hk_dataset(n_rows=1000, seed=42)
+        assert df['latitude'].between(*HK_CONFIG.lat_range).all()
+        assert df['longitude'].between(*HK_CONFIG.lng_range).all()
+
+    def test_no_target_leakage_with_higher_idiosyncratic_sigma(self):
+        """HK는 지역 클러스터가 촘촘해 기본 sigma(0.08)로는 old/new_price
+        상관계수가 누수 임계값(0.985)에 근접했다 — idiosyncratic_sigma를
+        0.11로 높여 해결했다 (회귀 테스트)."""
+        df = generate_hk_dataset(n_rows=5000, seed=42)
+        corr = df['old_price'].corr(df['new_price'])
+        assert corr < 0.985
+
+    def test_no_null_values(self):
+        df = generate_hk_dataset(n_rows=500, seed=42)
+        assert df.isnull().sum().sum() == 0
+
+
+class TestEnsembleEngineCountryIsolation:
+    """AVMEnsembleEngine 국가 필터링 회귀 테스트.
+
+    실제로 발생했던 버그: output/trained_models/에 여러 국가의 pkl이 공존할 때
+    국가 필터링 없이 전부 globbing해서 로드했다. HK 모델(완전히 다른 통화
+    스케일)이 KR 앙상블 평균에 섞여 예측이 실제값의 절반 수준으로 왜곡됐다.
+    """
+
+    @pytest.fixture
+    def multi_country_models_dir(self, tmp_path):
+        """KR, SG, HK 모델과 KR의 best_model/coldstart/tuned 변형을 모두
+        같은 디렉터리에 배치 — 실제 output/trained_models/ 상태를 재현."""
+        models_dir = tmp_path / "trained_models"
+        models_dir.mkdir()
+
+        from sklearn.linear_model import LinearRegression
+        X = np.array([[1.0], [2.0], [3.0]])
+
+        def make_model(value: float):
+            model = LinearRegression()
+            model.fit(X, [value, value, value])
+            return model
+
+        filenames = [
+            'xgboost_KR', 'lightgbm_KR', 'gradient_boosting_KR',
+            'best_model_KR', 'coldstart_KR',
+            'xgboost_KR_tuned', 'lightgbm_KR_tuned', 'gradient_boosting_KR_tuned',
+            'xgboost_SG', 'lightgbm_SG', 'gradient_boosting_SG', 'best_model_SG',
+            'xgboost_HK', 'lightgbm_HK', 'gradient_boosting_HK', 'best_model_HK',
+        ]
+        for name in filenames:
+            with open(models_dir / f"{name}.pkl", 'wb') as f:
+                pickle.dump(make_model(1.0), f)
+
+        return models_dir
+
+    def test_kr_engine_loads_exactly_three_kr_models(self, multi_country_models_dir, tmp_path):
+        from avm_ensemble_engine import AVMEnsembleEngine
+
+        engine = AVMEnsembleEngine(str(tmp_path / "models_ir"), country='KR')
+        assert set(engine.models.keys()) == {'xgboost_KR', 'lightgbm_KR', 'gradient_boosting_KR'}
+
+    def test_hk_engine_loads_exactly_three_hk_models(self, multi_country_models_dir, tmp_path):
+        from avm_ensemble_engine import AVMEnsembleEngine
+
+        engine = AVMEnsembleEngine(str(tmp_path / "models_ir"), country='HK')
+        assert set(engine.models.keys()) == {'xgboost_HK', 'lightgbm_HK', 'gradient_boosting_HK'}
+
+    def test_kr_engine_excludes_other_countries_and_variants(self, multi_country_models_dir, tmp_path):
+        from avm_ensemble_engine import AVMEnsembleEngine
+
+        engine = AVMEnsembleEngine(str(tmp_path / "models_ir"), country='KR')
+        loaded = set(engine.models.keys())
+        assert not (loaded & {'xgboost_SG', 'xgboost_HK', 'best_model_KR', 'coldstart_KR', 'xgboost_KR_tuned'})

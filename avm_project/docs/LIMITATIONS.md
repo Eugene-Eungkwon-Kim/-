@@ -202,32 +202,32 @@ raw sklearn pickle 추론보다 빠르다. "NPU 1ms 목표"라는 표현은 애�
 
 ---
 
-## 7. `test_kr_valuation.py`의 절대 가격 테스트 재현성 (Phase 13.1-GBL, 조사 완료 — 재현 안 됨)
+## 7. `avm_ensemble_engine.py`가 국가 구분 없이 모델을 로드하던 버그 (Phase 13.1-GBL, 수정됨)
 
-`tests/test_kr_valuation.py::test_price_in_market_range`류 테스트와
-`test_coldstart_agrees_with_main_engine`은 특정 입력에 대해 **하드코딩된
-절대 가격 범위**(예: "강남 84㎡ → 22.5~32.5억")를 기대한다.
+`tests/test_kr_valuation.py`의 여러 테스트가 Phase 13.1-GBL(글로벌 확장) 작업
+중 간헐적으로 실패했다. 처음에는 "학습 재현성 문제"로 오진했으나(이전 버전의
+이 섹션 참조), 근본 원인은 전혀 달랐다:
 
-**최초 발견**: Phase 13.1-GBL(글로벌 확장) 작업 중, KR/SG 파이프라인을 번갈아
-실행하며 개발하던 도중 11개 테스트가 실패하는 것을 발견했다.
+**실제 원인**: `AVMEnsembleEngine._load_pickled_models()`/`_load_ir_models()`가
+`output/trained_models/`, `output/models_ir/`의 **모든** `*.pkl`/`*.xml`
+파일을 국가 구분 없이 무조건 globbing해서 로드하고 있었다. KR만 존재할 때는
+문제가 없었지만, Phase 13.1-GBL에서 SG/HK 모델을 같은 공유 디렉터리에
+추가하자 KR 엔진이 `xgboost_HK.pkl`, `coldstart_KR.pkl`, `best_model_KR.pkl`,
+`*_tuned.pkl` 등 의도치 않은 모델까지 전부 앙상블 평균에 섞어버렸다.
+특히 HK 모델은 완전히 다른 통화/스케일(HKD, 수백만~수천만)로 정규화되어
+있어 KR 정규화 특성 벡터를 넣으면 사실상 무작위에 가까운 값을 반환했고,
+이것이 가중평균에 섞이며 예측이 실제값의 절반 수준(예: 12.9억, 정상 24~26억)
+으로 크게 왜곡되었다.
 
-**조사 결과 (후속 세션에서 재확인)**: 데이터 생성 → 학습 → 콜드스타트 → 검증
-→ ONNX 변환을 **깨끗하게 처음부터 순서대로** 3회 반복 실행한 결과 매번
-`38 passed`로 안정적으로 통과했다. 또한 `train_xgboost`/`train_lightgbm`/
-`train_gradient_boosting`을 동일 데이터로 두 번 학습해 예측을 비교하면 세
-알고리즘 모두 완전히 결정론적이다(`np.allclose` 100% 일치, `n_jobs=-1`
-포함). 즉 **개별 학습 함수와 클린 파이프라인 실행은 재현 가능하다.**
+개별 학습 함수(`train_xgboost`/`train_lightgbm`/`train_gradient_boosting`)는
+검증해본 결과 완전히 결정론적이었다(`np.allclose` 100% 일치) — 즉 이 버그는
+학습의 비결정성이 아니라 **다중 국가 모델이 공존할 때 앙상블 엔진의 필터링
+누락**이었다.
 
-최초 발견 당시의 실패는 KR 파이프라인 재생성과 SG 파이프라인 개발 작업을
-같은 세션에서 인터리빙하며 진행하는 과정에서 아티팩트가 일시적으로 꼬였던
-것으로 추정된다(예: 검증기를 KR로 실행한 뒤 곧바로 SG로 실행하고 다시 KR
-결과를 확인하는 등). 근본적인 모델 비결정성이 아니라 **수동 테스트 중
-아티팩트 정합성 관리 실수**였을 가능성이 높다.
-
-**남은 위험**: 그럼에도 이 테스트들이 gitignore 대상인 특정 학습 아티팩트의
-절대 수치에 의존한다는 구조적 특성은 여전하다. 파이프라인을 처음부터
-"한 번에 순서대로" 실행하는 표준 절차(`phase13_automation_engine.py`가
-정확히 이 순서를 따름)를 지키면 안정적이지만, 향후 임의 순서로 개별
-스크립트를 재실행하며 디버깅할 때는 이번처럼 오탐이 발생할 수 있다는 점을
-남겨둔다.
+**수정**: `AVMEnsembleEngine.__init__`에 `country` 파라미터(기본값 'KR')를
+추가하고, `ENSEMBLE_MODEL_TYPES = ('xgboost', 'lightgbm', 'gradient_boosting')`
+로 정확히 3개 파일(`{model_type}_{country}.{pkl,xml}`)만 로드하도록
+`phase13_npu_inference.py`(Phase 13.4에서 이미 이 방식으로 구현됨)와 동일한
+패턴으로 변경했다. 수정 후 `output/trained_models/`에 KR+SG+HK 모델이 모두
+공존한 상태에서도 `test_kr_valuation.py` 38/38 안정적으로 통과함을 확인했다.
 
