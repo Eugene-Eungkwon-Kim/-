@@ -20,7 +20,7 @@ try {
 }
 
 const db = createDatabase(DB_PATH);
-const app = buildServer(db, { jwtSecret: serverEnv.jwtSecret });
+const app = await buildServer(db, { jwtSecret: serverEnv.jwtSecret });
 
 app
   .listen({ port: PORT, host: '0.0.0.0' })

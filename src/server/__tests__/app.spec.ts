@@ -8,9 +8,9 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
   let db: Database.Database;
   let app: FastifyInstance;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createDatabase(':memory:');
-    app = buildServer(db, { jwtSecret: 'test-secret' });
+    app = await buildServer(db, { jwtSecret: 'test-secret' });
   });
 
   afterEach(() => {
@@ -224,6 +224,36 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
       const alice = await registerAndLogin('alice4@example.com', 'Alice4');
       const res = await app.inject({ method: 'GET', url: `/api/users/${alice.userId}/loans/summary`, headers: authHeader(alice.token) });
       expect(res.statusCode).toBe(200);
+    });
+  });
+
+  describe('로그인 Rate Limiting (Day 9 - Task 2, δ=1230)', () => {
+    it('5회까지는 정상적으로 시도할 수 있다', async () => {
+      await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'rl-ok@example.com', name: 'RL OK', password: 'correct-horse' } });
+
+      for (let i = 0; i < 5; i++) {
+        const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'rl-ok@example.com', password: 'wrong' } });
+        expect(res.statusCode).toBe(401); // 자격증명은 틀렸지만 rate limit에는 안 걸림
+      }
+    });
+
+    it('1분 내 6번째 로그인 시도는 429 RATE_LIMITED를 반환한다', async () => {
+      await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'rl-blocked@example.com', name: 'RL Blocked', password: 'correct-horse' } });
+
+      for (let i = 0; i < 5; i++) {
+        await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'rl-blocked@example.com', password: 'wrong' } });
+      }
+
+      const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'rl-blocked@example.com', password: 'correct-horse' } });
+      expect(res.statusCode).toBe(429);
+      expect(res.json().error.code).toBe('RATE_LIMITED');
+    });
+
+    it('회원가입(/api/users)은 로그인과 별개로 rate limit이 적용되지 않는다', async () => {
+      for (let i = 0; i < 6; i++) {
+        const res = await app.inject({ method: 'POST', url: '/api/users', payload: { email: `rl-register-${i}@example.com`, name: `RL ${i}`, password: 'correct-horse' } });
+        expect(res.statusCode).toBe(200);
+      }
     });
   });
 });

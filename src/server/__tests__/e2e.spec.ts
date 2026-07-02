@@ -14,9 +14,9 @@ describe('인증 & 권한 종단 시나리오 (Day 8 - Task 6)', () => {
   let db: Database.Database;
   let app: FastifyInstance;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     db = createDatabase(':memory:');
-    app = buildServer(db, { jwtSecret: 'test-secret' });
+    app = await buildServer(db, { jwtSecret: 'test-secret' });
   });
 
   afterEach(() => {

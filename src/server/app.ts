@@ -1,6 +1,7 @@
 import Fastify, { FastifyReply, FastifyRequest, FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
+import rateLimit from '@fastify/rate-limit';
 import type Database from 'better-sqlite3';
 import { getUserProfile, registerUser } from '../api/userService';
 import { applyForLoan, getLoanPortfolio, getLoanPortfolioSummary } from '../api/loanService';
@@ -60,7 +61,7 @@ function forbidden(reply: FastifyReply): void {
   reply.code(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'You do not have access to this resource' } });
 }
 
-export function buildServer(db: Database.Database, options: BuildServerOptions = {}): FastifyInstance {
+export async function buildServer(db: Database.Database, options: BuildServerOptions = {}): Promise<FastifyInstance> {
   // Day 9 - Task 1 (δ=1270): JWT_SECRET을 여기서 조용히 폴백시키지 않는다.
   // 실제 기동 경로(src/server/index.ts)는 resolveServerEnv()를 직접 호출해
   // production에서 시크릿 누락 시 서버가 뜨기도 전에 실패하도록 하고, 그 결과를
@@ -69,8 +70,13 @@ export function buildServer(db: Database.Database, options: BuildServerOptions =
   const jwtSecret = options.jwtSecret ?? resolveServerEnv().jwtSecret;
 
   const app = Fastify({ logger: false });
-  app.register(cors, { origin: true });
-  app.register(jwt, { secret: jwtSecret });
+  await app.register(cors, { origin: true });
+  await app.register(jwt, { secret: jwtSecret });
+  // Day 9 - Task 2 (δ=1230): @fastify/rate-limit는 라우트 등록 시점에
+  // config.rateLimit을 가로채는 onRoute 훅을 심는다. register()를 await하지
+  // 않고 바로 라우트를 정의하면(다른 플러그인과 달리) 이 훅이 아직 준비되지
+  // 않아 라우트별 제한이 조용히 무시된다 — 실제로 겪은 문제라 반드시 await 필요.
+  await app.register(rateLimit, { global: false });
 
   // 인증 훅 (Day 8 - Task 4, δ=1360): 공개 라우트를 제외한 모든 요청은 유효한
   // JWT가 있어야 통과한다. 성공 시 request.user에 { userId }가 채워진다.
@@ -90,16 +96,32 @@ export function buildServer(db: Database.Database, options: BuildServerOptions =
     respond(reply, registerUser(db, request.body as Parameters<typeof registerUser>[1]));
   });
 
-  app.post('/api/auth/login', async (request, reply) => {
-    const { email, password } = request.body as { email: string; password: string };
-    const result = verifyCredentials(db, email, password);
-    if (!result.success) {
-      respond(reply, result);
-      return;
+  app.post(
+    '/api/auth/login',
+    {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: '1 minute',
+          errorResponseBuilder: (_request: FastifyRequest, context: { after: string }) => ({
+            statusCode: 429,
+            success: false,
+            error: { code: 'RATE_LIMITED', message: `Too many login attempts, retry in ${context.after}` }
+          })
+        }
+      }
+    },
+    async (request, reply) => {
+      const { email, password } = request.body as { email: string; password: string };
+      const result = verifyCredentials(db, email, password);
+      if (!result.success) {
+        respond(reply, result);
+        return;
+      }
+      const token = await reply.jwtSign({ userId: result.data.id }, { expiresIn: '1h' });
+      reply.send({ success: true, data: { token, user: result.data } });
     }
-    const token = await reply.jwtSign({ userId: result.data.id }, { expiresIn: '1h' });
-    reply.send({ success: true, data: { token, user: result.data } });
-  });
+  );
 
   app.get('/api/users/:userId', async (request, reply) => {
     const { userId } = request.params as { userId: string };
