@@ -10,7 +10,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
 
   beforeEach(() => {
     db = createDatabase(':memory:');
-    app = buildServer(db);
+    app = buildServer(db, { jwtSecret: 'test-secret' });
   });
 
   afterEach(() => {

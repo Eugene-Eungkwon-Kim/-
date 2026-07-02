@@ -16,7 +16,7 @@ describe('인증 & 권한 종단 시나리오 (Day 8 - Task 6)', () => {
 
   beforeEach(() => {
     db = createDatabase(':memory:');
-    app = buildServer(db);
+    app = buildServer(db, { jwtSecret: 'test-secret' });
   });
 
   afterEach(() => {

@@ -6,8 +6,11 @@ import { getUserProfile, registerUser } from '../api/userService';
 import { applyForLoan, getLoanPortfolio, getLoanPortfolioSummary } from '../api/loanService';
 import { verifyCredentials } from '../api/authService';
 import { ServiceResult } from '../api/errorMapping';
+import { resolveServerEnv } from './env';
 
-const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-in-production';
+export interface BuildServerOptions {
+  jwtSecret?: string;
+}
 
 /** 인증 없이 접근 가능한 (method, path) 목록 — 회원가입과 로그인만 예외 */
 const PUBLIC_ROUTES: Array<[string, string]> = [
@@ -57,10 +60,17 @@ function forbidden(reply: FastifyReply): void {
   reply.code(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'You do not have access to this resource' } });
 }
 
-export function buildServer(db: Database.Database): FastifyInstance {
+export function buildServer(db: Database.Database, options: BuildServerOptions = {}): FastifyInstance {
+  // Day 9 - Task 1 (δ=1270): JWT_SECRET을 여기서 조용히 폴백시키지 않는다.
+  // 실제 기동 경로(src/server/index.ts)는 resolveServerEnv()를 직접 호출해
+  // production에서 시크릿 누락 시 서버가 뜨기도 전에 실패하도록 하고, 그 결과를
+  // options.jwtSecret으로 주입한다. 이 폴백은 index.ts를 거치지 않는 임시
+  // buildServer() 호출(테스트 등)을 위한 안전망일 뿐이다.
+  const jwtSecret = options.jwtSecret ?? resolveServerEnv().jwtSecret;
+
   const app = Fastify({ logger: false });
   app.register(cors, { origin: true });
-  app.register(jwt, { secret: JWT_SECRET });
+  app.register(jwt, { secret: jwtSecret });
 
   // 인증 훅 (Day 8 - Task 4, δ=1360): 공개 라우트를 제외한 모든 요청은 유효한
   // JWT가 있어야 통과한다. 성공 시 request.user에 { userId }가 채워진다.
