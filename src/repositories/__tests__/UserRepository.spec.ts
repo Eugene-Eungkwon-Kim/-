@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '@db/connection';
 import { UserRepository } from '@repositories/UserRepository';
-import { DuplicateEmailError, OptimisticLockError } from '@repositories/errors';
+import { DuplicateEmailError, OptimisticLockError, ValidationError } from '@repositories/errors';
 
 describe('UserRepository (Day 5 - Task 1: 사용자 프로필 & 계정 관리, δ=1635)', () => {
   let db: Database.Database;
@@ -94,6 +94,36 @@ describe('UserRepository (Day 5 - Task 1: 사용자 프로필 & 계정 관리, �
       expect(auditLog[1].action).toBe('UPDATE');
       expect(auditLog[1].changedFields.name).toEqual({ from: 'Audit User', to: 'Audit User Renamed' });
       expect(auditLog[2].changedFields.credit_score).toEqual({ from: null, to: 720 });
+    });
+  });
+
+  describe('[T-AUTH-01~05] 비밀번호 저장 & 해싱 (Day 8 - Task 1, δ=1535)', () => {
+    it('[T-AUTH-01] 비밀번호로 등록하면 평문이 응답에 노출되지 않는다', () => {
+      const profile = repo.register({ email: 'pw@example.com', name: 'Password User', password: 'correct-horse' });
+      expect(JSON.stringify(profile)).not.toContain('correct-horse');
+      expect((profile as any).passwordHash).toBeUndefined();
+      expect((profile as any).password).toBeUndefined();
+    });
+
+    it('[T-AUTH-02] 올바른 비밀번호로 verifyPassword가 프로필을 반환한다', () => {
+      repo.register({ email: 'login-ok@example.com', name: 'Login OK', password: 'correct-horse' });
+      const verified = repo.verifyPassword('login-ok@example.com', 'correct-horse');
+      expect(verified?.email).toBe('login-ok@example.com');
+    });
+
+    it('[T-AUTH-03] 틀린 비밀번호로 verifyPassword는 null을 반환한다', () => {
+      repo.register({ email: 'login-bad@example.com', name: 'Login Bad', password: 'correct-horse' });
+      expect(repo.verifyPassword('login-bad@example.com', 'wrong-password')).toBeNull();
+    });
+
+    it('[T-AUTH-04] 비밀번호 없이 등록한 사용자는 로그인할 수 없다', () => {
+      repo.register({ email: 'no-password@example.com', name: 'No Password' });
+      expect(repo.verifyPassword('no-password@example.com', 'anything')).toBeNull();
+      expect(repo.verifyPassword('no-password@example.com', '')).toBeNull();
+    });
+
+    it('[T-AUTH-05] 8자 미만 비밀번호는 등록 시 거부된다', () => {
+      expect(() => repo.register({ email: 'short-pw@example.com', name: 'Short PW', password: 'short' })).toThrow(ValidationError);
     });
   });
 });

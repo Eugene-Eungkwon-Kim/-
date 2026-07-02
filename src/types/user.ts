@@ -98,6 +98,8 @@ export interface FinancialSnapshotInput {
 export interface RegisterUserInput {
   email: string;
   name: string;
+  /** 선택 필드. 생략하면 비밀번호 로그인이 불가능한 사용자로 등록된다(기존 테스트 픽스처 하위호환). */
+  password?: string;
   dateOfBirth?: string;
   employment?: EmploymentInput;
   contact?: ContactInput;

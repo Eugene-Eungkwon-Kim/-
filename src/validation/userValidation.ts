@@ -13,6 +13,7 @@ import { ValidationError } from '../repositories/errors';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const MIN_AGE = 18;
 export const MAX_AGE = 99;
+export const MIN_PASSWORD_LENGTH = 8;
 
 export function calculateAge(dateOfBirth: string, asOfDate: string): number {
   const [birthYear, birthMonth, birthDay] = dateOfBirth.split('-').map(Number);
@@ -50,6 +51,9 @@ export function validateRegisterUserInput(input: RegisterUserInput, asOfDate: st
   }
   if (!input.name || input.name.trim().length === 0) {
     throw new ValidationError('name is required');
+  }
+  if (input.password !== undefined && input.password.length < MIN_PASSWORD_LENGTH) {
+    throw new ValidationError(`password must be at least ${MIN_PASSWORD_LENGTH} characters`);
   }
   if (input.dateOfBirth) {
     assertAgeInRange(input.dateOfBirth, asOfDate);

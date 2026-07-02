@@ -26,6 +26,7 @@
     "db:migrate:dry-run": "vite-node src/db/migrate-cli.ts dry-run"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.10.0",
     "@types/react": "^19.2.17",
@@ -45,6 +46,8 @@
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
+    "@fastify/jwt": "^10.1.0",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
     "fastify": "^5.9.0",
     "react": "^19.0.0",

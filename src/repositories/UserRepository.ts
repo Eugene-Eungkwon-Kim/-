@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import bcrypt from 'bcryptjs';
 import {
   AuditAction,
   AuditLogEntry,
@@ -12,10 +13,13 @@ import {
 import { DuplicateEmailError, OptimisticLockError, UserNotFoundError } from './errors';
 import { validateRegisterUserInput, validateUpdateUserInput } from '../validation/userValidation';
 
+const PASSWORD_SALT_ROUNDS = 10;
+
 interface UserRow {
   id: string;
   email: string;
   name: string;
+  password_hash: string | null;
   date_of_birth: string | null;
   employment_status: string | null;
   employment_industry: string | null;
@@ -122,16 +126,17 @@ export class UserRepository {
 
     const id = randomUUID();
     const grade = computeCreditGrade(input.creditProfile?.score);
+    const passwordHash = input.password ? bcrypt.hashSync(input.password, PASSWORD_SALT_ROUNDS) : null;
 
     const insert = this.db.prepare(`
       INSERT INTO users (
-        id, email, name, date_of_birth,
+        id, email, name, password_hash, date_of_birth,
         employment_status, employment_industry, employment_tenure, employment_company,
         phone, address_street, address_city, address_zipcode, address_country,
         credit_score, credit_grade, credit_inquiries, credit_delinquency,
         income, expenses, assets, debt, savings_rate
       ) VALUES (
-        @id, @email, @name, @dateOfBirth,
+        @id, @email, @name, @passwordHash, @dateOfBirth,
         @employmentStatus, @employmentIndustry, @employmentTenure, @employmentCompany,
         @phone, @addressStreet, @addressCity, @addressZipcode, @addressCountry,
         @creditScore, @creditGrade, @creditInquiries, @creditDelinquency,
@@ -144,6 +149,7 @@ export class UserRepository {
         id,
         email: input.email,
         name: input.name,
+        passwordHash,
         dateOfBirth: input.dateOfBirth ?? null,
         employmentStatus: input.employment?.status ?? null,
         employmentIndustry: input.employment?.industry ?? null,
@@ -182,6 +188,16 @@ export class UserRepository {
   getProfile(userId: string): UserProfile | null {
     const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
     return row ? mapRowToProfile(row) : null;
+  }
+
+  /**
+   * 이메일+비밀번호를 검증한다. 비밀번호를 설정하지 않고 등록된 사용자(password_hash가 null)는
+   * 어떤 입력으로도 로그인할 수 없다 — null과 일치하는 해시는 존재하지 않으므로 안전하다.
+   */
+  verifyPassword(email: string, plainPassword: string): UserProfile | null {
+    const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
+    if (!row || !row.password_hash) return null;
+    return bcrypt.compareSync(plainPassword, row.password_hash) ? mapRowToProfile(row) : null;
   }
 
   updateProfile(userId: string, updates: UpdateUserInput, expectedVersion: number): UserProfile {
