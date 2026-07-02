@@ -37,6 +37,14 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
     return { userId, token: loginRes.json().data.token };
   }
 
+  it('헬스체크 — 인증 불필요, DB 연결 상태 반환', async () => {
+    const res = await app.inject({ method: 'GET', url: '/health' });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.status).toBe('ok');
+    expect(body.db).toBe('connected');
+  });
+
   function authHeader(token: string) {
     return { authorization: `Bearer ${token}` };
   }

@@ -43,6 +43,7 @@ const DEFAULT_BACKUP_DIR = path.join(process.cwd(), 'data', 'backups');
  * 리프레시 토큰 자체를 자격증명으로 사용하기 때문이다.
  */
 const PUBLIC_ROUTES: Array<[string, string]> = [
+  ['GET', '/health'],
   ['POST', '/api/auth/login'],
   ['POST', '/api/auth/refresh'],
   ['POST', '/api/auth/logout'],
@@ -155,6 +156,17 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
       await request.jwtVerify();
     } catch {
       reply.code(401).send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing or invalid authorization token' } });
+    }
+  });
+
+  // Day 11 - Task 4 (δ=865): 헬스체크 엔드포인트 (인증 불필요)
+  app.get('/health', async (_request, reply) => {
+    try {
+      // DB 연결 상태 확인 (간단한 ping 쿼리)
+      db.prepare('SELECT 1').get();
+      reply.send({ status: 'ok', db: 'connected' });
+    } catch (error) {
+      reply.code(503).send({ status: 'error', db: 'disconnected' });
     }
   });
 
