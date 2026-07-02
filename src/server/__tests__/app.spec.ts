@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '@db/connection';
 import { buildServer } from '@/server/app';
+import { UserRepository } from '@repositories/UserRepository';
 import type { FastifyInstance } from 'fastify';
 
 describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
@@ -18,11 +19,20 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
   });
 
   /** 회원가입 + 로그인을 한 번에 수행해 인증된 요청에 쓸 (userId, token, refreshToken)을 반환한다 */
-  async function registerAndLogin(email: string, name: string): Promise<{ userId: string; token: string; refreshToken: string }> {
+  async function registerAndLogin(
+    email: string,
+    name: string,
+    monthlyIncome?: number
+  ): Promise<{ userId: string; token: string; refreshToken: string }> {
     const registerRes = await app.inject({
       method: 'POST',
       url: '/api/users',
-      payload: { email, name, password: 'correct-horse' }
+      payload: {
+        email,
+        name,
+        password: 'correct-horse',
+        ...(monthlyIncome !== undefined ? { financialSnapshot: { monthlyIncome } } : {})
+      }
     });
     const userId = registerRes.json().data.id;
 
@@ -224,6 +234,82 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
       const alice = await registerAndLogin('alice4@example.com', 'Alice4');
       const res = await app.inject({ method: 'GET', url: `/api/users/${alice.userId}/loans/summary`, headers: authHeader(alice.token) });
       expect(res.statusCode).toBe(200);
+    });
+  });
+
+  describe('거래 API (Day 10 - Task 2, δ=1220)', () => {
+    it('거래를 기록하고 목록에서 조회할 수 있다', async () => {
+      const alice = await registerAndLogin('txn-record@example.com', 'Txn Record');
+      const recordRes = await app.inject({
+        method: 'POST',
+        url: '/api/transactions',
+        headers: authHeader(alice.token),
+        payload: { userId: alice.userId, transactionType: 'deposit', amount: 500000, occurredAt: '2026-01-01' }
+      });
+      expect(recordRes.statusCode).toBe(200);
+
+      const listRes = await app.inject({ method: 'GET', url: `/api/users/${alice.userId}/transactions`, headers: authHeader(alice.token) });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json().data.length).toBe(1);
+    });
+
+    it('status 쿼리로 거래를 필터링할 수 있다', async () => {
+      const alice = await registerAndLogin('txn-filter@example.com', 'Txn Filter', 6000000);
+      await app.inject({
+        method: 'POST',
+        url: '/api/transactions',
+        headers: authHeader(alice.token),
+        payload: { userId: alice.userId, transactionType: 'withdrawal', amount: 4000000, occurredAt: '2026-01-01' } // 소득의 50% 초과 → flagged
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/users/${alice.userId}/transactions?status=flagged`,
+        headers: authHeader(alice.token)
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.length).toBe(1);
+    });
+
+    it('거래 요약을 조회할 수 있다', async () => {
+      const alice = await registerAndLogin('txn-summary@example.com', 'Txn Summary');
+      await app.inject({
+        method: 'POST',
+        url: '/api/transactions',
+        headers: authHeader(alice.token),
+        payload: { userId: alice.userId, transactionType: 'deposit', amount: 100000, occurredAt: '2026-01-01' }
+      });
+
+      const res = await app.inject({ method: 'GET', url: `/api/users/${alice.userId}/transactions/summary`, headers: authHeader(alice.token) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.transactionCount).toBe(1);
+    });
+
+    it('재스캔으로 소득 변경 이후의 드리프트를 감지한다', async () => {
+      const alice = await registerAndLogin('txn-rescan@example.com', 'Txn Rescan', 5000000);
+      await app.inject({
+        method: 'POST',
+        url: '/api/transactions',
+        headers: authHeader(alice.token),
+        payload: { userId: alice.userId, transactionType: 'withdrawal', amount: 2000000, occurredAt: '2026-01-01' } // 등록 당시엔 정상
+      });
+
+      const profileRes = await app.inject({ method: 'GET', url: `/api/users/${alice.userId}`, headers: authHeader(alice.token) });
+      const version = profileRes.json().data.metadata.version;
+      // 소득을 낮춰 기존 거래가 새 기준으로는 이상거래가 되도록 만든다 — 리포지토리 계층 직접 사용
+      new UserRepository(db).updateProfile(alice.userId, { financialSnapshot: { monthlyIncome: 1000000 } }, version);
+
+      const rescanRes = await app.inject({ method: 'POST', url: `/api/users/${alice.userId}/transactions/rescan`, headers: authHeader(alice.token) });
+      expect(rescanRes.statusCode).toBe(200);
+      expect(rescanRes.json().data.length).toBe(1);
+    });
+
+    it('타인의 거래 내역을 조회하려 하면 403을 반환한다', async () => {
+      const alice = await registerAndLogin('txn-alice@example.com', 'Txn Alice');
+      const bob = await registerAndLogin('txn-bob@example.com', 'Txn Bob');
+
+      const res = await app.inject({ method: 'GET', url: `/api/users/${bob.userId}/transactions`, headers: authHeader(alice.token) });
+      expect(res.statusCode).toBe(403);
     });
   });
 

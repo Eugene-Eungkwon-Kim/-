@@ -14,8 +14,15 @@ import {
   runFinancialAnalysis,
   runRiskAssessment
 } from '../api/financialAnalyticsService';
+import {
+  getTransactionHistory,
+  getTransactionSummary,
+  recordTransaction,
+  rescanAnomalies
+} from '../api/transactionService';
 import { ServiceResult } from '../api/errorMapping';
 import { TrendMetric } from '../types/financialSnapshot';
+import { RecordTransactionInput, TransactionFilter } from '../types/transaction';
 import { resolveServerEnv } from './env';
 
 export interface BuildServerOptions {
@@ -228,6 +235,33 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
     const { userId, metric } = request.params as { userId: string; metric: TrendMetric };
     if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, getSnapshotTrend(db, userId, metric));
+  });
+
+  // Day 10 - Task 2 (δ=1220): transactionService.ts(Day6에서 구현·테스트됨)도
+  // 동일하게 HTTP로 노출한다.
+  app.post('/api/transactions', async (request, reply) => {
+    const body = request.body as RecordTransactionInput;
+    if (!isOwner(request, body.userId)) return forbidden(reply);
+    respond(reply, recordTransaction(db, body));
+  });
+
+  app.get('/api/users/:userId/transactions', async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
+    const filter = request.query as TransactionFilter;
+    respond(reply, getTransactionHistory(db, userId, filter));
+  });
+
+  app.get('/api/users/:userId/transactions/summary', async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
+    respond(reply, getTransactionSummary(db, userId));
+  });
+
+  app.post('/api/users/:userId/transactions/rescan', async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
+    respond(reply, rescanAnomalies(db, userId));
   });
 
   return app;
