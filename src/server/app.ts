@@ -5,6 +5,8 @@ import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
+import swagger from '@fastify/swagger';
+import swaggerUI from '@fastify/swagger-ui';
 import type Database from 'better-sqlite3';
 import { LoanRepository } from '../repositories/LoanRepository';
 import { getUserProfile, registerUser } from '../api/userService';
@@ -138,6 +140,26 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
   // helmet 기본값(same-origin)이 @fastify/cors의 origin:true 의도(교차 출처
   // 배포 허용)와 충돌할 수 있어 cross-origin으로 완화한다.
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } });
+
+  // Day 11 - Task 5 (δ=780): OpenAPI 자동 문서생성 (swagger + swagger-ui)
+  await app.register(swagger, {
+    openapi: {
+      openapi: '3.0.0',
+      info: {
+        title: 'MAARS 금융 플랫폼 API',
+        version: '1.0.0',
+        description: 'Day 11까지 구현된 실제 백엔드 API 명세'
+      },
+      servers: [
+        { url: 'http://localhost:3000', description: 'Development' },
+        { url: 'https://api.maars.example.com', description: 'Production' }
+      ]
+    }
+  });
+  await app.register(swaggerUI, {
+    routePrefix: '/api/docs'
+  });
+
   await app.register(jwt, { secret: jwtSecret });
   // Day 9 - Task 2 (δ=1230): @fastify/rate-limit는 라우트 등록 시점에
   // config.rateLimit을 가로채는 onRoute 훅을 심는다. register()를 await하지
@@ -160,15 +182,31 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
   });
 
   // Day 11 - Task 4 (δ=865): 헬스체크 엔드포인트 (인증 불필요)
-  app.get('/health', async (_request, reply) => {
-    try {
-      // DB 연결 상태 확인 (간단한 ping 쿼리)
-      db.prepare('SELECT 1').get();
-      reply.send({ status: 'ok', db: 'connected' });
-    } catch (error) {
-      reply.code(503).send({ status: 'error', db: 'disconnected' });
+  app.get(
+    '/health',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              status: { type: 'string', enum: ['ok', 'error'] },
+              db: { type: 'string', enum: ['connected', 'disconnected'] }
+            }
+          }
+        }
+      }
+    },
+    async (_request, reply) => {
+      try {
+        // DB 연결 상태 확인 (간단한 ping 쿼리)
+        db.prepare('SELECT 1').get();
+        reply.send({ status: 'ok', db: 'connected' });
+      } catch (error) {
+        reply.code(503).send({ status: 'error', db: 'disconnected' });
+      }
     }
-  });
+  );
 
   app.post('/api/users', async (request, reply) => {
     respond(reply, registerUser(db, request.body as Parameters<typeof registerUser>[1]));
@@ -177,6 +215,46 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
   app.post(
     '/api/auth/login',
     {
+      schema: {
+        body: {
+          type: 'object',
+          properties: {
+            email: { type: 'string', format: 'email' },
+            password: { type: 'string' }
+          },
+          required: ['email', 'password']
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', const: true },
+              data: {
+                type: 'object',
+                properties: {
+                  token: { type: 'string' },
+                  refreshToken: { type: 'string' },
+                  user: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'string' },
+                      email: { type: 'string' },
+                      name: { type: 'string' },
+                      creditProfile: {
+                        type: 'object',
+                        properties: {
+                          score: { type: ['number', 'null'] },
+                          grade: { type: ['string', 'null'] }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       config: {
         rateLimit: {
           max: 5,
