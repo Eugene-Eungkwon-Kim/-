@@ -1,9 +1,13 @@
 import Fastify, { FastifyReply, FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import jwt from '@fastify/jwt';
 import type Database from 'better-sqlite3';
 import { getUserProfile, registerUser } from '../api/userService';
 import { applyForLoan, getLoanPortfolio, getLoanPortfolioSummary } from '../api/loanService';
+import { verifyCredentials } from '../api/authService';
 import { ServiceResult } from '../api/errorMapping';
+
+const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-in-production';
 
 /**
  * 프론트엔드 연동을 위한 최소 HTTP 서버 (Fastify).
@@ -21,6 +25,7 @@ const STATUS_BY_ERROR_CODE: Record<string, number> = {
   TRANSACTION_NOT_FOUND: 404,
   BACKUP_NOT_FOUND: 404,
   OVERPAYMENT: 400,
+  INVALID_CREDENTIALS: 401,
   INTERNAL_ERROR: 500
 };
 
@@ -35,9 +40,21 @@ function respond<T>(reply: FastifyReply, result: ServiceResult<T>): void {
 export function buildServer(db: Database.Database): FastifyInstance {
   const app = Fastify({ logger: false });
   app.register(cors, { origin: true });
+  app.register(jwt, { secret: JWT_SECRET });
 
   app.post('/api/users', async (request, reply) => {
     respond(reply, registerUser(db, request.body as Parameters<typeof registerUser>[1]));
+  });
+
+  app.post('/api/auth/login', async (request, reply) => {
+    const { email, password } = request.body as { email: string; password: string };
+    const result = verifyCredentials(db, email, password);
+    if (!result.success) {
+      respond(reply, result);
+      return;
+    }
+    const token = await reply.jwtSign({ userId: result.data.id }, { expiresIn: '1h' });
+    reply.send({ success: true, data: { token, user: result.data } });
   });
 
   app.get('/api/users/:userId', async (request, reply) => {

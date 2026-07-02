@@ -1,4 +1,10 @@
-import { DuplicateEmailError, OptimisticLockError, UserNotFoundError, ValidationError } from '../repositories/errors';
+import {
+  DuplicateEmailError,
+  InvalidCredentialsError,
+  OptimisticLockError,
+  UserNotFoundError,
+  ValidationError
+} from '../repositories/errors';
 import { LoanNotFoundError, OverpaymentError } from '../repositories/LoanRepository';
 import { TransactionNotFoundError } from '../repositories/TransactionRepository';
 import { BackupNotFoundError } from '../repositories/BackupManager';
@@ -23,7 +29,8 @@ const ERROR_CODE_MAP: [ErrorConstructor, string][] = [
   [LoanNotFoundError, 'LOAN_NOT_FOUND'],
   [OverpaymentError, 'OVERPAYMENT'],
   [TransactionNotFoundError, 'TRANSACTION_NOT_FOUND'],
-  [BackupNotFoundError, 'BACKUP_NOT_FOUND']
+  [BackupNotFoundError, 'BACKUP_NOT_FOUND'],
+  [InvalidCredentialsError, 'INVALID_CREDENTIALS']
 ];
 
 export function mapErrorToCode(error: unknown): { code: string; message: string } {

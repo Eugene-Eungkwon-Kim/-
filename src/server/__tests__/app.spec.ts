@@ -85,4 +85,60 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     expect(res.statusCode).toBe(404);
     expect(res.json().error.code).toBe('USER_NOT_FOUND');
   });
+
+  describe('POST /api/auth/login (Day 8 - Task 2, δ=1535)', () => {
+    it('올바른 자격증명으로 로그인하면 JWT와 사용자 정보를 반환한다', async () => {
+      await app.inject({
+        method: 'POST',
+        url: '/api/users',
+        payload: { email: 'login@example.com', name: 'Login User', password: 'correct-horse' }
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'login@example.com', password: 'correct-horse' }
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.success).toBe(true);
+      expect(typeof body.data.token).toBe('string');
+      expect(body.data.user.email).toBe('login@example.com');
+    });
+
+    it('잘못된 비밀번호는 401을 반환한다', async () => {
+      await app.inject({
+        method: 'POST',
+        url: '/api/users',
+        payload: { email: 'wrong-pw@example.com', name: 'Wrong PW', password: 'correct-horse' }
+      });
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'wrong-pw@example.com', password: 'incorrect' }
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error.code).toBe('INVALID_CREDENTIALS');
+    });
+
+    it('발급된 토큰은 서버가 검증 가능한 형태다', async () => {
+      await app.inject({
+        method: 'POST',
+        url: '/api/users',
+        payload: { email: 'verify-token@example.com', name: 'Verify Token', password: 'correct-horse' }
+      });
+      const loginRes = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'verify-token@example.com', password: 'correct-horse' }
+      });
+      const { token } = loginRes.json().data;
+
+      const decoded = app.jwt.verify(token) as { userId: string };
+      expect(typeof decoded.userId).toBe('string');
+    });
+  });
 });
