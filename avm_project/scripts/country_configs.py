@@ -139,10 +139,49 @@ HK_CONFIG = CountryConfig(
     idiosyncratic_sigma=0.11,
 )
 
+# 영국: PHASE_13_1_GBL WBS 상 3순위 확장 국가 (HM Land Registry 공개 데이터셋 존재)
+# HM Land Registry는 잉글랜드/웨일스만 다루므로(스코틀랜드는 별도 등기소),
+# 좌표 범위도 잉글랜드/웨일스로 한정한다.
+UK_CONFIG = CountryConfig(
+    country_code='UK',
+    currency='GBP',
+    region_config={
+        'prime_central_london': (51.5074, -0.1657, 0.010, 0.015, 3_000_000),
+        'westminster':          (51.4995, -0.1357, 0.012, 0.015, 1_800_000),
+        'camden_islington':     (51.5423, -0.1300, 0.015, 0.018,   950_000),
+        'greater_london_outer': (51.5500, -0.1500, 0.060, 0.080,   550_000),
+        'home_counties_surrey': (51.3140, -0.5640, 0.070, 0.090,   600_000),
+        'manchester':           (53.4831, -2.2441, 0.040, 0.050,   280_000),
+        'birmingham':           (52.4862, -1.8904, 0.040, 0.050,   250_000),
+        'leeds':                (53.8008, -1.5491, 0.040, 0.050,   230_000),
+        'newcastle':            (54.9783, -1.6178, 0.045, 0.055,   180_000),
+    },
+    region_weights=(0.03, 0.06, 0.10, 0.20, 0.15, 0.14, 0.13, 0.10, 0.09),
+    lat_range=(50.0, 55.8),
+    lng_range=(-5.5, 1.8),
+    market_level={2020: 0.88, 2021: 0.93, 2022: 0.99, 2023: 0.97, 2024: 1.00},
+    price_floor=80_000.0,
+    price_ceiling=10_000_000.0,
+    feature_min=(30.0, 80_000.0, 50.0, -5.5, 1.0),
+    feature_max=(300.0, 10_000_000.0, 55.8, 1.8, 5.0),
+    tolerance=0.05,
+    # 영국은 단독/연립주택 비중이 높아 KR/SG/HK보다 평형이 크다
+    area_bins=(
+        (30.0,  50.0, 0.10),
+        (50.0,  75.0, 0.20),
+        (75.0, 100.0, 0.25),
+        (100.0,140.0, 0.25),
+        (140.0,200.0, 0.15),
+        (200.0,300.0, 0.05),
+    ),
+    idiosyncratic_sigma=0.12,
+)
+
 COUNTRY_CONFIGS: Dict[str, CountryConfig] = {
     'KR': KR_CONFIG,
     'SG': SG_CONFIG,
     'HK': HK_CONFIG,
+    'UK': UK_CONFIG,
 }
 
 
