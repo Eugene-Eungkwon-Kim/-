@@ -5,8 +5,9 @@ import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import type Database from 'better-sqlite3';
+import { LoanRepository } from '../repositories/LoanRepository';
 import { getUserProfile, registerUser } from '../api/userService';
-import { applyForLoan, getLoanPortfolio, getLoanPortfolioSummary } from '../api/loanService';
+import { applyForLoan, detectDelinquentLoans, getLoanPortfolio, getLoanPortfolioSummary, recordLoanPayment } from '../api/loanService';
 import { issueRefreshToken, revokeRefreshToken, verifyCredentials, verifyRefreshToken } from '../api/authService';
 import {
   CreditSimulationRequest,
@@ -21,9 +22,10 @@ import {
   recordTransaction,
   rescanAnomalies
 } from '../api/transactionService';
-import { createBackup, listBackups, runIntegrityCheck, verifyBackup } from '../api/adminService';
+import { checkBackupDue, createBackup, listBackups, pruneOldBackups, runIntegrityCheck, verifyBackup } from '../api/adminService';
 import { ServiceResult } from '../api/errorMapping';
 import { TrendMetric } from '../types/financialSnapshot';
+import { RecordPaymentInput } from '../types/loanPortfolio';
 import { RecordTransactionInput, TransactionFilter } from '../types/transaction';
 import { resolveServerEnv } from './env';
 
@@ -308,6 +310,45 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
     if (!isAdmin(request)) return forbidden(reply);
     const { id } = request.params as { id: string };
     respond(reply, verifyBackup(db, backupDir, id));
+  });
+
+  // Day 11 - Task 2 (δ=1080): 남아있던 4개 라우트를 노출한다.
+  // 1. 대출금 상환 기록
+  app.post('/api/loans/:loanId/payments', async (request, reply) => {
+    const { loanId } = request.params as { loanId: string };
+    const input = request.body as RecordPaymentInput;
+    const loan = new LoanRepository(db).getLoan(loanId);
+    if (!loan) {
+      return reply.code(404).send({ success: false, error: { code: 'LOAN_NOT_FOUND', message: `Loan ${loanId} not found` } });
+    }
+    const authUser = request.user as { userId: string };
+    if (loan.userId !== authUser.userId) {
+      return forbidden(reply);
+    }
+    respond(reply, recordLoanPayment(db, loanId, input));
+  });
+
+  // 2. 연체 대출 감지 (관리자 전용 배치)
+  app.post('/api/admin/delinquency-check', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const { asOfDate } = request.body as { asOfDate: string };
+    respond(reply, detectDelinquentLoans(db, asOfDate));
+  });
+
+  // 3. 백업 필요 여부 확인
+  app.get('/api/admin/backups/due', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const query = request.query as { intervalHours?: string; now?: string };
+    const intervalHours = parseInt(query.intervalHours ?? '24', 10);
+    const now = query.now ?? new Date().toISOString().slice(0, 10);
+    respond(reply, checkBackupDue(db, backupDir, intervalHours, now));
+  });
+
+  // 4. 보존기간 초과 백업 정리
+  app.post('/api/admin/backups/prune', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const { retentionDays, now } = request.body as { retentionDays: number; now: string };
+    respond(reply, pruneOldBackups(db, backupDir, retentionDays, now));
   });
 
   return app;

@@ -90,4 +90,133 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
     const afterRes = await app.inject({ method: 'GET', url: '/api/admin/backups', headers: authHeader(adminToken) });
     expect(afterRes.statusCode).toBe(200);
   });
+
+  it('대출금 상환 기록 — 소유자만 가능, 잘못된 대출 ID는 404', async () => {
+    const { userId: userId1, token: token1 } = await registerAndLogin('payment-user1@example.com', 'User 1');
+    const { userId: userId2, token: token2 } = await registerAndLogin('payment-user2@example.com', 'User 2');
+
+    // User 1이 대출 신청
+    const loanRes = await app.inject({
+      method: 'POST',
+      url: '/api/loans',
+      headers: authHeader(token1),
+      payload: {
+        userId: userId1,
+        productId: 'standard-loan-1',
+        originalAmount: 1000000,
+        interestRate: 5,
+        termMonths: 60,
+        startDate: '2026-01-01'
+      }
+    });
+    const loanId = loanRes.json().data.id;
+
+    // User 1이 자신의 대출에 상환 기록 — 성공
+    const paymentRes = await app.inject({
+      method: 'POST',
+      url: `/api/loans/${loanId}/payments`,
+      headers: authHeader(token1),
+      payload: { paymentDate: '2026-06-01', principal: 10000, interest: 5000 }
+    });
+    expect(paymentRes.statusCode).toBe(200);
+    expect(paymentRes.json().data.currentBalance).toBeLessThan(1000000);
+
+    // User 2가 User 1의 대출에 상환 기록 시도 — 403
+    const unauthorizedRes = await app.inject({
+      method: 'POST',
+      url: `/api/loans/${loanId}/payments`,
+      headers: authHeader(token2),
+      payload: { paymentDate: '2026-06-01', principal: 10000, interest: 5000 }
+    });
+    expect(unauthorizedRes.statusCode).toBe(403);
+
+    // 잘못된 대출 ID — 404
+    const notFoundRes = await app.inject({
+      method: 'POST',
+      url: '/api/loans/nonexistent-loan/payments',
+      headers: authHeader(token1),
+      payload: { paymentDate: '2026-06-01', principal: 10000, interest: 5000 }
+    });
+    expect(notFoundRes.statusCode).toBe(404);
+  });
+
+  it('연체 감지 — 관리자만 가능', async () => {
+    const { userId: adminId, token: adminToken } = await registerAndLogin('delinquency-admin@example.com', 'Admin');
+    const { token: userToken } = await registerAndLogin('delinquency-user@example.com', 'User');
+
+    // 일반 사용자 시도 — 403
+    const userRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/delinquency-check',
+      headers: authHeader(userToken),
+      payload: { asOfDate: '2026-07-01' }
+    });
+    expect(userRes.statusCode).toBe(403);
+
+    // 관리자로 승격
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(adminId);
+    const reloginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'delinquency-admin@example.com', password: 'correct-horse' }
+    });
+    const newAdminToken = reloginRes.json().data.token;
+
+    // 관리자 시도 — 성공 (빈 배열 반환)
+    const adminCheckRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/delinquency-check',
+      headers: authHeader(newAdminToken),
+      payload: { asOfDate: '2026-07-01' }
+    });
+    expect(adminCheckRes.statusCode).toBe(200);
+    expect(Array.isArray(adminCheckRes.json().data)).toBe(true);
+  });
+
+  it('백업 관련 엔드포인트 — 관리자 전용', async () => {
+    const { userId: adminId, token: adminToken } = await registerAndLogin('backup-admin@example.com', 'Admin');
+    const { token: userToken } = await registerAndLogin('backup-user@example.com', 'User');
+
+    // 일반 사용자의 시도 — 403
+    const userDueRes = await app.inject({
+      method: 'GET',
+      url: '/api/admin/backups/due?intervalHours=24&now=2026-07-01',
+      headers: authHeader(userToken)
+    });
+    expect(userDueRes.statusCode).toBe(403);
+
+    const userPruneRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/backups/prune',
+      headers: authHeader(userToken),
+      payload: { retentionDays: 30, now: '2026-07-01' }
+    });
+    expect(userPruneRes.statusCode).toBe(403);
+
+    // 관리자로 승격
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(adminId);
+    const reloginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'backup-admin@example.com', password: 'correct-horse' }
+    });
+    const newAdminToken = reloginRes.json().data.token;
+
+    // 관리자의 시도 — 성공
+    const adminDueRes = await app.inject({
+      method: 'GET',
+      url: '/api/admin/backups/due?intervalHours=24&now=2026-07-01',
+      headers: authHeader(newAdminToken)
+    });
+    expect(adminDueRes.statusCode).toBe(200);
+    expect(typeof adminDueRes.json().data).toBe('boolean');
+
+    const adminPruneRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/backups/prune',
+      headers: authHeader(newAdminToken),
+      payload: { retentionDays: 30, now: '2026-07-01' }
+    });
+    expect(adminPruneRes.statusCode).toBe(200);
+  });
 });
