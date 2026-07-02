@@ -172,3 +172,24 @@ export function getLoanPortfolio(userId: string) {
 export function getLoanPortfolioSummary(userId: string) {
   return getJson<PortfolioSummary>(`/api/users/${userId}/loans/summary`);
 }
+
+export interface TransactionRecord {
+  id: string;
+  transactionType: 'deposit' | 'withdrawal' | 'loan_payment' | 'fee' | 'adjustment';
+  amount: number;
+  status: 'completed' | 'flagged' | 'reversed';
+  occurredAt: string;
+}
+
+export function recordTransaction(input: {
+  userId: string;
+  transactionType: TransactionRecord['transactionType'];
+  amount: number;
+  occurredAt: string;
+}) {
+  return postJson<TransactionRecord>('/api/transactions', input);
+}
+
+export function getTransactionHistory(userId: string) {
+  return getJson<TransactionRecord[]>(`/api/users/${userId}/transactions`);
+}

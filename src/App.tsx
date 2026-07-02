@@ -4,15 +4,18 @@ import {
   getLoanPortfolio,
   getLoanPortfolioSummary,
   getStoredUser,
+  getTransactionHistory,
   login,
   logout,
   LoanRecord,
   onForcedLogout,
   PortfolioSummary,
+  recordTransaction,
   registerUser,
   setAuthToken,
   setRefreshTokenValue,
   setStoredUser,
+  TransactionRecord,
   UserProfile
 } from './webApiClient';
 
@@ -33,6 +36,11 @@ export default function App() {
 
   const [portfolio, setPortfolio] = useState<LoanRecord[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
+
+  const [txnType, setTxnType] = useState<TransactionRecord['transactionType']>('deposit');
+  const [txnAmount, setTxnAmount] = useState(1000000);
+  const [txnError, setTxnError] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
 
   // Day 9 - Task 4 (δ=1090): 새로고침 시 로그인 상태를 복원하고, 액세스+리프레시
   // 토큰이 모두 만료/무효화되어 webApiClient가 강제 로그아웃을 통지하면 화면에도 반영한다.
@@ -95,6 +103,26 @@ export default function App() {
     const [portfolioResult, summaryResult] = await Promise.all([getLoanPortfolio(userId), getLoanPortfolioSummary(userId)]);
     if (portfolioResult.success) setPortfolio(portfolioResult.data);
     if (summaryResult.success) setSummary(summaryResult.data);
+  }
+
+  async function refreshTransactions(userId: string) {
+    const result = await getTransactionHistory(userId);
+    if (result.success) setTransactions(result.data);
+  }
+
+  async function handleRecordTransaction(event: FormEvent) {
+    event.preventDefault();
+    setTxnError(null);
+    if (!user) {
+      setTxnError('먼저 로그인하세요.');
+      return;
+    }
+    const result = await recordTransaction({ userId: user.id, transactionType: txnType, amount: txnAmount, occurredAt: todayIso() });
+    if (result.success) {
+      await refreshTransactions(user.id);
+    } else {
+      setTxnError(result.error.message);
+    }
   }
 
   async function handleApplyLoan(event: FormEvent) {
@@ -212,6 +240,42 @@ export default function App() {
             <li key={loan.id}>
               {loan.productId}: 잔액 {loan.currentBalance.toLocaleString()}원 / 월상환액{' '}
               {loan.monthlyPayment.toLocaleString()}원 ({loan.status})
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section style={{ marginTop: 32, padding: 16, border: '1px solid #ddd', borderRadius: 8 }}>
+        <h2>4. 거래 내역</h2>
+        <form onSubmit={handleRecordTransaction}>
+          <div>
+            <label>
+              유형{' '}
+              <select value={txnType} onChange={(e) => setTxnType(e.target.value as TransactionRecord['transactionType'])}>
+                <option value="deposit">입금</option>
+                <option value="withdrawal">출금</option>
+              </select>
+            </label>
+          </div>
+          <div>
+            <label>
+              금액{' '}
+              <input type="number" value={txnAmount} onChange={(e) => setTxnAmount(Number(e.target.value))} />
+            </label>
+          </div>
+          <button type="submit" disabled={!user}>
+            기록
+          </button>
+          <button type="button" onClick={() => user && refreshTransactions(user.id)} disabled={!user} style={{ marginLeft: 8 }}>
+            새로고침
+          </button>
+        </form>
+        {txnError && <p style={{ color: 'crimson' }}>{txnError}</p>}
+        <ul>
+          {transactions.map((txn) => (
+            <li key={txn.id}>
+              [{txn.occurredAt}] {txn.transactionType === 'deposit' ? '입금' : txn.transactionType}: {txn.amount.toLocaleString()}원 (
+              {txn.status})
             </li>
           ))}
         </ul>
