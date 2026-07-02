@@ -6,6 +6,7 @@
 export type EmploymentStatus = 'employed' | 'self-employed' | 'unemployed';
 export type CreditGrade = 'A' | 'B' | 'C' | 'D' | 'F';
 export type UserStatus = 'active' | 'inactive' | 'suspended';
+export type UserRole = 'user' | 'admin';
 export type AuditAction = 'CREATE' | 'UPDATE' | 'DELETE';
 
 export interface EmploymentInfo {
@@ -47,6 +48,7 @@ export interface UserMetadata {
   updatedAt: string;
   lastLoginAt: string | null;
   status: UserStatus;
+  role: UserRole;
   version: number; // optimistic locking
 }
 

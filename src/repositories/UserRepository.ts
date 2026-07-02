@@ -41,6 +41,7 @@ interface UserRow {
   savings_rate: number | null;
   version: number;
   status: string;
+  role: string;
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
@@ -105,6 +106,7 @@ function mapRowToProfile(row: UserRow): UserProfile {
       updatedAt: row.updated_at,
       lastLoginAt: row.last_login_at,
       status: row.status as UserProfile['metadata']['status'],
+      role: row.role as UserProfile['metadata']['role'],
       version: row.version
     }
   };

@@ -1,3 +1,4 @@
+import path from 'node:path';
 import Fastify, { FastifyReply, FastifyRequest, FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
@@ -20,6 +21,7 @@ import {
   recordTransaction,
   rescanAnomalies
 } from '../api/transactionService';
+import { createBackup, listBackups, runIntegrityCheck, verifyBackup } from '../api/adminService';
 import { ServiceResult } from '../api/errorMapping';
 import { TrendMetric } from '../types/financialSnapshot';
 import { RecordTransactionInput, TransactionFilter } from '../types/transaction';
@@ -27,7 +29,10 @@ import { resolveServerEnv } from './env';
 
 export interface BuildServerOptions {
   jwtSecret?: string;
+  backupDir?: string;
 }
+
+const DEFAULT_BACKUP_DIR = path.join(process.cwd(), 'data', 'backups');
 
 /**
  * 인증 없이 접근 가능한 (method, path) 목록. /api/auth/refresh와 /api/auth/logout도
@@ -80,6 +85,16 @@ function isOwner(request: FastifyRequest, targetUserId: string): boolean {
   return authUser.userId === targetUserId;
 }
 
+/**
+ * 관리자 권한 검사 (Day 10 - Task 3, δ=1065). role은 로그인/리프레시 시점에
+ * JWT payload에 실려오므로 요청마다 DB를 다시 조회할 필요가 없다. role 변경
+ * API는 범위 밖 — 운영에서는 DB에 직접 SQL로 승격한다(시드 스크립트 등).
+ */
+function isAdmin(request: FastifyRequest): boolean {
+  const authUser = request.user as { role?: string };
+  return authUser.role === 'admin';
+}
+
 function forbidden(reply: FastifyReply): void {
   reply.code(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'You do not have access to this resource' } });
 }
@@ -91,6 +106,7 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
   // options.jwtSecret으로 주입한다. 이 폴백은 index.ts를 거치지 않는 임시
   // buildServer() 호출(테스트 등)을 위한 안전망일 뿐이다.
   const jwtSecret = options.jwtSecret ?? resolveServerEnv().jwtSecret;
+  const backupDir = options.backupDir ?? DEFAULT_BACKUP_DIR;
 
   const app = Fastify({ logger: false });
   await app.register(cors, { origin: true });
@@ -151,7 +167,7 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
         respond(reply, refreshResult);
         return;
       }
-      const token = await reply.jwtSign({ userId: result.data.id }, { expiresIn: '1h' });
+      const token = await reply.jwtSign({ userId: result.data.id, role: result.data.metadata.role }, { expiresIn: '1h' });
       reply.send({ success: true, data: { token, refreshToken: refreshResult.data.token, user: result.data } });
     }
   );
@@ -173,7 +189,12 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
       return;
     }
 
-    const token = await reply.jwtSign({ userId: verified.data.userId }, { expiresIn: '1h' });
+    // role은 로그인 이후 바뀌었을 수 있으므로(관리자 승격 등) 리프레시 토큰이
+    // 아니라 최신 프로필에서 다시 읽어 새 액세스 토큰에 반영한다.
+    const profile = getUserProfile(db, verified.data.userId);
+    const role = profile.success ? profile.data.metadata.role : 'user';
+
+    const token = await reply.jwtSign({ userId: verified.data.userId, role }, { expiresIn: '1h' });
     reply.send({ success: true, data: { token, refreshToken: rotated.data.token } });
   });
 
@@ -262,6 +283,31 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, rescanAnomalies(db, userId));
+  });
+
+  // Day 10 - Task 4 (δ=1065): adminService.ts도 HTTP로 노출한다. isOwner가 아니라
+  // isAdmin으로 검사한다 — 이 라우트들은 특정 사용자가 아니라 시스템 전체(무결성
+  // 검사, 백업)에 대한 작업이라 "본인 소유"라는 개념 자체가 성립하지 않는다.
+  app.post('/api/admin/integrity-check', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const { asOfDate } = request.body as { asOfDate: string };
+    respond(reply, await runIntegrityCheck(db, asOfDate));
+  });
+
+  app.post('/api/admin/backups', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    respond(reply, await createBackup(db, backupDir));
+  });
+
+  app.get('/api/admin/backups', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    respond(reply, listBackups(db, backupDir));
+  });
+
+  app.post('/api/admin/backups/:id/verify', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const { id } = request.params as { id: string };
+    respond(reply, verifyBackup(db, backupDir, id));
   });
 
   return app;

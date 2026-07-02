@@ -126,4 +126,11 @@ describe('UserRepository (Day 5 - Task 1: 사용자 프로필 & 계정 관리, �
       expect(() => repo.register({ email: 'short-pw@example.com', name: 'Short PW', password: 'short' })).toThrow(ValidationError);
     });
   });
+
+  describe('[T-AUTH-30] 관리자 역할 (Day 10 - Task 3, δ=1065)', () => {
+    it('신규 등록 사용자는 기본적으로 role이 user다', () => {
+      const profile = repo.register({ email: 'role-default@example.com', name: 'Role Default' });
+      expect(profile.metadata.role).toBe('user');
+    });
+  });
 });

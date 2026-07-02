@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '@db/connection';
 import { buildServer } from '@/server/app';
@@ -8,14 +11,17 @@ import type { FastifyInstance } from 'fastify';
 describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
   let db: Database.Database;
   let app: FastifyInstance;
+  let backupDir: string;
 
   beforeEach(async () => {
     db = createDatabase(':memory:');
-    app = await buildServer(db, { jwtSecret: 'test-secret' });
+    backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maars-app-spec-'));
+    app = await buildServer(db, { jwtSecret: 'test-secret', backupDir });
   });
 
   afterEach(() => {
     db.close();
+    fs.rmSync(backupDir, { recursive: true, force: true });
   });
 
   /** 회원가입 + 로그인을 한 번에 수행해 인증된 요청에 쓸 (userId, token, refreshToken)을 반환한다 */
@@ -234,6 +240,75 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
       const alice = await registerAndLogin('alice4@example.com', 'Alice4');
       const res = await app.inject({ method: 'GET', url: `/api/users/${alice.userId}/loans/summary`, headers: authHeader(alice.token) });
       expect(res.statusCode).toBe(200);
+    });
+  });
+
+  describe('관리자 API (Day 10 - Task 4, δ=1065)', () => {
+    async function loginAsAdmin(email: string): Promise<string> {
+      const alice = await registerAndLogin(email, 'Admin User');
+      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(alice.userId);
+      const loginRes = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'correct-horse' } });
+      return loginRes.json().data.token;
+    }
+
+    it('관리자는 무결성 체크를 실행할 수 있다', async () => {
+      const token = await loginAsAdmin('admin-integrity@example.com');
+      const res = await app.inject({ method: 'POST', url: '/api/admin/integrity-check', headers: authHeader(token), payload: { asOfDate: '2026-01-01' } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.every((r: { status: string }) => r.status === 'ok')).toBe(true);
+    });
+
+    it('관리자는 백업을 생성하고 목록을 조회할 수 있다', async () => {
+      const token = await loginAsAdmin('admin-backup@example.com');
+
+      const createRes = await app.inject({ method: 'POST', url: '/api/admin/backups', headers: authHeader(token) });
+      expect(createRes.statusCode).toBe(200);
+      const backupId = createRes.json().data.id;
+
+      const listRes = await app.inject({ method: 'GET', url: '/api/admin/backups', headers: authHeader(token) });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json().data.length).toBe(1);
+
+      const verifyRes = await app.inject({ method: 'POST', url: `/api/admin/backups/${backupId}/verify`, headers: authHeader(token) });
+      expect(verifyRes.statusCode).toBe(200);
+      expect(verifyRes.json().data).toBe(true);
+    });
+
+    it('일반 사용자가 관리자 라우트를 호출하면 403을 반환한다', async () => {
+      const regular = await registerAndLogin('not-admin@example.com', 'Not Admin');
+      const res = await app.inject({ method: 'GET', url: '/api/admin/backups', headers: authHeader(regular.token) });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('미인증 요청은 관리자 라우트에서도 401을 반환한다', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/admin/backups' });
+      expect(res.statusCode).toBe(401);
+    });
+  });
+
+  describe('관리자 역할 & 권한 (Day 10 - Task 3, δ=1065)', () => {
+    it('기본 등록 사용자의 토큰 payload에는 role=user가 실린다', async () => {
+      const alice = await registerAndLogin('role-user@example.com', 'Role User');
+      const decoded = app.jwt.verify(alice.token) as { role: string };
+      expect(decoded.role).toBe('user');
+    });
+
+    it('DB에서 직접 admin으로 승격한 뒤 재로그인하면 토큰에 role=admin이 실린다', async () => {
+      const alice = await registerAndLogin('role-admin@example.com', 'Role Admin');
+      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(alice.userId);
+
+      const loginRes = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'role-admin@example.com', password: 'correct-horse' } });
+      const decoded = app.jwt.verify(loginRes.json().data.token) as { role: string };
+      expect(decoded.role).toBe('admin');
+    });
+
+    it('refresh로 재발급된 토큰도 최신 role을 반영한다', async () => {
+      const alice = await registerAndLogin('role-refresh@example.com', 'Role Refresh');
+      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(alice.userId);
+
+      const refreshRes = await app.inject({ method: 'POST', url: '/api/auth/refresh', payload: { refreshToken: alice.refreshToken } });
+      const decoded = app.jwt.verify(refreshRes.json().data.token) as { role: string };
+      expect(decoded.role).toBe('admin');
     });
   });
 
