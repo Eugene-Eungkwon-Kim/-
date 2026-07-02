@@ -57,11 +57,13 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     expect(res.json().error.code).toBe('DUPLICATE_EMAIL');
   });
 
-  it('GET /api/users/:userId - 인증된 요청에서 존재하지 않는 사용자는 404를 반환한다', async () => {
+  it('GET /api/users/:userId - 타인(혹은 존재하지 않는) userId 요청은 403을 반환한다', async () => {
+    // Day8 Task3(권한 검사) 도입 후에는 소유권 확인이 존재 여부 확인보다 먼저 이뤄져
+    // "내 것이 아님"과 "존재하지 않음"을 구분해 노출하지 않는다
     const { token } = await registerAndLogin('caller@example.com', 'Caller');
     const res = await app.inject({ method: 'GET', url: '/api/users/no-such-user', headers: authHeader(token) });
-    expect(res.statusCode).toBe(404);
-    expect(res.json().error.code).toBe('USER_NOT_FOUND');
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('FORBIDDEN');
   });
 
   it('POST /api/loans → GET /api/users/:userId/loans - 등록한 대출이 포트폴리오에 나타난다', async () => {
@@ -96,7 +98,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     expect(res.json().data.loanCount).toBe(1);
   });
 
-  it('POST /api/loans - 존재하지 않는 사용자는 404를 반환한다', async () => {
+  it('POST /api/loans - 본인이 아닌 userId로 신청하면 403을 반환한다', async () => {
     const { token } = await registerAndLogin('caller-2@example.com', 'Caller 2');
     const res = await app.inject({
       method: 'POST',
@@ -104,8 +106,8 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
       headers: authHeader(token),
       payload: { userId: 'no-such-user', productId: 'p1', originalAmount: 100000000, interestRate: 3.2, termMonths: 120, startDate: '2026-01-01' }
     });
-    expect(res.statusCode).toBe(404);
-    expect(res.json().error.code).toBe('USER_NOT_FOUND');
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.code).toBe('FORBIDDEN');
   });
 
   describe('POST /api/auth/login (Day 8 - Task 2, δ=1535)', () => {
@@ -177,6 +179,50 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     it('유효한 토큰이 있으면 보호된 라우트를 통과한다', async () => {
       const { userId, token } = await registerAndLogin('protected@example.com', 'Protected');
       const res = await app.inject({ method: 'GET', url: `/api/users/${userId}`, headers: authHeader(token) });
+      expect(res.statusCode).toBe(200);
+    });
+  });
+
+  describe('권한 검사 (Day 8 - Task 3, δ=1360)', () => {
+    it('타인의 프로필을 조회하려 하면 403을 반환한다', async () => {
+      const alice = await registerAndLogin('alice@example.com', 'Alice');
+      const bob = await registerAndLogin('bob@example.com', 'Bob');
+
+      const res = await app.inject({ method: 'GET', url: `/api/users/${bob.userId}`, headers: authHeader(alice.token) });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe('FORBIDDEN');
+    });
+
+    it('타인의 대출 포트폴리오를 조회하려 하면 403을 반환한다', async () => {
+      const alice = await registerAndLogin('alice2@example.com', 'Alice2');
+      const bob = await registerAndLogin('bob2@example.com', 'Bob2');
+      await app.inject({
+        method: 'POST',
+        url: '/api/loans',
+        headers: authHeader(bob.token),
+        payload: { userId: bob.userId, productId: 'p1', originalAmount: 100000000, interestRate: 3.2, termMonths: 120, startDate: '2026-01-01' }
+      });
+
+      const res = await app.inject({ method: 'GET', url: `/api/users/${bob.userId}/loans`, headers: authHeader(alice.token) });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('타인 명의로 대출을 신청하려 하면 403을 반환한다', async () => {
+      const alice = await registerAndLogin('alice3@example.com', 'Alice3');
+      const bob = await registerAndLogin('bob3@example.com', 'Bob3');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/loans',
+        headers: authHeader(alice.token), // alice의 토큰으로
+        payload: { userId: bob.userId, productId: 'p1', originalAmount: 100000000, interestRate: 3.2, termMonths: 120, startDate: '2026-01-01' } // bob 명의 신청
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('본인 리소스는 정상적으로 조회/생성할 수 있다', async () => {
+      const alice = await registerAndLogin('alice4@example.com', 'Alice4');
+      const res = await app.inject({ method: 'GET', url: `/api/users/${alice.userId}/loans/summary`, headers: authHeader(alice.token) });
       expect(res.statusCode).toBe(200);
     });
   });

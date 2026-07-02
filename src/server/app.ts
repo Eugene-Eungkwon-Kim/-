@@ -1,4 +1,4 @@
-import Fastify, { FastifyReply, FastifyInstance } from 'fastify';
+import Fastify, { FastifyReply, FastifyRequest, FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import type Database from 'better-sqlite3';
@@ -43,6 +43,20 @@ function respond<T>(reply: FastifyReply, result: ServiceResult<T>): void {
   reply.code(STATUS_BY_ERROR_CODE[result.error.code] ?? 500).send(result);
 }
 
+/**
+ * 권한 검사 (Day 8 - Task 3, δ=1360): 요청자(JWT의 userId)와 대상 리소스의
+ * 소유자가 다르면 403. 존재 여부보다 소유권을 먼저 확인해, 타인의 리소스에
+ * 대해서는 "존재하지 않음"과 "내 것이 아님"을 구분해 노출하지 않는다.
+ */
+function isOwner(request: FastifyRequest, targetUserId: string): boolean {
+  const authUser = request.user as { userId: string };
+  return authUser.userId === targetUserId;
+}
+
+function forbidden(reply: FastifyReply): void {
+  reply.code(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'You do not have access to this resource' } });
+}
+
 export function buildServer(db: Database.Database): FastifyInstance {
   const app = Fastify({ logger: false });
   app.register(cors, { origin: true });
@@ -79,21 +93,26 @@ export function buildServer(db: Database.Database): FastifyInstance {
 
   app.get('/api/users/:userId', async (request, reply) => {
     const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, getUserProfile(db, userId));
   });
 
   app.post('/api/loans', async (request, reply) => {
-    const result = await applyForLoan(db, request.body as Parameters<typeof applyForLoan>[1]);
+    const body = request.body as Parameters<typeof applyForLoan>[1];
+    if (!isOwner(request, body.userId)) return forbidden(reply);
+    const result = await applyForLoan(db, body);
     respond(reply, result);
   });
 
   app.get('/api/users/:userId/loans', async (request, reply) => {
     const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, getLoanPortfolio(db, userId));
   });
 
   app.get('/api/users/:userId/loans/summary', async (request, reply) => {
     const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, getLoanPortfolioSummary(db, userId));
   });
 
