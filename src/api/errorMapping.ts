@@ -1,6 +1,7 @@
 import {
   DuplicateEmailError,
   InvalidCredentialsError,
+  InvalidRefreshTokenError,
   OptimisticLockError,
   UserNotFoundError,
   ValidationError
@@ -30,7 +31,8 @@ const ERROR_CODE_MAP: [ErrorConstructor, string][] = [
   [OverpaymentError, 'OVERPAYMENT'],
   [TransactionNotFoundError, 'TRANSACTION_NOT_FOUND'],
   [BackupNotFoundError, 'BACKUP_NOT_FOUND'],
-  [InvalidCredentialsError, 'INVALID_CREDENTIALS']
+  [InvalidCredentialsError, 'INVALID_CREDENTIALS'],
+  [InvalidRefreshTokenError, 'INVALID_REFRESH_TOKEN']
 ];
 
 export function mapErrorToCode(error: unknown): { code: string; message: string } {

@@ -5,7 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 import type Database from 'better-sqlite3';
 import { getUserProfile, registerUser } from '../api/userService';
 import { applyForLoan, getLoanPortfolio, getLoanPortfolioSummary } from '../api/loanService';
-import { verifyCredentials } from '../api/authService';
+import { issueRefreshToken, revokeRefreshToken, verifyCredentials, verifyRefreshToken } from '../api/authService';
 import { ServiceResult } from '../api/errorMapping';
 import { resolveServerEnv } from './env';
 
@@ -13,9 +13,15 @@ export interface BuildServerOptions {
   jwtSecret?: string;
 }
 
-/** 인증 없이 접근 가능한 (method, path) 목록 — 회원가입과 로그인만 예외 */
+/**
+ * 인증 없이 접근 가능한 (method, path) 목록. /api/auth/refresh와 /api/auth/logout도
+ * 여기 포함된다 — 이 두 엔드포인트는 (이미 만료됐을 수 있는) 액세스 JWT가 아니라
+ * 리프레시 토큰 자체를 자격증명으로 사용하기 때문이다.
+ */
 const PUBLIC_ROUTES: Array<[string, string]> = [
   ['POST', '/api/auth/login'],
+  ['POST', '/api/auth/refresh'],
+  ['POST', '/api/auth/logout'],
   ['POST', '/api/users']
 ];
 
@@ -36,6 +42,7 @@ const STATUS_BY_ERROR_CODE: Record<string, number> = {
   BACKUP_NOT_FOUND: 404,
   OVERPAYMENT: 400,
   INVALID_CREDENTIALS: 401,
+  INVALID_REFRESH_TOKEN: 401,
   INTERNAL_ERROR: 500
 };
 
@@ -118,10 +125,41 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
         respond(reply, result);
         return;
       }
+      const refreshResult = issueRefreshToken(db, result.data.id);
+      if (!refreshResult.success) {
+        respond(reply, refreshResult);
+        return;
+      }
       const token = await reply.jwtSign({ userId: result.data.id }, { expiresIn: '1h' });
-      reply.send({ success: true, data: { token, user: result.data } });
+      reply.send({ success: true, data: { token, refreshToken: refreshResult.data.token, user: result.data } });
     }
   );
+
+  app.post('/api/auth/refresh', async (request, reply) => {
+    const { refreshToken } = request.body as { refreshToken: string };
+    const verified = verifyRefreshToken(db, refreshToken);
+    if (!verified.success) {
+      respond(reply, verified);
+      return;
+    }
+
+    // 회전(rotation): 제시된 리프레시 토큰은 즉시 무효화하고 새 토큰을 발급한다.
+    // 탈취된 리프레시 토큰이 갱신 이후에도 재사용될 여지를 없앤다.
+    revokeRefreshToken(db, refreshToken);
+    const rotated = issueRefreshToken(db, verified.data.userId);
+    if (!rotated.success) {
+      respond(reply, rotated);
+      return;
+    }
+
+    const token = await reply.jwtSign({ userId: verified.data.userId }, { expiresIn: '1h' });
+    reply.send({ success: true, data: { token, refreshToken: rotated.data.token } });
+  });
+
+  app.post('/api/auth/logout', async (request, reply) => {
+    const { refreshToken } = request.body as { refreshToken: string };
+    respond(reply, revokeRefreshToken(db, refreshToken));
+  });
 
   app.get('/api/users/:userId', async (request, reply) => {
     const { userId } = request.params as { userId: string };

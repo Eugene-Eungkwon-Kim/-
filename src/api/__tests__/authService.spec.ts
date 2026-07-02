@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createDatabase } from '@db/connection';
 import { registerUser } from '@api/userService';
-import { verifyCredentials } from '@api/authService';
+import { issueRefreshToken, revokeRefreshToken, verifyCredentials, verifyRefreshToken } from '@api/authService';
 
 describe('authService (Day 8 - Task 2: 로그인 & JWT 발급, δ=1535)', () => {
   let db: Database.Database;
@@ -40,6 +40,39 @@ describe('authService (Day 8 - Task 2: 로그인 & JWT 발급, δ=1535)', () => 
       const result = verifyCredentials(db, 'no-password-user@example.com', '');
       expect(result.success).toBe(false);
       if (!result.success) expect(result.error.code).toBe('INVALID_CREDENTIALS');
+    });
+  });
+
+  describe('[T-AUTH-27~29] 리프레시 토큰 서비스 (Day 9 - Task 3, δ=1155)', () => {
+    it('[T-AUTH-27] 발급 → 검증이 동일 사용자로 왕복된다', () => {
+      const cred = verifyCredentials(db, 'auth-user@example.com', 'correct-horse');
+      const userId = cred.success ? cred.data.id : '';
+
+      const issued = issueRefreshToken(db, userId);
+      expect(issued.success).toBe(true);
+      if (!issued.success) return;
+
+      const verified = verifyRefreshToken(db, issued.data.token);
+      expect(verified.success).toBe(true);
+      if (verified.success) expect(verified.data.userId).toBe(userId);
+    });
+
+    it('[T-AUTH-28] 알 수 없는 토큰 검증은 INVALID_REFRESH_TOKEN을 반환한다', () => {
+      const result = verifyRefreshToken(db, 'no-such-token');
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.code).toBe('INVALID_REFRESH_TOKEN');
+    });
+
+    it('[T-AUTH-29] 무효화 후에는 검증에 실패한다', () => {
+      const cred = verifyCredentials(db, 'auth-user@example.com', 'correct-horse');
+      const userId = cred.success ? cred.data.id : '';
+      const issued = issueRefreshToken(db, userId);
+      const token = issued.success ? issued.data.token : '';
+
+      revokeRefreshToken(db, token);
+
+      const result = verifyRefreshToken(db, token);
+      expect(result.success).toBe(false);
     });
   });
 });

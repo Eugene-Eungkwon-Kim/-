@@ -17,8 +17,8 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     db.close();
   });
 
-  /** 회원가입 + 로그인을 한 번에 수행해 인증된 요청에 쓸 (userId, token)을 반환한다 */
-  async function registerAndLogin(email: string, name: string): Promise<{ userId: string; token: string }> {
+  /** 회원가입 + 로그인을 한 번에 수행해 인증된 요청에 쓸 (userId, token, refreshToken)을 반환한다 */
+  async function registerAndLogin(email: string, name: string): Promise<{ userId: string; token: string; refreshToken: string }> {
     const registerRes = await app.inject({
       method: 'POST',
       url: '/api/users',
@@ -27,9 +27,9 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     const userId = registerRes.json().data.id;
 
     const loginRes = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'correct-horse' } });
-    const { token } = loginRes.json().data;
+    const { token, refreshToken } = loginRes.json().data;
 
-    return { userId, token };
+    return { userId, token, refreshToken };
   }
 
   function authHeader(token: string) {
@@ -254,6 +254,55 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
         const res = await app.inject({ method: 'POST', url: '/api/users', payload: { email: `rl-register-${i}@example.com`, name: `RL ${i}`, password: 'correct-horse' } });
         expect(res.statusCode).toBe(200);
       }
+    });
+  });
+
+  describe('리프레시 토큰 & 로그아웃 (Day 9 - Task 3, δ=1155)', () => {
+    it('로그인 응답에 refreshToken 문자열이 포함된다', async () => {
+      const { refreshToken } = await registerAndLogin('refresh-login@example.com', 'Refresh Login');
+      expect(typeof refreshToken).toBe('string');
+      expect(refreshToken.length).toBeGreaterThan(0);
+    });
+
+    it('유효한 refreshToken으로 새 액세스 토큰과 회전된 refreshToken을 발급받는다', async () => {
+      const { refreshToken } = await registerAndLogin('refresh-ok@example.com', 'Refresh OK');
+
+      const res = await app.inject({ method: 'POST', url: '/api/auth/refresh', payload: { refreshToken } });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(typeof body.data.token).toBe('string');
+      expect(typeof body.data.refreshToken).toBe('string');
+      expect(body.data.refreshToken).not.toBe(refreshToken); // 회전되어 이전 값과 달라야 함
+    });
+
+    it('존재하지 않는 refreshToken은 401 INVALID_REFRESH_TOKEN을 반환한다', async () => {
+      const res = await app.inject({ method: 'POST', url: '/api/auth/refresh', payload: { refreshToken: 'not-a-real-token' } });
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error.code).toBe('INVALID_REFRESH_TOKEN');
+    });
+
+    it('로그아웃 후 같은 refreshToken 재사용은 실패한다', async () => {
+      const { refreshToken } = await registerAndLogin('logout-user@example.com', 'Logout User');
+
+      const logoutRes = await app.inject({ method: 'POST', url: '/api/auth/logout', payload: { refreshToken } });
+      expect(logoutRes.statusCode).toBe(200);
+
+      const reuseRes = await app.inject({ method: 'POST', url: '/api/auth/refresh', payload: { refreshToken } });
+      expect(reuseRes.statusCode).toBe(401);
+    });
+
+    it('리프레시 후 회전된 이전 refreshToken 재사용도 실패한다', async () => {
+      const { refreshToken } = await registerAndLogin('rotate-user@example.com', 'Rotate User');
+
+      await app.inject({ method: 'POST', url: '/api/auth/refresh', payload: { refreshToken } }); // 1회 회전
+
+      const reuseOldRes = await app.inject({ method: 'POST', url: '/api/auth/refresh', payload: { refreshToken } });
+      expect(reuseOldRes.statusCode).toBe(401);
+    });
+
+    it('알 수 없는 refreshToken으로 로그아웃해도 200을 반환한다 (존재 여부 비노출)', async () => {
+      const res = await app.inject({ method: 'POST', url: '/api/auth/logout', payload: { refreshToken: 'unknown-token' } });
+      expect(res.statusCode).toBe(200);
     });
   });
 });
