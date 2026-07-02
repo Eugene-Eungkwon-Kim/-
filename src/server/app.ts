@@ -2,6 +2,7 @@ import Fastify, { FastifyReply, FastifyRequest, FastifyInstance } from 'fastify'
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import rateLimit from '@fastify/rate-limit';
+import helmet from '@fastify/helmet';
 import type Database from 'better-sqlite3';
 import { getUserProfile, registerUser } from '../api/userService';
 import { applyForLoan, getLoanPortfolio, getLoanPortfolioSummary } from '../api/loanService';
@@ -78,6 +79,11 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
 
   const app = Fastify({ logger: false });
   await app.register(cors, { origin: true });
+  // Day 9 - Task 5 (δ=1015): CSP는 이 서버가 HTML/스크립트를 서빙하지 않는
+  // 순수 JSON API라 적용 대상이 아니므로 끈다. crossOriginResourcePolicy는
+  // helmet 기본값(same-origin)이 @fastify/cors의 origin:true 의도(교차 출처
+  // 배포 허용)와 충돌할 수 있어 cross-origin으로 완화한다.
+  await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } });
   await app.register(jwt, { secret: jwtSecret });
   // Day 9 - Task 2 (δ=1230): @fastify/rate-limit는 라우트 등록 시점에
   // config.rateLimit을 가로채는 onRoute 훅을 심는다. register()를 await하지

@@ -227,6 +227,14 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     });
   });
 
+  describe('보안 헤더 (Day 9 - Task 5, δ=1015)', () => {
+    it('응답에 X-Content-Type-Options 등 보안 헤더가 포함된다', async () => {
+      const res = await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'helmet@example.com', name: 'Helmet User' } });
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['content-security-policy']).toBeUndefined(); // JSON API라 명시적으로 끔
+    });
+  });
+
   describe('로그인 Rate Limiting (Day 9 - Task 2, δ=1230)', () => {
     it('5회까지는 정상적으로 시도할 수 있다', async () => {
       await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'rl-ok@example.com', name: 'RL OK', password: 'correct-horse' } });
