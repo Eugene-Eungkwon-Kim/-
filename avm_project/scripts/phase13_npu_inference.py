@@ -17,6 +17,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 FEATURE_COLS = ['area_sqm', 'old_price', 'latitude', 'longitude', 'property_type']
 
+# 서빙 앙상블에 포함할 3개 기본 모델 타입. best_model_KR(단일 모델 배포용,
+# 이 중 하나와 중복)과 coldstart_KR(직전가 없을 때만 쓰는 별도 목적 모델)은
+# 앙상블 평균에 섞이면 안 되므로 제외한다.
+ENSEMBLE_BASE_MODELS = ['xgboost_KR', 'lightgbm_KR', 'gradient_boosting_KR']
+
 
 @dataclass
 class InferenceResult:
@@ -43,32 +48,59 @@ def initialize_openvino_model(ir_path: str) -> Optional[object]:
         return None
 
 
-def preprocess_input(features: np.ndarray) -> np.ndarray:
-    """Normalize input features for inference."""
-    feature_min = np.array([10.0, 50000.0, 33.0, 126.0, 1.0], dtype=np.float32)
-    feature_max = np.array([500.0, 5000000.0, 38.0, 131.0, 5.0], dtype=np.float32)
+def initialize_onnx_model(onnx_path: str) -> Optional[object]:
+    """Load ONNX model via ONNX Runtime.
 
-    normalized = (features - feature_min) / (feature_max - feature_min)
+    트리 앙상블(XGBoost/LightGBM/GradientBoosting)은 OpenVINO IR로 변환할 수
+    없으므로(ai.onnx.ml.TreeEnsembleRegressor 미지원), ONNX Runtime을 실제
+    가속 경로로 사용한다.
+    """
+    try:
+        import onnxruntime as ort
+
+        session = ort.InferenceSession(onnx_path, providers=['CPUExecutionProvider'])
+        log.info(f"Loaded ONNX model: {onnx_path}")
+        return session
+    except Exception as e:
+        log.warning(f"Failed to load ONNX model: {e}")
+        return None
+
+
+def preprocess_input(features: np.ndarray) -> np.ndarray:
+    """Normalize input features for inference.
+
+    avm_feature_engineering.FEATURE_MIN/MAX를 그대로 재사용한다 — 이전에는
+    old_price 범위가 여기서만 1000배 작게(5,000,000) 하드코딩되어 있어
+    학습(6,000,000,000)과 어긋나는 학습-추론 스큐 버그가 있었다.
+    """
+    from avm_feature_engineering import FEATURE_MAX, FEATURE_MIN
+
+    normalized = (features - FEATURE_MIN) / (FEATURE_MAX - FEATURE_MIN)
     return np.clip(normalized, 0.0, 1.0).astype(np.float32)
 
 
 def run_inference(compiled_model: object, features: np.ndarray,
                  model_name: str) -> Optional[InferenceResult]:
-    """Execute NPU inference and return prediction. Supports both OpenVINO and sklearn models."""
+    """Execute inference and return prediction. Supports OpenVINO IR, ONNX Runtime, and sklearn models."""
     try:
         import time
         start = time.perf_counter()
 
-        input_data = preprocess_input(features)
+        input_data = preprocess_input(features).reshape(1, -1)
 
-        try:
-            input_layer = list(compiled_model.inputs)
+        if type(compiled_model).__module__.startswith('onnxruntime'):
+            input_name = compiled_model.get_inputs()[0].name
+            output_name = compiled_model.get_outputs()[0].name
+            result = compiled_model.run([output_name], {input_name: input_data})
+            predicted_price = float(np.asarray(result[0]).reshape(-1)[0])
+            device = "CPU (onnxruntime)"
+        elif hasattr(compiled_model, 'inputs') and hasattr(compiled_model, 'outputs'):
             output_layer = compiled_model.outputs[0]
             result = compiled_model(input_data)
             predicted_price = float(result[output_layer][0])
             device = "NPU"
-        except (AttributeError, TypeError):
-            predicted_price = float(compiled_model.predict(input_data.reshape(1, -1))[0])
+        else:
+            predicted_price = float(compiled_model.predict(input_data)[0])
             device = "CPU (sklearn)"
 
         latency_ms = (time.perf_counter() - start) * 1000.0
@@ -84,6 +116,16 @@ def run_inference(compiled_model: object, features: np.ndarray,
     except Exception as e:
         log.warning(f"Inference failed: {e}")
         return None
+
+
+def _backend_name(model: object) -> str:
+    """로드된 모델 객체가 실제로 어떤 백엔드인지 식별 (NPU 사칭 방지)."""
+    module_name = type(model).__module__
+    if module_name.startswith('onnxruntime'):
+        return 'onnxruntime (CPU)'
+    if hasattr(model, 'inputs') and hasattr(model, 'outputs'):
+        return 'openvino IR (NPU/CPU)'
+    return 'sklearn pkl (CPU)'
 
 
 def ensemble_predict(models: Dict[str, object], features: np.ndarray) -> Tuple[float, float]:
@@ -115,30 +157,42 @@ class NPUInferenceEngine:
         self._load_models()
 
     def _load_models(self) -> None:
-        """Load all available IR models from directory, with fallback to pickled models."""
-        for ir_file in self.ir_model_dir.glob("*.xml"):
-            model_name = ir_file.stem
-            compiled = initialize_openvino_model(str(ir_file))
-            if compiled:
+        """앙상블 기본 3개 모델을 모델별로 IR → ONNX → pkl 순으로 최선의 형식 로드.
+
+        best_model_KR(단일 모델용, 중복)과 coldstart_KR(별도 목적)은 제외한다.
+        """
+        trained_dir = self.ir_model_dir.parent / 'trained_models'
+        for model_name in ENSEMBLE_BASE_MODELS:
+            compiled = self._load_best_available(model_name, trained_dir)
+            if compiled is not None:
                 self.models[model_name] = compiled
                 log.info(f"Loaded model: {model_name}")
 
-        if not self.models:
-            self._load_pickled_models_fallback()
+    def _load_best_available(self, model_name: str, trained_dir: Path) -> Optional[object]:
+        """단일 모델에 대해 IR(.xml) → ONNX(.onnx) → pkl(튜닝본 우선) 순으로 시도."""
+        ir_path = self.ir_model_dir / f"{model_name}.xml"
+        if ir_path.exists():
+            compiled = initialize_openvino_model(str(ir_path))
+            if compiled is not None:
+                return compiled
 
-    def _load_pickled_models_fallback(self) -> None:
-        """Fallback: Load pickled sklearn models for testing when IR unavailable."""
-        try:
-            import pickle
-            parent_dir = self.ir_model_dir.parent / 'trained_models'
-            for pkl_file in parent_dir.glob('*.pkl'):
-                model_name = pkl_file.stem
-                with open(pkl_file, 'rb') as f:
-                    model = pickle.load(f)
-                self.models[model_name] = model
-                log.info(f"Loaded pickled model (fallback): {model_name}")
-        except Exception as e:
-            log.debug(f"Pickled model fallback failed: {e}")
+        onnx_path = self.ir_model_dir / f"{model_name}.onnx"
+        if onnx_path.exists():
+            session = initialize_onnx_model(str(onnx_path))
+            if session is not None:
+                return session
+
+        return self._load_pickle_fallback(model_name, trained_dir)
+
+    def _load_pickle_fallback(self, model_name: str, trained_dir: Path) -> Optional[object]:
+        """pkl 폴백: 튜닝된 버전(Phase 13.3)이 있으면 우선 사용."""
+        import pickle
+        for candidate in (f"{model_name}_tuned.pkl", f"{model_name}.pkl"):
+            pkl_path = trained_dir / candidate
+            if pkl_path.exists():
+                with open(pkl_path, 'rb') as f:
+                    return pickle.load(f)
+        return None
 
     def predict(self, property_features: np.ndarray) -> Tuple[float, float, float]:
         """Predict property price using ensemble. Returns (price, confidence, latency_ms)."""
@@ -157,32 +211,41 @@ class NPUInferenceEngine:
         return avg_price, avg_confidence, latency_ms
 
     def get_model_stats(self) -> Dict[str, object]:
-        """Return loaded models and their stats."""
+        """Return loaded models and their actual backend per model (정직한 상태 보고)."""
         return {
             'models_loaded': len(self.models),
             'model_names': list(self.models.keys()),
-            'device': 'NPU (CPU fallback)',
+            'backends': {name: _backend_name(model) for name, model in self.models.items()},
         }
 
 
 def main() -> None:
-    """Demonstrate NPU inference."""
+    """Demonstrate inference engine and report real per-model backend + latency."""
     import argparse
+    import time
 
-    parser = argparse.ArgumentParser(description='Phase 13.4 NPU Inference')
-    parser.add_argument('--ir-models', default='output/models_ir', help='IR model directory')
+    parser = argparse.ArgumentParser(description='Phase 13.4 Inference Engine')
+    parser.add_argument('--ir-models', default='output/models_ir', help='ONNX/IR model directory')
     args = parser.parse_args()
 
     engine = NPUInferenceEngine(args.ir_models)
     stats = engine.get_model_stats()
 
     print(f"\n{'='*50}")
-    print("NPU Inference Engine Ready")
+    print("Inference Engine Ready")
     print(f"{'='*50}")
     print(f"Models loaded: {stats['models_loaded']}")
-    print(f"Device: {stats['device']}")
-    print(f"Expected latency: 1-2ms (INT8, NPU)")
-    print(f"Power: 70% reduction vs RTX training")
+    for name, backend in stats['backends'].items():
+        print(f"  - {name}: {backend}")
+
+    sample = np.array([84.0, 800_000_000.0, 37.5, 127.0, 1.0], dtype=np.float32)
+    engine.predict(sample)  # 워밍업 (첫 호출의 JIT/세션 초기화 비용 제외)
+
+    start = time.perf_counter()
+    price, confidence, _ = engine.predict(sample)
+    latency_ms = (time.perf_counter() - start) * 1000.0
+    print(f"\nSample prediction: {price:,.0f} KRW (confidence={confidence:.2f})")
+    print(f"Measured latency (warm): {latency_ms:.2f}ms (실측, 특정 하드웨어 NPU 가속 아님)")
 
 
 if __name__ == '__main__':

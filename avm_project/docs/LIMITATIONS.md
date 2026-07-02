@@ -170,3 +170,33 @@
 
 **결론**: 지금의 0.98이 아니라, **실거래로 재학습한 뒤의 숫자**가 평가 대상이다.
 이 문서는 그 전까지 현재 지표가 과대평가되지 않도록 하는 안전장치다.
+
+---
+
+## 6. NPU/OpenVINO 배포의 실제 한계 (Phase 13.4)
+
+**"NPU 가속"은 트리 앙상블 모델에 적용되지 않는다.** OpenVINO의 ONNX 프론트엔드는
+`ai.onnx.ml.TreeEnsembleRegressor` 연산자(XGBoost/LightGBM/GradientBoosting을
+ONNX로 변환하면 나오는 연산)를 지원하지 않는다 — OpenVINO IR/NPU는 신경망
+(CNN/RNN 등)을 위한 포맷이기 때문이다. `phase13_model_converter.py`로 4개
+앙상블 모델 전부 ONNX 변환은 성공하지만, ONNX→OpenVINO IR 단계는 전부
+`onnx_only`로 남는다 — 이는 버그가 아니라 라이브러리의 설계상 한계다.
+
+**실제 채택한 가속 경로**: OpenVINO IR 대신 **ONNX Runtime**(onnxruntime)을
+실제 추론 백엔드로 사용한다. 이는 ONNX-ML 연산을 정식 지원하며, 이번 세션에서
+측정한 실제(워밍업 후) 지연시간은 **~0.3ms/요청**(CPU, 3-모델 앙상블)으로,
+raw sklearn pickle 추론보다 빠르다. "NPU 1ms 목표"라는 표현은 애초에 이
+모델군에 적용 불가능한 목표였다.
+
+**추가로 발견/수정한 버그**:
+- `preprocess_input()`의 old_price 정규화 범위가 학습 시 사용하는
+  `avm_feature_engineering.FEATURE_MIN/MAX`(6,000,000,000원)와 1000배
+  어긋나(5,000,000원 하드코딩) 추론 결과가 실제 시세와 무관한 값(예:
+  37억원)을 냈다 — 학습-추론 정규화 소스를 통일해 수정.
+- 컨버터가 XGBoost의 `save_model(".onnx")`를 "네이티브 ONNX"로 오인해
+  실제로는 UBJSON을 저장하고 있었다 (OpenVINO가 파싱 실패로 알려줌) →
+  onnxmltools 경로만 사용하도록 수정.
+- 컨버터가 `xgboost_KR`/`lightgbm_KR`만 변환하고 Phase 13.3에서 실제로
+  선정된 `best_model_KR`(이번 실행에서 gradient_boosting)은 변환 대상에서
+  빠져 있었다 → 모델 타입 자동 감지로 4개 전부 변환하도록 확장.
+

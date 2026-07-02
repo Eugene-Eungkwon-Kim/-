@@ -2,7 +2,8 @@
 """
 Loan4U Phase 13.2.5 - KR Model Converter (pkl → ONNX → OpenVINO IR)
 
-학습된 KR 모델(xgboost_KR, lightgbm_KR)을 NPU 추론용으로 변환한다.
+학습된 KR 앙상블 모델(xgboost_KR, lightgbm_KR, gradient_boosting_KR,
+Phase 13.3에서 선정된 best_model_KR)을 NPU 추론용으로 변환한다.
 변환 경로는 단계적 폴백을 가진다:
     pkl → ONNX → OpenVINO IR
 각 단계 실패 시 직전 형식을 그대로 사용(AVM 엔진이 자동 폴백)하며,
@@ -18,7 +19,7 @@ import pickle
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 import numpy as np
 
@@ -29,16 +30,13 @@ FEATURE_COLS = ['area_sqm', 'old_price', 'latitude', 'longitude', 'property_type
 
 
 def convert_xgboost_native(model: object, name: str, output_dir: Path) -> Optional[str]:
-    """XGBoost 2.x 네이티브 ONNX 저장. 실패 시 onnxmltools 폴백."""
-    onnx_path = output_dir / f"{name}.onnx"
-    try:
-        model.save_model(str(onnx_path))  # type: ignore[union-attr]
-        if onnx_path.exists() and onnx_path.stat().st_size > 0:
-            log.info(f"  [{name}] XGBoost 네이티브 ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
-            return str(onnx_path)
-    except Exception as e:
-        log.debug(f"  [{name}] 네이티브 ONNX 실패: {e}")
+    """XGBoost → ONNX (onnxmltools).
 
+    주의: XGBoost의 save_model()은 ".onnx" 확장자를 인식하지 못해 UBJSON을
+    그 이름으로 저장할 뿐 실제 ONNX를 만들지 않는다(다운스트림에서 파싱 실패
+    로 발견됨). onnxmltools를 통한 변환만 유효하다.
+    """
+    onnx_path = output_dir / f"{name}.onnx"
     try:
         import onnx
         import onnxmltools
@@ -84,8 +82,32 @@ def convert_lightgbm_native(model: object, name: str, output_dir: Path) -> Optio
         return None
 
 
+def convert_sklearn_native(model: object, name: str, output_dir: Path) -> Optional[str]:
+    """sklearn 호환 모델(GradientBoostingRegressor 등) → ONNX (skl2onnx)."""
+    onnx_path = output_dir / f"{name}.onnx"
+    try:
+        import onnx
+        from skl2onnx import convert_sklearn
+        from skl2onnx.common.data_types import FloatTensorType
+        initial_types = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
+        onnx_model = convert_sklearn(model, initial_types=initial_types)
+        onnx.save(onnx_model, str(onnx_path))
+        log.info(f"  [{name}] skl2onnx ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
+        return str(onnx_path)
+    except Exception as e:
+        log.warning(f"  [{name}] ONNX 변환 전체 실패: {e}")
+        return None
+
+
 def convert_to_openvino_ir(onnx_path: str, name: str, output_dir: Path) -> Optional[str]:
-    """ONNX → OpenVINO IR (FP32). openvino 2024.x API. 미설치 시 None."""
+    """ONNX → OpenVINO IR (FP32). openvino 2024.x API. 미설치 시 None.
+
+    알려진 한계: OpenVINO의 ONNX 프론트엔드는 ai.onnx.ml.TreeEnsembleRegressor
+    연산자(XGBoost/LightGBM/GradientBoosting 등 트리 앙상블이 ONNX로 변환될 때
+    쓰이는 연산)를 지원하지 않는다. OpenVINO IR/NPU는 신경망(CNN/RNN 등)을
+    위한 포맷이므로, 트리 모델은 이 단계에서 항상 실패하며 ONNX(onnxruntime)
+    단계에 머무는 것이 설계상 정상이다 — 코드 버그가 아니다.
+    """
     xml_path = output_dir / f"{name}.xml"
     try:
         import openvino as ov
@@ -97,21 +119,37 @@ def convert_to_openvino_ir(onnx_path: str, name: str, output_dir: Path) -> Optio
         log.warning(f"  [{name}] openvino 미설치 - IR 변환 건너뜀")
         return None
     except Exception as e:
-        log.warning(f"  [{name}] OpenVINO IR 변환 실패: {e}")
+        log.info(
+            f"  [{name}] OpenVINO IR 변환 불가 (트리 앙상블은 IR 미지원 - 정상, ONNX 유지): "
+            f"{str(e).splitlines()[-1] if str(e) else e}"
+        )
         return None
 
 
+def _select_converter(model: object) -> Callable[[object, str, Path], Optional[str]]:
+    """모델 타입에 맞는 ONNX 변환 함수 선택 (라이브러리별 네이티브 변환 우선)."""
+    module_name = type(model).__module__
+    if module_name.startswith('xgboost'):
+        return convert_xgboost_native
+    if module_name.startswith('lightgbm'):
+        return convert_lightgbm_native
+    return convert_sklearn_native
+
+
+ENSEMBLE_MODEL_KEYS = ['xgboost_KR', 'lightgbm_KR', 'gradient_boosting_KR', 'best_model_KR']
+# coldstart_KR은 직전가 없을 때만 쓰는 별도 폴백 모델이므로 앙상블 변환 대상에서 제외한다.
+
+
 def convert_kr_models(pkl_dir: Path, output_dir: Path) -> Dict[str, Dict]:
-    """KR 모델(xgboost_KR, lightgbm_KR) → ONNX + IR 변환."""
+    """KR 앙상블 모델(xgboost/lightgbm/gradient_boosting/best_model) → ONNX + IR 변환.
+
+    best_model_KR.pkl(Phase 13.3에서 선정된 실제 배포 후보)을 포함해,
+    모델 타입(XGBoost/LightGBM/sklearn)에 관계없이 자동 변환한다.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     report: Dict[str, Dict] = {}
 
-    converters = {
-        'xgboost_KR':  convert_xgboost_native,
-        'lightgbm_KR': convert_lightgbm_native,
-    }
-
-    for model_key, converter_fn in converters.items():
+    for model_key in ENSEMBLE_MODEL_KEYS:
         pkl_path = pkl_dir / f"{model_key}.pkl"
         if not pkl_path.exists():
             log.warning(f"  {pkl_path} 없음 - 건너뜀")
@@ -124,6 +162,7 @@ def convert_kr_models(pkl_dir: Path, output_dir: Path) -> Dict[str, Dict]:
         with open(pkl_path, 'rb') as f:
             model = pickle.load(f)
 
+        converter_fn = _select_converter(model)
         onnx_path = converter_fn(model, model_key, output_dir)
         onnx_mb = Path(onnx_path).stat().st_size / 1024 / 1024 if onnx_path else None
         ir_path = convert_to_openvino_ir(onnx_path, model_key, output_dir) if onnx_path else None
