@@ -1,13 +1,18 @@
-import { useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import {
   applyForLoan,
   getLoanPortfolio,
   getLoanPortfolioSummary,
+  getStoredUser,
   login,
+  logout,
   LoanRecord,
+  onForcedLogout,
   PortfolioSummary,
   registerUser,
   setAuthToken,
+  setRefreshTokenValue,
+  setStoredUser,
   UserProfile
 } from './webApiClient';
 
@@ -29,8 +34,25 @@ export default function App() {
   const [portfolio, setPortfolio] = useState<LoanRecord[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
 
-  function handleLoggedIn(token: string, profile: UserProfile) {
+  // Day 9 - Task 4 (δ=1090): 새로고침 시 로그인 상태를 복원하고, 액세스+리프레시
+  // 토큰이 모두 만료/무효화되어 webApiClient가 강제 로그아웃을 통지하면 화면에도 반영한다.
+  useEffect(() => {
+    const stored = getStoredUser();
+    if (stored) setUser(stored);
+
+    const unsubscribe = onForcedLogout(() => {
+      setUser(null);
+      setPortfolio([]);
+      setSummary(null);
+      setAuthError('세션이 만료되어 로그아웃되었습니다. 다시 로그인해주세요.');
+    });
+    return unsubscribe;
+  }, []);
+
+  function handleLoggedIn(token: string, refreshToken: string, profile: UserProfile) {
     setAuthToken(token);
+    setRefreshTokenValue(refreshToken);
+    setStoredUser(profile);
     setUser(profile);
   }
 
@@ -45,7 +67,7 @@ export default function App() {
     // 회원가입 직후 같은 자격증명으로 자동 로그인해 토큰을 발급받는다
     const loginResult = await login(email, password);
     if (loginResult.success) {
-      handleLoggedIn(loginResult.data.token, loginResult.data.user);
+      handleLoggedIn(loginResult.data.token, loginResult.data.refreshToken, loginResult.data.user);
     } else {
       setAuthError(loginResult.error.message);
     }
@@ -56,14 +78,14 @@ export default function App() {
     setAuthError(null);
     const result = await login(email, password);
     if (result.success) {
-      handleLoggedIn(result.data.token, result.data.user);
+      handleLoggedIn(result.data.token, result.data.refreshToken, result.data.user);
     } else {
       setAuthError(result.error.message);
     }
   }
 
-  function handleLogout() {
-    setAuthToken(null);
+  async function handleLogout() {
+    await logout();
     setUser(null);
     setPortfolio([]);
     setSummary(null);
