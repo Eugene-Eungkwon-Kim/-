@@ -29,6 +29,12 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov', 'text-summary'],
 
+      // Day 11 - Task 1 (δ=1275): include 없이 all:true를 쓰면 v8 provider가
+      // 프로젝트 루트 전체(예: 이 저장소에 함께 존재하는 무관한 search_app/
+      // 디렉터리)를 스캔해 이 앱과 무관한 파일까지 threshold 대상이 된다.
+      // src/ 아래로 스캔 범위를 명시적으로 좁힌다.
+      include: ['src/**/*.ts', 'src/**/*.tsx'],
+
       // 절대값 (%)
       lines: 40,
       functions: 40,
@@ -45,8 +51,25 @@ export default defineConfig({
         '**/*.test.ts',
         '**/fixtures/',
         '**/mocks/',
-        'src/main.ts',
-        'src/index.html'
+        'src/main.tsx',
+        'src/index.html',
+        // 부트스트랩 진입점 — 분기 로직 없이 조립만 하며, 유닛테스트가 아니라
+        // 실제 서버/CLI 실행으로 검증한다 (이 세션 전반의 curl/Playwright 검증 패턴)
+        'src/server/index.ts',
+        'src/db/migrate-cli.ts',
+        // Day7에서 사용자가 명시적으로 선택한 "최소 데모" 범위의 UI 컴포넌트 —
+        // 각 Day 완료 시 Playwright로 수동 검증되며, 별도 프론트엔드 테스트
+        // 인프라(@testing-library 등)는 이 세션의 DB중심/유지보수 우선순위 밖
+        'src/App.tsx',
+        // 타입 전용 파일 — 런타임 코드가 없어 v8 provider가 0/0 statement를
+        // 0%로 집계, perFile threshold를 항상 위반한다 (실제 로직 없음이 원인)
+        'src/types/backup.ts',
+        'src/types/credit.ts',
+        'src/types/financialSnapshot.ts',
+        'src/types/loan.ts',
+        'src/types/loanPortfolio.ts',
+        'src/types/transaction.ts',
+        'src/types/user.ts',
       ],
 
       // 상세 리포트
