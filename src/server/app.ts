@@ -7,7 +7,15 @@ import type Database from 'better-sqlite3';
 import { getUserProfile, registerUser } from '../api/userService';
 import { applyForLoan, getLoanPortfolio, getLoanPortfolioSummary } from '../api/loanService';
 import { issueRefreshToken, revokeRefreshToken, verifyCredentials, verifyRefreshToken } from '../api/authService';
+import {
+  CreditSimulationRequest,
+  getSnapshotTrend,
+  runCreditSimulation,
+  runFinancialAnalysis,
+  runRiskAssessment
+} from '../api/financialAnalyticsService';
 import { ServiceResult } from '../api/errorMapping';
+import { TrendMetric } from '../types/financialSnapshot';
 import { resolveServerEnv } from './env';
 
 export interface BuildServerOptions {
@@ -190,6 +198,36 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, getLoanPortfolioSummary(db, userId));
+  });
+
+  // Day 10 - Task 1 (δ=1270): 금융분석 서비스(Day6/7에서 이미 구현·테스트됨)를
+  // 처음으로 HTTP에 노출한다. Day6이 "리포지토리는 있는데 아무도 호출 안 함"을
+  // 해결했던 것과 같은 종류의 갭을 서비스→HTTP 경계에서 마저 해소.
+  app.post('/api/analytics/credit-simulation', async (request, reply) => {
+    const body = request.body as { userId: string } & CreditSimulationRequest;
+    if (!isOwner(request, body.userId)) return forbidden(reply);
+    const result = await runCreditSimulation(db, body.userId, { scenario: body.scenario, duration: body.duration });
+    respond(reply, result);
+  });
+
+  app.post('/api/analytics/risk-assessment', async (request, reply) => {
+    const body = request.body as { userId: string; snapshotDate: string };
+    if (!isOwner(request, body.userId)) return forbidden(reply);
+    const result = await runRiskAssessment(db, body.userId, body.snapshotDate);
+    respond(reply, result);
+  });
+
+  app.post('/api/analytics/financial-analysis', async (request, reply) => {
+    const body = request.body as { userId: string; snapshotDate: string };
+    if (!isOwner(request, body.userId)) return forbidden(reply);
+    const result = await runFinancialAnalysis(db, body.userId, body.snapshotDate);
+    respond(reply, result);
+  });
+
+  app.get('/api/users/:userId/snapshots/trend/:metric', async (request, reply) => {
+    const { userId, metric } = request.params as { userId: string; metric: TrendMetric };
+    if (!isOwner(request, userId)) return forbidden(reply);
+    respond(reply, getSnapshotTrend(db, userId, metric));
   });
 
   return app;

@@ -227,6 +227,64 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     });
   });
 
+  describe('금융분석 API (Day 10 - Task 1, δ=1270)', () => {
+    it('신용시뮬레이션이 DB의 실제 신용점수로 실행되고 결과를 반환한다', async () => {
+      const alice = await registerAndLogin('analytics-credit@example.com', 'Analytics Credit');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/analytics/credit-simulation',
+        headers: authHeader(alice.token),
+        payload: { userId: alice.userId, scenario: 'ideal', duration: 6 }
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.results.length).toBe(6);
+    });
+
+    it('리스크평가 결과가 스냅샷으로 저장되고, 이후 추세 조회로 확인할 수 있다', async () => {
+      const alice = await registerAndLogin('analytics-risk@example.com', 'Analytics Risk');
+      const riskRes = await app.inject({
+        method: 'POST',
+        url: '/api/analytics/risk-assessment',
+        headers: authHeader(alice.token),
+        payload: { userId: alice.userId, snapshotDate: '2026-01-01' }
+      });
+      expect(riskRes.statusCode).toBe(200);
+
+      const trendRes = await app.inject({
+        method: 'GET',
+        url: `/api/users/${alice.userId}/snapshots/trend/riskScore`,
+        headers: authHeader(alice.token)
+      });
+      expect(trendRes.statusCode).toBe(200);
+      expect(trendRes.json().data.points.length).toBe(1);
+    });
+
+    it('재정분석 라우트가 정상 동작한다', async () => {
+      const alice = await registerAndLogin('analytics-financial@example.com', 'Analytics Financial');
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/analytics/financial-analysis',
+        headers: authHeader(alice.token),
+        payload: { userId: alice.userId, snapshotDate: '2026-01-01' }
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data.financialHealthScore).toBeGreaterThanOrEqual(0);
+    });
+
+    it('타인의 userId로 분석을 요청하면 403을 반환한다', async () => {
+      const alice = await registerAndLogin('analytics-alice@example.com', 'Analytics Alice');
+      const bob = await registerAndLogin('analytics-bob@example.com', 'Analytics Bob');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/analytics/risk-assessment',
+        headers: authHeader(alice.token),
+        payload: { userId: bob.userId, snapshotDate: '2026-01-01' }
+      });
+      expect(res.statusCode).toBe(403);
+    });
+  });
+
   describe('보안 헤더 (Day 9 - Task 5, δ=1015)', () => {
     it('응답에 X-Content-Type-Options 등 보안 헤더가 포함된다', async () => {
       const res = await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'helmet@example.com', name: 'Helmet User' } });
