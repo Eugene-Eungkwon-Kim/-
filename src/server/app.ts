@@ -1,4 +1,5 @@
 import path from 'node:path';
+import pino from 'pino';
 import Fastify, { FastifyReply, FastifyRequest, FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
@@ -110,7 +111,26 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
   const jwtSecret = options.jwtSecret ?? resolveServerEnv().jwtSecret;
   const backupDir = options.backupDir ?? DEFAULT_BACKUP_DIR;
 
-  const app = Fastify({ logger: false });
+  // Day 11 - Task 3 (δ=915): 구조화된 로깅 활성화 (pino 기반)
+  // Fastify의 내장 pino 통합: true면 기본 pino, 객체면 pino 옵션으로 간주
+  // 프로덕션(NODE_ENV=production)에서는 JSON, 개발에서는 pino-pretty 포맷
+  const isProduction = process.env.NODE_ENV === 'production';
+  const loggerConfig = isProduction
+    ? true // 프로덕션: 기본 pino (JSON)
+    : {
+        level: process.env.LOG_LEVEL ?? 'debug',
+        transport: {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            singleLine: false,
+            translateTime: 'SYS:standard',
+            ignore: 'pid,hostname'
+          }
+        }
+      };
+
+  const app = Fastify({ logger: loggerConfig });
   await app.register(cors, { origin: true });
   // Day 9 - Task 5 (δ=1015): CSP는 이 서버가 HTML/스크립트를 서빙하지 않는
   // 순수 JSON API라 적용 대상이 아니므로 끈다. crossOriginResourcePolicy는
