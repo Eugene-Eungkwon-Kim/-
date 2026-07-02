@@ -3,9 +3,11 @@ import {
   applyForLoan,
   getLoanPortfolio,
   getLoanPortfolioSummary,
+  login,
   LoanRecord,
   PortfolioSummary,
   registerUser,
+  setAuthToken,
   UserProfile
 } from './webApiClient';
 
@@ -13,10 +15,11 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 
 export default function App() {
   const [email, setEmail] = useState('demo@example.com');
+  const [password, setPassword] = useState('demo-password-1234');
   const [name, setName] = useState('데모 사용자');
   const [creditScore, setCreditScore] = useState(750);
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [userError, setUserError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const [loanAmount, setLoanAmount] = useState(300000000);
   const [interestRate, setInterestRate] = useState(3.2);
@@ -26,15 +29,44 @@ export default function App() {
   const [portfolio, setPortfolio] = useState<LoanRecord[]>([]);
   const [summary, setSummary] = useState<PortfolioSummary | null>(null);
 
+  function handleLoggedIn(token: string, profile: UserProfile) {
+    setAuthToken(token);
+    setUser(profile);
+  }
+
   async function handleRegister(event: FormEvent) {
     event.preventDefault();
-    setUserError(null);
-    const result = await registerUser({ email, name, creditProfile: { score: creditScore } });
-    if (result.success) {
-      setUser(result.data);
-    } else {
-      setUserError(result.error.message);
+    setAuthError(null);
+    const registerResult = await registerUser({ email, name, password, creditProfile: { score: creditScore } });
+    if (!registerResult.success) {
+      setAuthError(registerResult.error.message);
+      return;
     }
+    // 회원가입 직후 같은 자격증명으로 자동 로그인해 토큰을 발급받는다
+    const loginResult = await login(email, password);
+    if (loginResult.success) {
+      handleLoggedIn(loginResult.data.token, loginResult.data.user);
+    } else {
+      setAuthError(loginResult.error.message);
+    }
+  }
+
+  async function handleLogin(event: FormEvent) {
+    event.preventDefault();
+    setAuthError(null);
+    const result = await login(email, password);
+    if (result.success) {
+      handleLoggedIn(result.data.token, result.data.user);
+    } else {
+      setAuthError(result.error.message);
+    }
+  }
+
+  function handleLogout() {
+    setAuthToken(null);
+    setUser(null);
+    setPortfolio([]);
+    setSummary(null);
   }
 
   async function refreshPortfolio(userId: string) {
@@ -47,7 +79,7 @@ export default function App() {
     event.preventDefault();
     setLoanError(null);
     if (!user) {
-      setLoanError('먼저 사용자를 등록하세요.');
+      setLoanError('먼저 로그인하세요.');
       return;
     }
     const result = await applyForLoan({
@@ -68,36 +100,49 @@ export default function App() {
   return (
     <div style={{ maxWidth: 640, margin: '40px auto', fontFamily: 'sans-serif', lineHeight: 1.6 }}>
       <h1>MAARS 데모</h1>
-      <p style={{ color: '#666' }}>실제 SQLite 백엔드(Fastify + 서비스 계층)와 연동된 최소 데모입니다.</p>
+      <p style={{ color: '#666' }}>실제 SQLite 백엔드(Fastify + 서비스 계층, JWT 인증)와 연동된 최소 데모입니다.</p>
 
       <section style={{ marginBottom: 32, padding: 16, border: '1px solid #ddd', borderRadius: 8 }}>
-        <h2>1. 사용자 등록</h2>
-        <form onSubmit={handleRegister}>
-          <div>
-            <label>
-              이메일{' '}
-              <input value={email} onChange={(e) => setEmail(e.target.value)} />
-            </label>
-          </div>
-          <div>
-            <label>
-              이름{' '}
-              <input value={name} onChange={(e) => setName(e.target.value)} />
-            </label>
-          </div>
-          <div>
-            <label>
-              신용점수{' '}
-              <input type="number" value={creditScore} onChange={(e) => setCreditScore(Number(e.target.value))} />
-            </label>
-          </div>
-          <button type="submit">등록</button>
-        </form>
-        {userError && <p style={{ color: 'crimson' }}>{userError}</p>}
-        {user && (
+        <h2>1. 회원가입 / 로그인</h2>
+        {user ? (
           <p>
-            ✅ 등록됨: <strong>{user.name}</strong> ({user.email}) — 신용등급 {user.creditProfile.grade ?? '-'}
+            ✅ 로그인됨: <strong>{user.name}</strong> ({user.email}) — 신용등급 {user.creditProfile.grade ?? '-'}{' '}
+            <button onClick={handleLogout}>로그아웃</button>
           </p>
+        ) : (
+          <>
+            <form onSubmit={handleRegister}>
+              <div>
+                <label>
+                  이메일{' '}
+                  <input value={email} onChange={(e) => setEmail(e.target.value)} />
+                </label>
+              </div>
+              <div>
+                <label>
+                  비밀번호{' '}
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                </label>
+              </div>
+              <div>
+                <label>
+                  이름{' '}
+                  <input value={name} onChange={(e) => setName(e.target.value)} />
+                </label>
+              </div>
+              <div>
+                <label>
+                  신용점수{' '}
+                  <input type="number" value={creditScore} onChange={(e) => setCreditScore(Number(e.target.value))} />
+                </label>
+              </div>
+              <button type="submit">회원가입 (자동 로그인)</button>
+              <button type="button" onClick={handleLogin} style={{ marginLeft: 8 }}>
+                이미 계정이 있다면 로그인
+              </button>
+            </form>
+            {authError && <p style={{ color: 'crimson' }}>{authError}</p>}
+          </>
         )}
       </section>
 

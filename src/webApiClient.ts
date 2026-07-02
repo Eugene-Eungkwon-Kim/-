@@ -4,17 +4,29 @@
  */
 export type ServiceResult<T> = { success: true; data: T } | { success: false; error: { code: string; message: string } };
 
+// 로그인 토큰을 모듈 스코프에 보관한다. "최소 데모" 범위상 새로고침 시 소실되며,
+// localStorage 영속화는 범위 밖(Day8 계획서에 명시).
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+}
+
+function authHeaders(): Record<string, string> {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
 async function postJson<T>(url: string, body: unknown): Promise<ServiceResult<T>> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body)
   });
   return res.json() as Promise<ServiceResult<T>>;
 }
 
 async function getJson<T>(url: string): Promise<ServiceResult<T>> {
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: authHeaders() });
   return res.json() as Promise<ServiceResult<T>>;
 }
 
@@ -40,8 +52,12 @@ export interface PortfolioSummary {
   totalCurrentBalance: number;
 }
 
-export function registerUser(input: { email: string; name: string; creditProfile?: { score: number } }) {
+export function registerUser(input: { email: string; name: string; password: string; creditProfile?: { score: number } }) {
   return postJson<UserProfile>('/api/users', input);
+}
+
+export function login(email: string, password: string) {
+  return postJson<{ token: string; user: UserProfile }>('/api/auth/login', { email, password });
 }
 
 export function getUserProfile(userId: string) {
