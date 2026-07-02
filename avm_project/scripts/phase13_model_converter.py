@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-Loan4U Phase 13.2.5 - KR Model Converter (pkl → ONNX → OpenVINO IR)
+Loan4U Phase 13.2.5/13.1-GBL - 국가별 Model Converter (pkl → ONNX → OpenVINO IR)
 
-학습된 KR 앙상블 모델(xgboost_KR, lightgbm_KR, gradient_boosting_KR,
-Phase 13.3에서 선정된 best_model_KR)을 NPU 추론용으로 변환한다.
-변환 경로는 단계적 폴백을 가진다:
+학습된 국가별 앙상블 모델(xgboost_{country}, lightgbm_{country},
+gradient_boosting_{country}, Phase 13.3에서 선정된 best_model_{country})을
+NPU 추론용으로 변환한다. 변환 경로는 단계적 폴백을 가진다:
     pkl → ONNX → OpenVINO IR
 각 단계 실패 시 직전 형식을 그대로 사용(AVM 엔진이 자동 폴백)하며,
 실제로 변환에 성공한 산출물만 conversion_report.json 에 기록한다.
-
-(이전 멀티-컨트리 경로와 가짜 4x 추정 코드는 제거됨 — KR 전용)
 """
 
 import argparse
@@ -136,20 +134,21 @@ def _select_converter(model: object) -> Callable[[object, str, Path], Optional[s
     return convert_sklearn_native
 
 
-ENSEMBLE_MODEL_KEYS = ['xgboost_KR', 'lightgbm_KR', 'gradient_boosting_KR', 'best_model_KR']
-# coldstart_KR은 직전가 없을 때만 쓰는 별도 폴백 모델이므로 앙상블 변환 대상에서 제외한다.
+ENSEMBLE_MODEL_TYPES = ['xgboost', 'lightgbm', 'gradient_boosting', 'best_model']
+# coldstart는 직전가 없을 때만 쓰는 별도 폴백 모델이므로 앙상블 변환 대상에서 제외한다.
 
 
-def convert_kr_models(pkl_dir: Path, output_dir: Path) -> Dict[str, Dict]:
-    """KR 앙상블 모델(xgboost/lightgbm/gradient_boosting/best_model) → ONNX + IR 변환.
+def convert_kr_models(pkl_dir: Path, output_dir: Path, country: str = 'KR') -> Dict[str, Dict]:
+    """국가별 앙상블 모델(xgboost/lightgbm/gradient_boosting/best_model) → ONNX + IR 변환.
 
-    best_model_KR.pkl(Phase 13.3에서 선정된 실제 배포 후보)을 포함해,
+    best_model_{country}.pkl(Phase 13.3에서 선정된 실제 배포 후보)을 포함해,
     모델 타입(XGBoost/LightGBM/sklearn)에 관계없이 자동 변환한다.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     report: Dict[str, Dict] = {}
 
-    for model_key in ENSEMBLE_MODEL_KEYS:
+    for model_type in ENSEMBLE_MODEL_TYPES:
+        model_key = f"{model_type}_{country}"
         pkl_path = pkl_dir / f"{model_key}.pkl"
         if not pkl_path.exists():
             log.warning(f"  {pkl_path} 없음 - 건너뜀")
@@ -186,16 +185,17 @@ def convert_kr_models(pkl_dir: Path, output_dir: Path) -> Dict[str, Dict]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Phase 13.2.5 KR Model Converter')
+    parser = argparse.ArgumentParser(description='Phase 13.2.5 국가별 모델 변환')
     parser.add_argument('--pkl-dir', default='output/trained_models', help='pkl 모델 디렉토리')
     parser.add_argument('--output',  default='output/models_ir',      help='출력 디렉토리')
+    parser.add_argument('--country', default='KR', help='KR, SG 등 (country_configs.py 참조)')
     args = parser.parse_args()
 
     log.info("=" * 60)
-    log.info("Phase 13.2.5 KR 모델 변환 시작")
+    log.info(f"Phase 13.2.5 {args.country} 모델 변환 시작")
     log.info("=" * 60)
 
-    report = convert_kr_models(Path(args.pkl_dir), Path(args.output))
+    report = convert_kr_models(Path(args.pkl_dir), Path(args.output), args.country)
     success = sum(1 for v in report.values() if v['status'] != 'pkl_only')
     log.info(f"\n{success}/{len(report)} 모델 ONNX/IR 변환 완료")
 

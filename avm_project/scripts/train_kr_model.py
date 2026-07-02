@@ -53,17 +53,23 @@ def load_and_validate(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def _normalize_features(X: np.ndarray) -> np.ndarray:
-    """AVM FeatureEngineer와 동일한 Min-Max 정규화 적용 (학습-추론 일관성 보장)."""
-    import sys as _sys
-    from pathlib import Path as _Path
-    _sys.path.insert(0, str(_Path(__file__).parent.parent))
-    from scripts.avm_feature_engineering import FEATURE_MIN, FEATURE_MAX
-    normalized = (X - FEATURE_MIN) / (FEATURE_MAX - FEATURE_MIN)
+def _normalize_features(X: np.ndarray, country: str = 'KR') -> np.ndarray:
+    """국가별 Min-Max 정규화 적용 (학습-추론 일관성 보장).
+
+    country_configs.KR_CONFIG.feature_min/max는 avm_feature_engineering의
+    FEATURE_MIN/MAX와 동일한 값이므로, 기본값(KR)은 리팩토링 전과 동일하게 동작한다.
+    """
+    from country_configs import get_country_config
+    config = get_country_config(country)
+    feature_min = np.array(config.feature_min, dtype=np.float32)
+    feature_max = np.array(config.feature_max, dtype=np.float32)
+    normalized = (X - feature_min) / (feature_max - feature_min)
     return np.clip(normalized, 0.0, 1.0).astype(np.float32)
 
 
-def split_data(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
+def split_data(
+    df: pd.DataFrame, country: str = 'KR',
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, pd.DataFrame, pd.DataFrame]:
     """시간 기반 분할 (80% train / 20% test) + 정규화."""
     if 'transaction_month' in df.columns:
         df_sorted = df.sort_values('transaction_month').reset_index(drop=True)
@@ -71,8 +77,8 @@ def split_data(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np
         train_df, test_df = df_sorted.iloc[:cutoff], df_sorted.iloc[cutoff:]
     else:
         train_df, test_df = train_test_split(df, test_size=0.20, random_state=42)
-    X_train = _normalize_features(train_df[FEATURE_COLS].values.astype(np.float32))
-    X_test  = _normalize_features(test_df[FEATURE_COLS].values.astype(np.float32))
+    X_train = _normalize_features(train_df[FEATURE_COLS].values.astype(np.float32), country)
+    X_test  = _normalize_features(test_df[FEATURE_COLS].values.astype(np.float32), country)
     y_train = train_df[TARGET_COL].values.astype(np.float64)
     y_test  = test_df[TARGET_COL].values.astype(np.float64)
     return X_train, X_test, y_train, y_test, train_df, test_df
@@ -160,10 +166,10 @@ def evaluate_by_region(
     return results
 
 
-def save_model(model: object, name: str, output_dir: Path) -> None:
+def save_model(model: object, name: str, output_dir: Path, country: str = 'KR') -> None:
     """모델 저장."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{name}_KR.pkl"
+    path = output_dir / f"{name}_{country}.pkl"
     with open(path, 'wb') as f:
         pickle.dump(model, f)
     size_mb = path.stat().st_size / 1024 / 1024
@@ -174,8 +180,9 @@ def save_training_report(
     results: Dict[str, Dict],
     output_dir: Path,
     elapsed_sec: float,
+    country: str = 'KR',
 ) -> None:
-    """output/kr_training_report.json 저장."""
+    """output/{country.lower()}_training_report.json 저장."""
     report = {
         'timestamp':    datetime.now().isoformat(),
         'elapsed_sec':  round(elapsed_sec, 1),
@@ -183,25 +190,26 @@ def save_training_report(
         'targets':      {'r2': TARGET_R2, 'mape': TARGET_MAPE},
         'models':       results,
     }
-    path = output_dir / 'kr_training_report.json'
+    path = output_dir / f'{country.lower()}_training_report.json'
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
     log.info(f"  리포트 저장: {path}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='KR AVM 모델 학습')
-    parser.add_argument('--data',   default='data/raw/KR_data.csv')
-    parser.add_argument('--output', default='output/trained_models')
+    parser = argparse.ArgumentParser(description='국가별 AVM 모델 학습')
+    parser.add_argument('--data',    default='data/raw/KR_data.csv')
+    parser.add_argument('--output',  default='output/trained_models')
+    parser.add_argument('--country', default='KR', help='KR, SG 등 (country_configs.py 참조)')
     args = parser.parse_args()
 
     log.info("=" * 60)
-    log.info("KR AVM 모델 학습 시작")
+    log.info(f"{args.country} AVM 모델 학습 시작")
     log.info("=" * 60)
 
     t_start = time.time()
     df = load_and_validate(args.data)
-    X_train, X_test, y_train, y_test, train_df, test_df = split_data(df)
+    X_train, X_test, y_train, y_test, train_df, test_df = split_data(df, args.country)
     log.info(f"학습: {len(X_train):,}건 | 검증: {len(X_test):,}건")
 
     output_dir = Path(args.output)
@@ -222,7 +230,7 @@ def main() -> None:
         y_pred = model.predict(X_test)
         result = evaluate(y_test, y_pred, name)
         result['region_breakdown'] = evaluate_by_region(y_test, y_pred, test_df.reset_index(drop=True))
-        save_model(model, name, output_dir)
+        save_model(model, name, output_dir, args.country)
         results[name] = result
 
     elapsed = time.time() - t_start
@@ -238,7 +246,7 @@ def main() -> None:
     log.info(f"\n{passed}/{len(results)} 모델 목표 달성 (R²>{TARGET_R2}, MAPE<{TARGET_MAPE*100:.1f}%)")
     log.info(f"총 소요시간: {elapsed:.1f}초")
 
-    save_training_report(results, output_dir, elapsed)
+    save_training_report(results, output_dir, elapsed, args.country)
 
     if passed == len(results):
         log.info("\n✅ 모든 모델 목표 달성 - 엔진 배포 준비 완료")

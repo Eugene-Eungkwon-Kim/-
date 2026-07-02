@@ -98,17 +98,17 @@ def select_best_model(validation_results: Dict[str, Dict[str, Any]]) -> str:
 
 
 def validate_all_models(
-    data_path: str, models_dir: Path,
+    data_path: str, models_dir: Path, country: str = 'KR',
 ) -> Dict[str, Dict[str, Any]]:
     """전체 검증 파이프라인: 데이터 로드 → CV → 튜닝 → 중요도 → 최적 모델."""
     from sklearn.metrics import mean_absolute_percentage_error, r2_score
 
     df = load_and_validate(data_path)
-    X_train, X_test, y_train, y_test, _, _ = split_data(df)
+    X_train, X_test, y_train, y_test, _, _ = split_data(df, country)
 
     results: Dict[str, Dict[str, Any]] = {}
     for model_name in PARAM_GRIDS:
-        pkl_path = models_dir / f"{model_name}_KR.pkl"
+        pkl_path = models_dir / f"{model_name}_{country}.pkl"
         if not pkl_path.exists():
             log.warning(f"  {pkl_path} 없음 - 건너뜀")
             continue
@@ -139,14 +139,14 @@ def validate_all_models(
             'meets_target': test_r2 >= TARGET_R2 and test_mape <= TARGET_MAPE,
             'feature_importance': importance,
         }
-        save_tuned_model(tuned_model, model_name, models_dir)
+        save_tuned_model(tuned_model, model_name, models_dir, country)
 
     return results
 
 
-def save_tuned_model(model: object, name: str, output_dir: Path) -> None:
+def save_tuned_model(model: object, name: str, output_dir: Path, country: str = 'KR') -> None:
     """튜닝된 모델 저장."""
-    path = output_dir / f"{name}_KR_tuned.pkl"
+    path = output_dir / f"{name}_{country}_tuned.pkl"
     with open(path, 'wb') as f:
         pickle.dump(model, f)
     log.info(f"  튜닝 모델 저장: {path}")
@@ -166,18 +166,20 @@ def save_validation_report(results: Dict[str, Dict[str, Any]], best_model: str, 
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Phase 13.3 KR 모델 검증')
+    parser = argparse.ArgumentParser(description='Phase 13.3 국가별 모델 검증')
     parser.add_argument('--data', default='data/raw/KR_data.csv')
     parser.add_argument('--models-dir', default='output/trained_models')
-    parser.add_argument('--report', default='output/kr_validation_report.json')
+    parser.add_argument('--report', default=None, help='기본값: output/{country}_validation_report.json')
+    parser.add_argument('--country', default='KR', help='KR, SG 등 (country_configs.py 참조)')
     args = parser.parse_args()
+    report_path = Path(args.report) if args.report else Path(f'output/{args.country.lower()}_validation_report.json')
 
     log.info("=" * 60)
-    log.info("Phase 13.3 KR 모델 검증 시작")
+    log.info(f"Phase 13.3 {args.country} 모델 검증 시작")
     log.info("=" * 60)
 
     t_start = time.time()
-    results = validate_all_models(args.data, Path(args.models_dir))
+    results = validate_all_models(args.data, Path(args.models_dir), args.country)
     best_model = select_best_model(results)
     elapsed = time.time() - t_start
 
@@ -186,14 +188,14 @@ def main() -> None:
     log.info(f"총 소요시간: {elapsed:.1f}초")
     log.info("=" * 60)
 
-    save_validation_report(results, best_model, Path(args.report))
+    save_validation_report(results, best_model, report_path)
 
-    best_path = Path(args.models_dir) / f"{best_model}_KR_tuned.pkl"
+    best_path = Path(args.models_dir) / f"{best_model}_{args.country}_tuned.pkl"
     with open(best_path, 'rb') as f:
         best_pkl = f.read()
-    with open(Path(args.models_dir) / 'best_model_KR.pkl', 'wb') as f:
+    with open(Path(args.models_dir) / f'best_model_{args.country}.pkl', 'wb') as f:
         f.write(best_pkl)
-    log.info(f"✅ 최적 모델 저장: {Path(args.models_dir) / 'best_model_KR.pkl'}")
+    log.info(f"✅ 최적 모델 저장: {Path(args.models_dir) / f'best_model_{args.country}.pkl'}")
 
 
 if __name__ == '__main__':

@@ -200,3 +200,29 @@ raw sklearn pickle 추론보다 빠르다. "NPU 1ms 목표"라는 표현은 애�
   선정된 `best_model_KR`(이번 실행에서 gradient_boosting)은 변환 대상에서
   빠져 있었다 → 모델 타입 자동 감지로 4개 전부 변환하도록 확장.
 
+---
+
+## 7. `test_kr_valuation.py`의 절대 가격 테스트는 재학습 시 취약함 (Phase 13.1-GBL, 발견/미해결)
+
+`tests/test_kr_valuation.py::test_price_in_market_range`류 테스트와
+`test_coldstart_agrees_with_main_engine`은 특정 입력에 대해 **하드코딩된
+절대 가격 범위**(예: "강남 84㎡ → 22.5~32.5억")를 기대한다. 그런데:
+
+- `train_gradient_boosting()`을 동일 데이터로 두 번 학습해 예측을 비교하면
+  **완전히 결정론적**이다(`np.allclose` 100% 일치) — 학습 자체는 재현 가능하다.
+- 그럼에도 새 컨테이너에서 데이터→학습→콜드스타트→검증→ONNX 변환을 처음부터
+  다시 실행하면(코드는 전혀 건드리지 않고 `git stash`로 확인함) 이 테스트들이
+  실패한다: 코드 변경이 아니라 **"어느 시점에 학습된 모델이었나"**에 따라
+  결과가 달라지기 때문이다.
+- 즉, 이 테스트들은 리포지토리에 커밋되지 않는(gitignore 대상) 특정 과거
+  학습 아티팩트를 암묵적으로 전제하고 있어, 모델 아티팩트가 없는 새 환경에서
+  파이프라인을 처음부터 재현하면 통과를 보장할 수 없다.
+
+**이번 세션에서 미해결로 남김**: Phase 13.1-GBL(글로벌 확장) 작업 중 발견했으며,
+`generate_kr_realistic_data.py`/`train_kr_model.py`/`phase13_model_validator.py`를
+국가 파라미터화(country_configs.py)로 리팩토링하기 전(git stash로 원본 복원)
+동일하게 재현되어 이번 리팩토링이 원인이 아님을 확인했다. 근본 수정에는
+테스트의 절대 범위를 완화하거나(예: 상대적 지역 서열만 검증), 커밋된 고정
+아티팩트로 테스트를 고정하는 방식의 재설계가 필요하며 이는 별도 작업으로
+남긴다.
+

@@ -17,10 +17,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 FEATURE_COLS = ['area_sqm', 'old_price', 'latitude', 'longitude', 'property_type']
 
-# 서빙 앙상블에 포함할 3개 기본 모델 타입. best_model_KR(단일 모델 배포용,
-# 이 중 하나와 중복)과 coldstart_KR(직전가 없을 때만 쓰는 별도 목적 모델)은
-# 앙상블 평균에 섞이면 안 되므로 제외한다.
-ENSEMBLE_BASE_MODELS = ['xgboost_KR', 'lightgbm_KR', 'gradient_boosting_KR']
+# 서빙 앙상블에 포함할 3개 기본 모델 타입 (국가 접미사 없이). best_model_{country}
+# (단일 모델 배포용, 이 중 하나와 중복)과 coldstart_{country}(직전가 없을 때만
+# 쓰는 별도 목적 모델)은 앙상블 평균에 섞이면 안 되므로 제외한다.
+ENSEMBLE_BASE_MODEL_TYPES = ['xgboost', 'lightgbm', 'gradient_boosting']
 
 
 @dataclass
@@ -66,27 +66,31 @@ def initialize_onnx_model(onnx_path: str) -> Optional[object]:
         return None
 
 
-def preprocess_input(features: np.ndarray) -> np.ndarray:
-    """Normalize input features for inference.
+def preprocess_input(features: np.ndarray, country: str = 'KR') -> np.ndarray:
+    """Normalize input features for inference (국가별 학습 정규화 범위 재사용).
 
-    avm_feature_engineering.FEATURE_MIN/MAX를 그대로 재사용한다 — 이전에는
-    old_price 범위가 여기서만 1000배 작게(5,000,000) 하드코딩되어 있어
-    학습(6,000,000,000)과 어긋나는 학습-추론 스큐 버그가 있었다.
+    country_configs.CountryConfig.feature_min/max를 그대로 재사용한다 —
+    이전에는 old_price 범위가 여기서만 1000배 작게(5,000,000) 하드코딩되어
+    있어 학습(6,000,000,000)과 어긋나는 학습-추론 스큐 버그가 있었다.
+    KR_CONFIG의 값은 avm_feature_engineering.FEATURE_MIN/MAX와 동일하다.
     """
-    from avm_feature_engineering import FEATURE_MAX, FEATURE_MIN
+    from country_configs import get_country_config
 
-    normalized = (features - FEATURE_MIN) / (FEATURE_MAX - FEATURE_MIN)
+    config = get_country_config(country)
+    feature_min = np.array(config.feature_min, dtype=np.float32)
+    feature_max = np.array(config.feature_max, dtype=np.float32)
+    normalized = (features - feature_min) / (feature_max - feature_min)
     return np.clip(normalized, 0.0, 1.0).astype(np.float32)
 
 
 def run_inference(compiled_model: object, features: np.ndarray,
-                 model_name: str) -> Optional[InferenceResult]:
+                 model_name: str, country: str = 'KR') -> Optional[InferenceResult]:
     """Execute inference and return prediction. Supports OpenVINO IR, ONNX Runtime, and sklearn models."""
     try:
         import time
         start = time.perf_counter()
 
-        input_data = preprocess_input(features).reshape(1, -1)
+        input_data = preprocess_input(features, country).reshape(1, -1)
 
         if type(compiled_model).__module__.startswith('onnxruntime'):
             input_name = compiled_model.get_inputs()[0].name
@@ -128,13 +132,15 @@ def _backend_name(model: object) -> str:
     return 'sklearn pkl (CPU)'
 
 
-def ensemble_predict(models: Dict[str, object], features: np.ndarray) -> Tuple[float, float]:
+def ensemble_predict(
+    models: Dict[str, object], features: np.ndarray, country: str = 'KR',
+) -> Tuple[float, float]:
     """Aggregate predictions from multiple models (ensemble)."""
     predictions = []
     confidences = []
 
     for model_name, compiled_model in models.items():
-        result = run_inference(compiled_model, features, model_name)
+        result = run_inference(compiled_model, features, model_name, country)
         if result:
             predictions.append(result.predicted_price)
             confidences.append(result.confidence)
@@ -150,19 +156,21 @@ def ensemble_predict(models: Dict[str, object], features: np.ndarray) -> Tuple[f
 class NPUInferenceEngine:
     """NPU-based AVM inference service."""
 
-    def __init__(self, ir_model_dir: str) -> None:
-        """Initialize NPU engine with IR models."""
+    def __init__(self, ir_model_dir: str, country: str = 'KR') -> None:
+        """Initialize inference engine with IR/ONNX/pkl models for a given country."""
         self.models: Dict[str, object] = {}
         self.ir_model_dir = Path(ir_model_dir)
+        self.country = country
         self._load_models()
 
     def _load_models(self) -> None:
         """앙상블 기본 3개 모델을 모델별로 IR → ONNX → pkl 순으로 최선의 형식 로드.
 
-        best_model_KR(단일 모델용, 중복)과 coldstart_KR(별도 목적)은 제외한다.
+        best_model_{country}(단일 모델용, 중복)과 coldstart_{country}(별도 목적)은 제외한다.
         """
         trained_dir = self.ir_model_dir.parent / 'trained_models'
-        for model_name in ENSEMBLE_BASE_MODELS:
+        for model_type in ENSEMBLE_BASE_MODEL_TYPES:
+            model_name = f"{model_type}_{self.country}"
             compiled = self._load_best_available(model_name, trained_dir)
             if compiled is not None:
                 self.models[model_name] = compiled
@@ -203,10 +211,10 @@ class NPUInferenceEngine:
         import time
         start = time.perf_counter()
 
-        avg_price, avg_confidence = ensemble_predict(self.models, property_features)
+        avg_price, avg_confidence = ensemble_predict(self.models, property_features, self.country)
 
         latency_ms = (time.perf_counter() - start) * 1000.0
-        log.info(f"Ensemble prediction: {avg_price:,.0f} KRW (conf={avg_confidence:.1%}, {latency_ms:.1f}ms)")
+        log.info(f"Ensemble prediction: {avg_price:,.0f} {self.country} (conf={avg_confidence:.1%}, {latency_ms:.1f}ms)")
 
         return avg_price, avg_confidence, latency_ms
 
@@ -224,27 +232,32 @@ def main() -> None:
     import argparse
     import time
 
+    from country_configs import get_country_config
+
     parser = argparse.ArgumentParser(description='Phase 13.4 Inference Engine')
     parser.add_argument('--ir-models', default='output/models_ir', help='ONNX/IR model directory')
+    parser.add_argument('--country', default='KR', help='KR, SG 등 (country_configs.py 참조)')
     args = parser.parse_args()
 
-    engine = NPUInferenceEngine(args.ir_models)
+    engine = NPUInferenceEngine(args.ir_models, args.country)
     stats = engine.get_model_stats()
 
     print(f"\n{'='*50}")
-    print("Inference Engine Ready")
+    print(f"Inference Engine Ready ({args.country})")
     print(f"{'='*50}")
     print(f"Models loaded: {stats['models_loaded']}")
     for name, backend in stats['backends'].items():
         print(f"  - {name}: {backend}")
 
-    sample = np.array([84.0, 800_000_000.0, 37.5, 127.0, 1.0], dtype=np.float32)
+    config = get_country_config(args.country)
+    mid = [(lo + hi) / 2 for lo, hi in zip(config.feature_min, config.feature_max)]
+    sample = np.array(mid, dtype=np.float32)
     engine.predict(sample)  # 워밍업 (첫 호출의 JIT/세션 초기화 비용 제외)
 
     start = time.perf_counter()
     price, confidence, _ = engine.predict(sample)
     latency_ms = (time.perf_counter() - start) * 1000.0
-    print(f"\nSample prediction: {price:,.0f} KRW (confidence={confidence:.2f})")
+    print(f"\nSample prediction: {price:,.0f} {config.currency} (confidence={confidence:.2f})")
     print(f"Measured latency (warm): {latency_ms:.2f}ms (실측, 특정 하드웨어 NPU 가속 아님)")
 
 
