@@ -227,4 +227,76 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
     });
     expect(adminPruneRes.statusCode).toBe(200);
   });
+
+  it('종단 통합 시나리오: 헬스체크 → 대출/상환 → 관리자 배치', async () => {
+    // 1. 헬스체크 (인증 불필요)
+    const healthRes = await app.inject({ method: 'GET', url: '/health' });
+    expect(healthRes.statusCode).toBe(200);
+    expect(healthRes.json().status).toBe('ok');
+
+    // 2. 사용자 가입 및 로그인
+    const { userId, token } = await registerAndLogin('e2e-user@example.com', 'E2E User');
+
+    // 3. 대출 신청
+    const loanRes = await app.inject({
+      method: 'POST',
+      url: '/api/loans',
+      headers: authHeader(token),
+      payload: {
+        userId,
+        productId: 'standard-loan-1',
+        originalAmount: 5000000,
+        interestRate: 4.5,
+        termMonths: 120,
+        startDate: '2026-01-01'
+      }
+    });
+    expect(loanRes.statusCode).toBe(200);
+    const loanId = loanRes.json().data.id;
+
+    // 4. 상환 기록
+    const paymentRes = await app.inject({
+      method: 'POST',
+      url: `/api/loans/${loanId}/payments`,
+      headers: authHeader(token),
+      payload: { paymentDate: '2026-02-01', principal: 50000, interest: 18000 }
+    });
+    expect(paymentRes.statusCode).toBe(200);
+    expect(paymentRes.json().data.currentBalance).toBeLessThan(5000000);
+
+    // 5. 관리자 승격 및 배치 작업 실행
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+    const adminLoginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: 'e2e-user@example.com', password: 'correct-horse' }
+    });
+    const adminToken = adminLoginRes.json().data.token;
+
+    // 6. 연체 감지 배치 (현재 상환 상태는 양호)
+    const delinquencyRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/delinquency-check',
+      headers: authHeader(adminToken),
+      payload: { asOfDate: '2026-02-15' }
+    });
+    expect(delinquencyRes.statusCode).toBe(200);
+    expect(Array.isArray(delinquencyRes.json().data)).toBe(true);
+
+    // 7. 백업 스케줄 확인 및 정리
+    const backupDueRes = await app.inject({
+      method: 'GET',
+      url: '/api/admin/backups/due?intervalHours=24&now=2026-02-15',
+      headers: authHeader(adminToken)
+    });
+    expect(backupDueRes.statusCode).toBe(200);
+
+    const pruneRes = await app.inject({
+      method: 'POST',
+      url: '/api/admin/backups/prune',
+      headers: authHeader(adminToken),
+      payload: { retentionDays: 30, now: '2026-02-15' }
+    });
+    expect(pruneRes.statusCode).toBe(200);
+  });
 });
