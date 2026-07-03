@@ -56,7 +56,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/users',
-      payload: { email: 'demo@example.com', name: 'Demo User', creditProfile: { score: 750 } }
+      payload: { email: 'demo@example.com', name: 'Demo User', password: 'correct-horse', creditProfile: { score: 750 } }
     });
 
     expect(res.statusCode).toBe(200);
@@ -66,8 +66,8 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
   });
 
   it('POST /api/users - 중복 이메일은 409를 반환한다', async () => {
-    await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'dup@example.com', name: 'A' } });
-    const res = await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'dup@example.com', name: 'B' } });
+    await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'dup@example.com', name: 'A', password: 'correct-horse' } });
+    const res = await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'dup@example.com', name: 'B', password: 'correct-horse' } });
 
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('DUPLICATE_EMAIL');
@@ -459,7 +459,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
       await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'rl-ok@example.com', name: 'RL OK', password: 'correct-horse' } });
 
       for (let i = 0; i < 5; i++) {
-        const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'rl-ok@example.com', password: 'wrong' } });
+        const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'rl-ok@example.com', password: 'wrong-password' } });
         expect(res.statusCode).toBe(401); // 자격증명은 틀렸지만 rate limit에는 안 걸림
       }
     });
@@ -468,7 +468,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
       await app.inject({ method: 'POST', url: '/api/users', payload: { email: 'rl-blocked@example.com', name: 'RL Blocked', password: 'correct-horse' } });
 
       for (let i = 0; i < 5; i++) {
-        await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'rl-blocked@example.com', password: 'wrong' } });
+        await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'rl-blocked@example.com', password: 'wrong-password' } });
       }
 
       const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'rl-blocked@example.com', password: 'correct-horse' } });

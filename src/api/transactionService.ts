@@ -9,10 +9,14 @@ import {
   TransactionSummary
 } from '../types/transaction';
 import { ServiceResult, toServiceResult } from './errorMapping';
+import { validateTransaction } from '../validation/requestValidation';
 
 /** 거래/감사 서비스 계층 (Day 6 - Task 4, δ=1410) */
 export function recordTransaction(db: Database.Database, input: RecordTransactionInput): ServiceResult<TransactionRecord> {
-  return toServiceResult(() => new TransactionRepository(db).recordTransaction(input));
+  return toServiceResult(() => {
+    validateTransaction(input);
+    return new TransactionRepository(db).recordTransaction(input);
+  });
 }
 
 export function getTransactionHistory(

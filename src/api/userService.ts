@@ -3,6 +3,7 @@ import { UserRepository } from '../repositories/UserRepository';
 import { UserNotFoundError } from '../repositories/errors';
 import { CreditHistoryEntry, RegisterUserInput, UpdateUserInput, UserProfile } from '../types/user';
 import { ServiceResult, toServiceResult } from './errorMapping';
+import { validateUserRegistration } from '../validation/requestValidation';
 
 export type { ServiceResult };
 
@@ -14,7 +15,10 @@ export type { ServiceResult };
  * 공용 유틸(Task3)에 위임한다.
  */
 export function registerUser(db: Database.Database, input: RegisterUserInput): ServiceResult<UserProfile> {
-  return toServiceResult(() => new UserRepository(db).register(input));
+  return toServiceResult(() => {
+    validateUserRegistration(input);
+    return new UserRepository(db).register(input);
+  });
 }
 
 export function getUserProfile(db: Database.Database, userId: string): ServiceResult<UserProfile> {

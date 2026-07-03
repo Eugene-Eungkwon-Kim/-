@@ -4,6 +4,7 @@ import { InvalidCredentialsError, InvalidRefreshTokenError } from '../repositori
 import { IssuedRefreshToken, RefreshTokenRepository, VerifiedRefreshToken } from '../repositories/RefreshTokenRepository';
 import { UserProfile } from '../types/user';
 import { ServiceResult, toServiceResult } from './errorMapping';
+import { validateLogin } from '../validation/requestValidation';
 
 /**
  * 인증 서비스 계층 (Day 8 - Task 2, δ=1535 / Day 9 - Task 3, δ=1155)
@@ -14,6 +15,7 @@ import { ServiceResult, toServiceResult } from './errorMapping';
  */
 export function verifyCredentials(db: Database.Database, email: string, password: string): ServiceResult<UserProfile> {
   return toServiceResult(() => {
+    validateLogin({ email, password });
     const profile = new UserRepository(db).verifyPassword(email, password);
     if (!profile) throw new InvalidCredentialsError();
     return profile;
