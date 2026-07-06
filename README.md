@@ -166,11 +166,18 @@ DCIM/100APPLE/IMG_0001.HEIC  + IMG_0001.MOV  → 라이브포토/2024/01/
 
 ---
 
-## 🐛 버그 수정 이력
+## 🐛 변경 이력 (버그 수정 & 업데이트)
 
+전체 수정 작업 내역은 최신순으로 정리되어 있습니다:
+
+- 📄 **[CHANGELOG.md](CHANGELOG.md)** — 전체 변경 이력 (마크다운)
+- 📱 **[updates.html](updates.html)** — 모바일 브라우저용 반응형 리스팅 페이지
+
+최근 주요 수정 사항:
 - ✅ 파일명 충돌 시 `file_1_2_3` 형태 무한 증가 → 수정
 - ✅ `_getexif()` deprecated → `getexif()` API로 교체
 - ✅ Live Photo 크로스-디렉토리 감지 검증 완료
+- ✅ 미사용 import 및 `LIVE_PHOTO_PATTERN` 정리
 
 ---
 

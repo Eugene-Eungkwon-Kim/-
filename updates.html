@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>코드 업데이트 이력 — 모바일 마이그레이션 도구</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1c1e21;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --line: #e5e7eb;
+    --chip-fix: #fee2e2;  --chip-fix-text: #b91c1c;
+    --chip-feat: #dcfce7; --chip-feat-text: #15803d;
+    --chip-docs: #e0e7ff; --chip-docs-text: #4338ca;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111318;
+      --card: #1b1e26;
+      --text: #e7e9ee;
+      --muted: #9aa1ad;
+      --accent: #7aa2ff;
+      --line: #2a2e39;
+      --chip-fix: #3b1d1d;  --chip-fix-text: #f87171;
+      --chip-feat: #16301f; --chip-feat-text: #4ade80;
+      --chip-docs: #20244a; --chip-docs-text: #a5b4fc;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+                 "Noto Sans KR", "Malgun Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 16px;
+    max-width: 640px;
+    margin: 0 auto;
+    -webkit-text-size-adjust: 100%;
+  }
+  header { margin: 8px 0 20px; }
+  header h1 { font-size: 1.35rem; }
+  header p  { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+
+  .date-group { margin-bottom: 24px; }
+  .date-label {
+    font-size: 0.85rem; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.02em; margin-bottom: 8px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    font-size: 0.72rem; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .chip.fix  { background: var(--chip-fix);  color: var(--chip-fix-text); }
+  .chip.feat { background: var(--chip-feat); color: var(--chip-feat-text); }
+  .chip.docs { background: var(--chip-docs); color: var(--chip-docs-text); }
+  .card h2 { font-size: 1rem; flex: 1; min-width: 0; }
+  .commit {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem; color: var(--muted);
+  }
+  .card ul { margin: 8px 0 0 18px; font-size: 0.88rem; }
+  .card li { margin-bottom: 4px; }
+  .card li:last-child { margin-bottom: 0; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.82em;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 4px;
+    word-break: break-all;
+  }
+  footer {
+    color: var(--muted); font-size: 0.8rem;
+    text-align: center; margin: 28px 0 12px;
+  }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📱 코드 업데이트 이력</h1>
+  <p>모바일 기기 데이터 마이그레이션 &amp; 정리 도구 — 수정 작업 최신순 리스팅</p>
+</header>
+
+<section class="date-group">
+  <div class="date-label">2026-06-18</div>
+
+  <article class="card">
+    <div class="card-head">
+      <span class="chip docs">문서</span>
+      <h2>종합 README 작성</h2>
+      <span class="commit">ae5f9c1</span>
+    </div>
+    <ul>
+      <li>세 스크립트 통합 사용 가이드 작성</li>
+      <li>설치 방법, 기기별 사용법, 결과 폴더 구조, 주의사항 문서화</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <span class="chip fix">버그 수정</span>
+      <h2>파일명 충돌·deprecated API 수정</h2>
+      <span class="commit">3c03da6</span>
+    </div>
+    <ul>
+      <li>충돌 시 <code>file_1_2_3</code> 형태로 접미사가 무한히 길어지던 버그 수정 (3개 스크립트)</li>
+      <li>Pillow <code>_getexif()</code> → <code>getexif()</code> deprecated API 교체</li>
+      <li>미사용 import <code>os</code>, <code>subprocess</code> 제거</li>
+      <li><code>iphone_migrate.py</code>: 미사용 <code>LIVE_PHOTO_PATTERN</code> 삭제</li>
+      <li><code>iphone_migrate.py</code>: 라이브포토 카테고리 <code>.mov</code> 중복 등록 제거</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <span class="chip feat">기능 추가</span>
+      <h2>iPhone 13 Pro 전용 스크립트</h2>
+      <span class="commit">defae8d</span>
+    </div>
+    <ul>
+      <li><code>iphone_migrate.py</code> 신규 추가</li>
+      <li>HEIC/HEIF 지원, Live Photo(HEIC+MOV 쌍) 자동 감지</li>
+      <li>슬로모션·타임랩스 패턴 인식 및 별도 폴더 분류</li>
+      <li><code>iphone_migration_report.json</code> 통계 보고서 생성</li>
+    </ul>
+  </article>
+</section>
+
+<section class="date-group">
+  <div class="date-label">2026-06-10</div>
+
+  <article class="card">
+    <div class="card-head">
+      <span class="chip feat">기능 추가</span>
+      <h2>Android 마이그레이션 스크립트</h2>
+      <span class="commit">80c323b · 6fee4b8</span>
+    </div>
+    <ul>
+      <li><code>migrate.py</code> 신규 추가</li>
+      <li>ADB 직접 연결로 Android 기기에서 파일 자동 추출 (<code>--android</code>)</li>
+      <li>로컬 백업 폴더 정리 지원 (<code>--source</code>)</li>
+      <li><code>migration_report.json</code> 보고서 생성 · gitignore 추가</li>
+    </ul>
+  </article>
+</section>
+
+<section class="date-group">
+  <div class="date-label">2026-05-31</div>
+
+  <article class="card">
+    <div class="card-head">
+      <span class="chip feat">기능 추가</span>
+      <h2>기본 파일 정리 스크립트</h2>
+      <span class="commit">47c7718 · 773f609</span>
+    </div>
+    <ul>
+      <li><code>organize.py</code> 신규 추가</li>
+      <li>종류별 + 날짜별(<code>YYYY/MM</code>) 자동 분류</li>
+      <li>파일명 <code>YYYYMMDD_HHMMSS_원본이름</code> 통일, MD5 중복 제거</li>
+      <li>EXIF 촬영일 기준 정렬 (Pillow 설치 시)</li>
+    </ul>
+  </article>
+</section>
+
+<footer>
+  전체 상세 이력: <a href="CHANGELOG.md">CHANGELOG.md</a> · 최종 갱신 2026-07-06
+</footer>
+</body>
+</html>
