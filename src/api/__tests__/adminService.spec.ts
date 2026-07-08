@@ -24,7 +24,7 @@ describe('adminService (Day 6 - Task 6: 관리자 서비스, δ=1140)', () => {
 
   describe('[T-SVC-601~606] 관리자 서비스', () => {
     it('[T-SVC-601] 무결성 체크 정상 실행', async () => {
-      const created = registerUser(db, { email: 'admin-ok@example.com', name: 'Admin OK User' });
+      const created = registerUser(db, { email: 'admin-ok@example.com', name: 'Admin OK User', password: 'test-password-123' });
       const userId = created.success ? created.data.id : '';
       await applyForLoan(db, { userId, productId: 'p1', originalAmount: 100000000, interestRate: 3.2, termMonths: 120, startDate: '2026-01-01' });
 
@@ -53,7 +53,7 @@ describe('adminService (Day 6 - Task 6: 관리자 서비스, δ=1140)', () => {
     });
 
     it('[T-SVC-603] 백업 생성', async () => {
-      registerUser(db, { email: 'backup-svc@example.com', name: 'Backup Svc User' });
+      registerUser(db, { email: 'backup-svc@example.com', name: 'Backup Svc User', password: 'test-password-123' });
 
       const result = await createBackup(db, backupDir);
       expect(result.success).toBe(true);
@@ -101,7 +101,7 @@ describe('adminService (Day 6 - Task 6: 관리자 서비스, δ=1140)', () => {
     });
 
     it('[T-SVC-824] 보존기간 초과 백업을 서비스 계층에서 정리할 수 있다', async () => {
-      registerUser(db, { email: 'prune-svc@example.com', name: 'Prune Svc User' });
+      registerUser(db, { email: 'prune-svc@example.com', name: 'Prune Svc User', password: 'test-password-123' });
       const created = await createBackup(db, backupDir);
       const createdAt = created.success ? created.data.createdAt : '';
 

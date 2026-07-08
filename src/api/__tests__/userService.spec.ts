@@ -16,7 +16,7 @@ describe('userService (Day 6 - Task 1: 사용자 서비스 계층, δ=1615)', ()
 
   describe('[T-SVC-101~106] 사용자 서비스', () => {
     it('[T-SVC-101] 정상 등록', () => {
-      const result = registerUser(db, { email: 'svc-user@example.com', name: 'Service User' });
+      const result = registerUser(db, { email: 'svc-user@example.com', name: 'Service User', password: 'test-password-123' });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.email).toBe('svc-user@example.com');
@@ -25,8 +25,8 @@ describe('userService (Day 6 - Task 1: 사용자 서비스 계층, δ=1615)', ()
     });
 
     it('[T-SVC-102] 중복 이메일', () => {
-      registerUser(db, { email: 'dup@example.com', name: 'First' });
-      const result = registerUser(db, { email: 'dup@example.com', name: 'Second' });
+      registerUser(db, { email: 'dup@example.com', name: 'First', password: 'test-password-123' });
+      const result = registerUser(db, { email: 'dup@example.com', name: 'Second', password: 'test-password-123' });
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -35,7 +35,7 @@ describe('userService (Day 6 - Task 1: 사용자 서비스 계층, δ=1615)', ()
     });
 
     it('[T-SVC-103] 프로필 조회 (존재/미존재)', () => {
-      const created = registerUser(db, { email: 'lookup@example.com', name: 'Lookup' });
+      const created = registerUser(db, { email: 'lookup@example.com', name: 'Lookup', password: 'test-password-123' });
       expect(created.success).toBe(true);
       const userId = created.success ? created.data.id : '';
 
@@ -50,7 +50,7 @@ describe('userService (Day 6 - Task 1: 사용자 서비스 계층, δ=1615)', ()
     });
 
     it('[T-SVC-104] 낙관적 락 충돌', () => {
-      const created = registerUser(db, { email: 'lock@example.com', name: 'Lock User' });
+      const created = registerUser(db, { email: 'lock@example.com', name: 'Lock User', password: 'test-password-123' });
       const userId = created.success ? created.data.id : '';
 
       const firstUpdate = updateUserProfile(db, userId, { name: 'Updated Once' }, 1);
@@ -64,7 +64,7 @@ describe('userService (Day 6 - Task 1: 사용자 서비스 계층, δ=1615)', ()
     });
 
     it('[T-SVC-105] 검증 실패', () => {
-      const result = registerUser(db, { email: 'not-an-email', name: 'Bad Email' });
+      const result = registerUser(db, { email: 'not-an-email', name: 'Bad Email', password: 'test-password-123' });
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.code).toBe('VALIDATION_ERROR');
@@ -72,7 +72,7 @@ describe('userService (Day 6 - Task 1: 사용자 서비스 계층, δ=1615)', ()
     });
 
     it('[T-SVC-106] 신용도 히스토리 조회', () => {
-      const created = registerUser(db, { email: 'credit@example.com', name: 'Credit User', creditProfile: { score: 650 } });
+      const created = registerUser(db, { email: 'credit@example.com', name: 'Credit User', password: 'test-password-123', creditProfile: { score: 650 } });
       const userId = created.success ? created.data.id : '';
 
       updateUserProfile(db, userId, { creditProfile: { score: 700 } }, 1);

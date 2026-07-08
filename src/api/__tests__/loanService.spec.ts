@@ -10,7 +10,7 @@ describe('loanService (Day 6 - Task 2: 대출 서비스 계층, δ=1600)', () =>
 
   beforeEach(() => {
     db = createDatabase(':memory:');
-    const created = registerUser(db, { email: 'loan-svc@example.com', name: 'Loan Service User' });
+    const created = registerUser(db, { email: 'loan-svc@example.com', name: 'Loan Service User', password: 'test-password-123' });
     userId = created.success ? created.data.id : '';
   });
 
@@ -38,7 +38,7 @@ describe('loanService (Day 6 - Task 2: 대출 서비스 계층, δ=1600)', () =>
 
     it('[T-SVC-202] 존재하지 않는 사용자로 신청', async () => {
       const result = await applyForLoan(db, {
-        userId: 'no-such-user',
+        userId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
         productId: 'standard-loan-1',
         originalAmount: 100000000,
         interestRate: 3.2,

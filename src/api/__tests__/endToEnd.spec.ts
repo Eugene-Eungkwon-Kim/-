@@ -30,6 +30,7 @@ describe('End-to-End Service Integration (Day 6 - Task 7: 종단 통합 테스�
       const registered = registerUser(db, {
         email: 'e2e-full@example.com',
         name: 'E2E Full User',
+        password: 'test-password-123',
         creditProfile: { score: 720 },
         financialSnapshot: { monthlyIncome: 6000000, totalDebt: 30000000, totalAssets: 400000000, savingsRate: 20 }
       });
@@ -58,7 +59,7 @@ describe('End-to-End Service Integration (Day 6 - Task 7: 종단 통합 테스�
     });
 
     it('[T-SVC-702] 낙관적 락 충돌이 서비스 계층까지 전파된다', () => {
-      const created = registerUser(db, { email: 'e2e-lock@example.com', name: 'E2E Lock User' });
+      const created = registerUser(db, { email: 'e2e-lock@example.com', name: 'E2E Lock User', password: 'test-password-123' });
       const userId = created.success ? created.data.id : '';
 
       const firstWriter = updateUserProfile(db, userId, { name: 'First Writer' }, 1);
@@ -75,7 +76,7 @@ describe('End-to-End Service Integration (Day 6 - Task 7: 종단 통합 테스�
     });
 
     it('[T-SVC-703] 대출 연체 감지 → 이력 기록 → 무결성 체크 연동', async () => {
-      const created = registerUser(db, { email: 'e2e-delinquent@example.com', name: 'E2E Delinquent User' });
+      const created = registerUser(db, { email: 'e2e-delinquent@example.com', name: 'E2E Delinquent User', password: 'test-password-123' });
       const userId = created.success ? created.data.id : '';
 
       const loan = await applyForLoan(db, {
@@ -108,7 +109,7 @@ describe('End-to-End Service Integration (Day 6 - Task 7: 종단 통합 테스�
     });
 
     it('[T-SVC-704] 백업 → 복구 → 복구된 DB로 서비스 재조회', async () => {
-      const created = registerUser(db, { email: 'e2e-backup@example.com', name: 'E2E Backup User' });
+      const created = registerUser(db, { email: 'e2e-backup@example.com', name: 'E2E Backup User', password: 'test-password-123' });
       const userId = created.success ? created.data.id : '';
       await applyForLoan(db, { userId, productId: 'p1', originalAmount: 100000000, interestRate: 3.2, termMonths: 120, startDate: '2026-01-01' });
 
@@ -135,7 +136,7 @@ describe('End-to-End Service Integration (Day 6 - Task 7: 종단 통합 테스�
     });
 
     it('[T-SVC-705] 여러 서비스가 동일 DB 상태를 즉시 공유한다', () => {
-      const created = registerUser(db, { email: 'e2e-shared@example.com', name: 'E2E Shared User', financialSnapshot: { monthlyIncome: 5000000 } });
+      const created = registerUser(db, { email: 'e2e-shared@example.com', name: 'E2E Shared User', password: 'test-password-123', financialSnapshot: { monthlyIncome: 5000000 } });
       const userId = created.success ? created.data.id : '';
 
       recordTransaction(db, { userId, transactionType: 'deposit', amount: 1000000, occurredAt: '2026-01-01' });
@@ -153,6 +154,7 @@ describe('End-to-End Service Integration (Day 6 - Task 7: 종단 통합 테스�
       const created = registerUser(db, {
         email: 'e2e-health@example.com',
         name: 'E2E Health User',
+        password: 'test-password-123',
         creditProfile: { score: 750 },
         financialSnapshot: { monthlyIncome: 5000000, totalDebt: 20000000, totalAssets: 200000000 }
       });

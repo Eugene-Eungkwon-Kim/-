@@ -17,7 +17,7 @@ describe('transactionService (Day 6 - Task 4: 거래/감사 서비스 계층, δ
 
   beforeEach(() => {
     db = createDatabase(':memory:');
-    const created = registerUser(db, { email: 'txn-svc@example.com', name: 'Txn Service User', financialSnapshot: { monthlyIncome: 5000000 } });
+    const created = registerUser(db, { email: 'txn-svc@example.com', name: 'Txn Service User', password: 'test-password-123', financialSnapshot: { monthlyIncome: 5000000 } });
     userId = created.success ? created.data.id : '';
   });
 

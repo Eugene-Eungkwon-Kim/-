@@ -14,6 +14,7 @@ describe('financialAnalyticsService (Day 6 - Task 5: 금융분석 서비스 계�
     const created = registerUser(db, {
       email: 'analytics@example.com',
       name: 'Analytics User',
+      password: 'test-password-123',
       creditProfile: { score: 680 },
       financialSnapshot: { monthlyIncome: 5000000, totalDebt: 50000000, totalAssets: 200000000, savingsRate: 12 }
     });

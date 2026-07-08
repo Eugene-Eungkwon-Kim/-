@@ -47,14 +47,14 @@ describe('errorMapping (Day 6 - Task 3: 응답 표준화 & 에러 처리, δ=144
     it('[T-SVC-306] 공용 유틸 도입 후에도 Task1/2 서비스 동작에 회귀가 없다', async () => {
       const db: Database.Database = createDatabase(':memory:');
       try {
-        const dup1 = registerUser(db, { email: 'regress@example.com', name: 'A' });
+        const dup1 = registerUser(db, { email: 'regress@example.com', name: 'A', password: 'test-password-123' });
         expect(dup1.success).toBe(true);
-        const dup2 = registerUser(db, { email: 'regress@example.com', name: 'B' });
+        const dup2 = registerUser(db, { email: 'regress@example.com', name: 'B', password: 'test-password-123' });
         expect(dup2.success).toBe(false);
         if (!dup2.success) expect(dup2.error.code).toBe('DUPLICATE_EMAIL');
 
         const loanResult = await applyForLoan(db, {
-          userId: 'no-such-user',
+          userId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
           productId: 'p1',
           originalAmount: 1000000,
           interestRate: 3.2,

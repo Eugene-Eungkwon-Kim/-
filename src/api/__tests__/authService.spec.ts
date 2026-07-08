@@ -10,7 +10,6 @@ describe('authService (Day 8 - Task 2: 로그인 & JWT 발급, δ=1535)', () => 
   beforeEach(() => {
     db = createDatabase(':memory:');
     registerUser(db, { email: 'auth-user@example.com', name: 'Auth User', password: 'correct-horse' });
-    registerUser(db, { email: 'no-password-user@example.com', name: 'No Password User' });
   });
 
   afterEach(() => {
@@ -36,10 +35,10 @@ describe('authService (Day 8 - Task 2: 로그인 & JWT 발급, δ=1535)', () => 
       if (!result.success) expect(result.error.code).toBe('INVALID_CREDENTIALS');
     });
 
-    it('[T-AUTH-14] 비밀번호를 설정하지 않은 사용자는 로그인할 수 없다', () => {
-      const result = verifyCredentials(db, 'no-password-user@example.com', '');
+    it('[T-AUTH-14] 빈 비밀번호로 로그인 시도는 VALIDATION_ERROR를 반환한다', () => {
+      const result = verifyCredentials(db, 'auth-user@example.com', '');
       expect(result.success).toBe(false);
-      if (!result.success) expect(result.error.code).toBe('INVALID_CREDENTIALS');
+      if (!result.success) expect(result.error.code).toBe('VALIDATION_ERROR');
     });
   });
 
