@@ -212,12 +212,46 @@ AU_CONFIG = CountryConfig(
     ),
 )
 
+# 태국: PHASE_13_1_GBL WBS 상 4차 그룹(JP, TH) 마지막 국가 (완화 tolerance ±15%)
+TH_CONFIG = CountryConfig(
+    country_code='TH',
+    currency='THB',
+    region_config={
+        'bangkok_cbd':            (13.732, 100.570, 0.015, 0.020, 12_000_000),
+        'bangkok_general':        (13.800, 100.550, 0.070, 0.080,  5_500_000),
+        'nonthaburi_samutprakan': (13.900, 100.500, 0.080, 0.100,  3_500_000),
+        'phuket':                 ( 7.951,  98.338, 0.060, 0.060,  6_500_000),
+        'pattaya_chonburi':       (12.928, 100.877, 0.060, 0.060,  4_000_000),
+        'chiang_mai':             (18.788,  98.985, 0.050, 0.060,  3_000_000),
+        'regional':               (15.000, 101.000, 2.000, 1.500,  2_200_000),
+    },
+    region_weights=(0.10, 0.22, 0.14, 0.07, 0.09, 0.08, 0.30),
+    lat_range=(5.6, 20.5),
+    lng_range=(97.3, 105.7),
+    market_level={2020: 0.90, 2021: 0.92, 2022: 0.96, 2023: 0.98, 2024: 1.00},
+    price_floor=500_000.0,
+    price_ceiling=60_000_000.0,
+    feature_min=(20.0, 500_000.0, 5.6, 97.3, 1.0),
+    feature_max=(300.0, 60_000_000.0, 20.5, 105.7, 5.0),
+    tolerance=0.15,
+    area_bins=(
+        (22.0,  35.0, 0.20),
+        (35.0,  50.0, 0.28),
+        (50.0,  70.0, 0.24),
+        (70.0, 100.0, 0.15),
+        (100.0,150.0, 0.09),
+        (150.0,300.0, 0.04),
+    ),
+    idiosyncratic_sigma=0.11,
+)
+
 COUNTRY_CONFIGS: Dict[str, CountryConfig] = {
     'KR': KR_CONFIG,
     'SG': SG_CONFIG,
     'HK': HK_CONFIG,
     'UK': UK_CONFIG,
     'AU': AU_CONFIG,
+    'TH': TH_CONFIG,
 }
 
 

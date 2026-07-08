@@ -9,12 +9,16 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from country_configs import AU_CONFIG, HK_CONFIG, KR_CONFIG, SG_CONFIG, UK_CONFIG, get_country_config
+from country_configs import (
+    AU_CONFIG, HK_CONFIG, KR_CONFIG, SG_CONFIG, TH_CONFIG, UK_CONFIG,
+    COUNTRY_CONFIGS, get_country_config,
+)
 from realistic_data_generator import generate_dataset, validate_and_report
 from generate_sg_realistic_data import generate_dataset as generate_sg_dataset
 from generate_hk_realistic_data import generate_dataset as generate_hk_dataset
 from generate_uk_realistic_data import generate_dataset as generate_uk_dataset
 from generate_au_realistic_data import generate_dataset as generate_au_dataset
+from generate_th_realistic_data import generate_dataset as generate_th_dataset
 
 
 class TestCountryConfigs:
@@ -42,7 +46,7 @@ class TestCountryConfigs:
             assert sum(config.region_weights) == pytest.approx(1.0, abs=1e-9)
 
     def test_region_count_matches_weight_count(self):
-        for config in (KR_CONFIG, SG_CONFIG, HK_CONFIG, UK_CONFIG, AU_CONFIG):
+        for config in COUNTRY_CONFIGS.values():
             assert len(config.region_config) == len(config.region_weights)
 
     def test_get_country_config_returns_hk(self):
@@ -53,6 +57,25 @@ class TestCountryConfigs:
 
     def test_get_country_config_returns_au(self):
         assert get_country_config('AU') is AU_CONFIG
+
+    def test_get_country_config_returns_th(self):
+        assert get_country_config('TH') is TH_CONFIG
+
+    def test_six_countries_registered_including_th(self):
+        """KR + Phase 13.1-GBL 4차 국가(TH) + 1-3차 파일럿(SG/HK/UK/AU)이 등록되어야 한다."""
+        assert 'TH' in COUNTRY_CONFIGS
+        assert {'KR', 'SG', 'HK', 'UK', 'AU', 'TH'} <= set(COUNTRY_CONFIGS)
+
+    def test_tolerances_match_claude_md_tolerance_map(self):
+        """국가별 tolerance는 CLAUDE.md TOLERANCE_MAP과 일치해야 한다."""
+        expected = {
+            'UK': 0.05,
+            'SG': 0.08, 'HK': 0.08,
+            'AU': 0.10,
+            'TH': 0.15,
+        }
+        for code, tolerance in expected.items():
+            assert COUNTRY_CONFIGS[code].tolerance == tolerance, code
 
 
 class TestRealisticDataGeneratorGeneric:
@@ -183,6 +206,40 @@ class TestAuDataGeneration:
         assert sydney_mean > regional_mean
 
 
+class TestThDataGeneration:
+    def test_prices_in_thb_scale(self):
+        df = generate_th_dataset(n_rows=1000, seed=42)
+        assert df['new_price'].min() >= TH_CONFIG.price_floor
+        assert df['new_price'].max() <= TH_CONFIG.price_ceiling
+
+    def test_coordinates_within_thailand_bounds(self):
+        df = generate_th_dataset(n_rows=1000, seed=42)
+        assert df['latitude'].between(*TH_CONFIG.lat_range).all()
+        assert df['longitude'].between(*TH_CONFIG.lng_range).all()
+
+    def test_no_target_leakage_with_higher_idiosyncratic_sigma(self):
+        """TH는 기본 sigma(0.08)로는 corr=0.9845로 누수 임계값(0.985) 직전까지
+        갔다 (방콕권 집중) — idiosyncratic_sigma를 HK 수준(0.11)으로 높여 여유 확보."""
+        df = generate_th_dataset(n_rows=5000, seed=42)
+        corr = df['old_price'].corr(df['new_price'])
+        assert corr < 0.985
+
+    def test_no_null_values(self):
+        df = generate_th_dataset(n_rows=500, seed=42)
+        assert df.isnull().sum().sum() == 0
+
+    def test_bangkok_cbd_pricier_than_regional(self):
+        """방콕 CBD는 리저널 지역보다 평균가가 높아야 한다."""
+        df = generate_th_dataset(n_rows=3000, seed=42)
+        cbd_mean = df[df['region_name'] == 'bangkok_cbd']['new_price'].mean()
+        regional_mean = df[df['region_name'] == 'regional']['new_price'].mean()
+        assert cbd_mean > regional_mean
+
+    def test_most_relaxed_tolerance(self):
+        """TH는 CLAUDE.md TOLERANCE_MAP 상 최완화(±15%) 국가다."""
+        assert TH_CONFIG.tolerance == max(c.tolerance for c in COUNTRY_CONFIGS.values())
+
+
 class TestEnsembleEngineCountryIsolation:
     """AVMEnsembleEngine 국가 필터링 회귀 테스트.
 
@@ -214,6 +271,7 @@ class TestEnsembleEngineCountryIsolation:
             'xgboost_HK', 'lightgbm_HK', 'gradient_boosting_HK', 'best_model_HK',
             'xgboost_UK', 'lightgbm_UK', 'gradient_boosting_UK', 'best_model_UK',
             'xgboost_AU', 'lightgbm_AU', 'gradient_boosting_AU', 'best_model_AU',
+            'xgboost_TH', 'lightgbm_TH', 'gradient_boosting_TH', 'best_model_TH',
         ]
         for name in filenames:
             with open(models_dir / f"{name}.pkl", 'wb') as f:
@@ -245,9 +303,15 @@ class TestEnsembleEngineCountryIsolation:
         engine = AVMEnsembleEngine(str(tmp_path / "models_ir"), country='AU')
         assert set(engine.models.keys()) == {'xgboost_AU', 'lightgbm_AU', 'gradient_boosting_AU'}
 
+    def test_th_engine_loads_exactly_three_th_models(self, multi_country_models_dir, tmp_path):
+        from avm_ensemble_engine import AVMEnsembleEngine
+
+        engine = AVMEnsembleEngine(str(tmp_path / "models_ir"), country='TH')
+        assert set(engine.models.keys()) == {'xgboost_TH', 'lightgbm_TH', 'gradient_boosting_TH'}
+
     def test_kr_engine_excludes_other_countries_and_variants(self, multi_country_models_dir, tmp_path):
         from avm_ensemble_engine import AVMEnsembleEngine
 
         engine = AVMEnsembleEngine(str(tmp_path / "models_ir"), country='KR')
         loaded = set(engine.models.keys())
-        assert not (loaded & {'xgboost_SG', 'xgboost_HK', 'xgboost_UK', 'xgboost_AU', 'best_model_KR', 'coldstart_KR', 'xgboost_KR_tuned'})
+        assert not (loaded & {'xgboost_SG', 'xgboost_HK', 'xgboost_UK', 'xgboost_AU', 'xgboost_TH', 'best_model_KR', 'coldstart_KR', 'xgboost_KR_tuned'})
