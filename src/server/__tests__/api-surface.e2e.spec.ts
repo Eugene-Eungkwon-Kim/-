@@ -101,7 +101,7 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
 
   it('대출금 상환 기록 — 소유자만 가능, 잘못된 대출 ID는 404', async () => {
     const { userId: userId1, token: token1 } = await registerAndLogin('payment-user1@example.com', 'User 1');
-    const { userId: userId2, token: token2 } = await registerAndLogin('payment-user2@example.com', 'User 2');
+    const { token: token2 } = await registerAndLogin('payment-user2@example.com', 'User 2');
 
     // User 1이 대출 신청
     const loanRes = await app.inject({

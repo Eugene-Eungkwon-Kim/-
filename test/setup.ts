@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+import { vi, beforeAll, afterEach, afterAll } from 'vitest';
 import { server } from './mocks/server';
 
 // MSW 서버 시작 (모든 테스트 전)

@@ -4,7 +4,7 @@
  * 소득, 부채, 신용점수, 자산을 기반으로 신용도 판단
  */
 
-import { CreditAssessmentInput, CreditAssessment } from '@types/credit';
+import { CreditAssessmentInput, CreditAssessment } from '../types/credit';
 
 export async function assessCredit(input: CreditAssessmentInput): Promise<CreditAssessment> {
   // 입력 검증

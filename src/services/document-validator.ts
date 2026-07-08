@@ -11,7 +11,7 @@ import {
   VALID_DOCUMENT_TYPES,
   MAX_FILE_SIZE,
   MAX_TOTAL_SIZE
-} from '@types/document';
+} from '../types/document';
 
 export async function validateDocument(input: DocumentValidationInput): Promise<DocumentValidationResult> {
   const errors: string[] = [];

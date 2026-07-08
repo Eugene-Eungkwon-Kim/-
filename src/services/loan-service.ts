@@ -3,7 +3,7 @@
  * D09: 금융로직 단위테스트
  */
 
-import { LoanProduct, LoanFilter } from '@types/loan';
+import { LoanProduct, LoanFilter } from '../types/loan';
 
 // Mock 데이터 (실제로는 API에서 가져옴)
 const mockProducts: LoanProduct[] = [

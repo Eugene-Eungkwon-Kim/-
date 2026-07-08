@@ -4,7 +4,7 @@
  * 월정액 이자 계산 (compound interest formula)
  */
 
-import { LoanCalculationInput, LoanCalculationResult } from '@types/loan';
+import { LoanCalculationInput, LoanCalculationResult } from '../types/loan';
 
 export async function calculateLoanPayment(input: LoanCalculationInput): Promise<LoanCalculationResult> {
   // 입력 검증

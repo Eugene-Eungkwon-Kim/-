@@ -1,5 +1,4 @@
 import path from 'node:path';
-import pino from 'pino';
 import Fastify, { FastifyReply, FastifyRequest, FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
