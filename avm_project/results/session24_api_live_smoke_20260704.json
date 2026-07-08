@@ -1,0 +1,88 @@
+{
+  "base_url": "http://127.0.0.1:8000",
+  "created_at": "2026-07-04T15:37:14.324704",
+  "overall": "PASS",
+  "checks": [
+    {
+      "name": "root",
+      "status": "PASS",
+      "detail": "root endpoint",
+      "evidence": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "docs": "/docs"
+        }
+      }
+    },
+    {
+      "name": "openapi_response_models",
+      "status": "PASS",
+      "detail": "non-empty response schemas",
+      "evidence": {
+        "missing": []
+      }
+    },
+    {
+      "name": "precedents_utf8",
+      "status": "PASS",
+      "detail": "Korean query precedent search",
+      "evidence": {
+        "status": 200,
+        "count": 3
+      }
+    },
+    {
+      "name": "auction_stats_utf8",
+      "status": "PASS",
+      "detail": "Korean query auction stats",
+      "evidence": {
+        "status": 200,
+        "stats": 1
+      }
+    },
+    {
+      "name": "estimate_empty_diagnostics",
+      "status": "PASS",
+      "detail": "0-comparable diagnostic response",
+      "evidence": {
+        "status": 200,
+        "comparable_count": 0,
+        "diagnostics": {
+          "status": "NO_COMPARABLES",
+          "reason_codes": [
+            "NO_SOURCE_BACKED_COMPARABLES"
+          ],
+          "query": {
+            "address_sido": "경기도",
+            "address_sigungu": "화성시",
+            "property_type": "아파트",
+            "land_area": null,
+            "building_area": null
+          },
+          "probe_counts": {
+            "sido_count": 1139,
+            "sigungu_count": 113,
+            "property_type_count": 27,
+            "appraisal_candidate_count": 0,
+            "transaction_candidate_count": 0
+          },
+          "customer_safe": false
+        }
+      }
+    },
+    {
+      "name": "rag_health_degraded_contract",
+      "status": "PASS",
+      "detail": "explicit degraded health contract",
+      "evidence": {
+        "status": 200,
+        "health": "degraded",
+        "disabled_services": [
+          "milvus",
+          "openai"
+        ]
+      }
+    }
+  ]
+}

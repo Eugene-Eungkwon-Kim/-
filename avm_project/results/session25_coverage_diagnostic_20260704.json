@@ -1,0 +1,1038 @@
+{
+  "created_at": "2026-07-04T15:25:05.208711",
+  "db_path": "F:\\NPL전례\\avm_project\\data\\npl_avm.db",
+  "limit": 60,
+  "summary": {
+    "diagnosed_groups": 60,
+    "reason_counts": {
+      "NO_SOURCE_BACKED_COMPARABLES": 36,
+      "HAS_SOURCE_BACKED_COMPARABLES": 24
+    },
+    "crosswalk_candidates": 3,
+    "type_candidates": 90,
+    "queue_rows": 3,
+    "customer_safe_true": 0
+  },
+  "diagnostics": [
+    {
+      "sido": "경기도",
+      "sigungu": "시흥시",
+      "property_type": "8층 제1종근린생활시설 및 업무시설(오피스텔)",
+      "property_type_class": "OFFICETEL_NON_RESIDENTIAL",
+      "property_group_count": 32,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 138,
+        "property_type_count": 32,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "화성시",
+      "property_type": "다세대주택",
+      "property_type_class": "MULTIFAMILY",
+      "property_group_count": 27,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 113,
+        "property_type_count": 28,
+        "appraisal_candidate_count": 28,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "대구광역시",
+      "sigungu": "동구",
+      "property_type": "지하2층 지상8층 자동차관련시설",
+      "property_type_class": "OTHER",
+      "property_group_count": 25,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 159,
+        "sigungu_count": 64,
+        "property_type_count": 25,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "하남시",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 24,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 62,
+        "property_type_count": 24,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "시흥시",
+      "property_type": "근린상가",
+      "property_type_class": "RETAIL",
+      "property_group_count": 23,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 138,
+        "property_type_count": 23,
+        "appraisal_candidate_count": 1,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경상남도",
+      "sigungu": "밀양시",
+      "property_type": "답",
+      "property_type_class": "LAND",
+      "property_group_count": 23,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 188,
+        "sigungu_count": 23,
+        "property_type_count": 23,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "김포시",
+      "property_type": "대",
+      "property_type_class": "LAND",
+      "property_group_count": 21,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 102,
+        "property_type_count": 22,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "시흥시",
+      "property_type": "10층 위락시설,숙박시설",
+      "property_type_class": "RETAIL",
+      "property_group_count": 18,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 138,
+        "property_type_count": 18,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "평택시",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 16,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 72,
+        "property_type_count": 16,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "대구광역시",
+      "sigungu": "동구",
+      "property_type": "지하1층 지상5층 자동차관련시설",
+      "property_type_class": "OTHER",
+      "property_group_count": 16,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 159,
+        "sigungu_count": 64,
+        "property_type_count": 16,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "대전광역시",
+      "sigungu": "유성구",
+      "property_type": "16층 공장(지식산업센터) 및 공동주택(기숙사) 및 근린생활시설",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 16,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 56,
+        "sigungu_count": 35,
+        "property_type_count": 16,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "전북특별자치도",
+      "sigungu": "전주시 완산구",
+      "property_type": "9층 제2종근린생활시설",
+      "property_type_class": "RETAIL",
+      "property_group_count": 16,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 85,
+        "sigungu_count": 18,
+        "property_type_count": 16,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "서울특별시",
+      "sigungu": "금천구",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 15,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 355,
+        "sigungu_count": 41,
+        "property_type_count": 18,
+        "appraisal_candidate_count": 2,
+        "transaction_candidate_count": 5
+      }
+    },
+    {
+      "sido": "인천광역시",
+      "sigungu": "연수구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 15,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 197,
+        "sigungu_count": 30,
+        "property_type_count": 21,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "대구광역시",
+      "sigungu": "달성군",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 14,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 159,
+        "sigungu_count": 30,
+        "property_type_count": 17,
+        "appraisal_candidate_count": 9,
+        "transaction_candidate_count": 5
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "의정부시",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 13,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 37,
+        "property_type_count": 14,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "서울특별시",
+      "sigungu": "구로구",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 13,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 355,
+        "sigungu_count": 24,
+        "property_type_count": 14,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "인천광역시",
+      "sigungu": "서구",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 13,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 197,
+        "sigungu_count": 72,
+        "property_type_count": 13,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "고양시 덕양구",
+      "property_type": "근린상가",
+      "property_type_class": "RETAIL",
+      "property_group_count": 12,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 58,
+        "property_type_count": 12,
+        "appraisal_candidate_count": 2,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "김포시",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 12,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 102,
+        "property_type_count": 34,
+        "appraisal_candidate_count": 3,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "시흥시",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 12,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 138,
+        "property_type_count": 28,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "화성시 만세구",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 12,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 27,
+        "property_type_count": 13,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "서울특별시",
+      "sigungu": "강동구",
+      "property_type": "4층 도시형생활주택",
+      "property_type_class": "MULTIFAMILY",
+      "property_group_count": 12,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 355,
+        "sigungu_count": 37,
+        "property_type_count": 12,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "서울특별시",
+      "sigungu": "강동구",
+      "property_type": "다세대",
+      "property_type_class": "MULTIFAMILY",
+      "property_group_count": 12,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 355,
+        "sigungu_count": 37,
+        "property_type_count": 12,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "김포시",
+      "property_type": "도로",
+      "property_type_class": "LAND",
+      "property_group_count": 11,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 102,
+        "property_type_count": 11,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "고양시 덕양구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 10,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 58,
+        "property_type_count": 20,
+        "appraisal_candidate_count": 1,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "시흥시",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 10,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 138,
+        "property_type_count": 10,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "의정부시",
+      "property_type": "10층 공장(지식산업센터)",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 10,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 37,
+        "property_type_count": 10,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "평택시",
+      "property_type": "근린상가",
+      "property_type_class": "RETAIL",
+      "property_group_count": 10,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 72,
+        "property_type_count": 10,
+        "appraisal_candidate_count": 2,
+        "transaction_candidate_count": 4
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "평택시",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 10,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 72,
+        "property_type_count": 27,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "화성시",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 10,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 113,
+        "property_type_count": 12,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경상남도",
+      "sigungu": "김해시",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 10,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 188,
+        "sigungu_count": 49,
+        "property_type_count": 11,
+        "appraisal_candidate_count": 6,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "인천광역시",
+      "sigungu": "서구",
+      "property_type": "근린상가",
+      "property_type_class": "RETAIL",
+      "property_group_count": 10,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 197,
+        "sigungu_count": 72,
+        "property_type_count": 10,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "충청남도",
+      "sigungu": "아산시",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 10,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 106,
+        "sigungu_count": 26,
+        "property_type_count": 16,
+        "appraisal_candidate_count": 2,
+        "transaction_candidate_count": 9
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "김포시",
+      "property_type": "단층 제2종근린생활시설",
+      "property_type_class": "RETAIL",
+      "property_group_count": 9,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 102,
+        "property_type_count": 9,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "남양주시",
+      "property_type": "근린상가",
+      "property_type_class": "RETAIL",
+      "property_group_count": 9,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 41,
+        "property_type_count": 9,
+        "appraisal_candidate_count": 2,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "평택시",
+      "property_type": "6층 근린생활시설",
+      "property_type_class": "RETAIL",
+      "property_group_count": 9,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 72,
+        "property_type_count": 9,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "하남시",
+      "property_type": "근린상가",
+      "property_type_class": "RETAIL",
+      "property_group_count": 9,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 62,
+        "property_type_count": 9,
+        "appraisal_candidate_count": 3,
+        "transaction_candidate_count": 5
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "화성시",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 9,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 113,
+        "property_type_count": 27,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경상북도",
+      "sigungu": "성주군",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 9,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 138,
+        "sigungu_count": 16,
+        "property_type_count": 9,
+        "appraisal_candidate_count": 5,
+        "transaction_candidate_count": 2
+      }
+    },
+    {
+      "sido": "부산광역시",
+      "sigungu": "해운대구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 9,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 116,
+        "sigungu_count": 17,
+        "property_type_count": 14,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "고양시 일산동구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 8,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 25,
+        "property_type_count": 11,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "김포시",
+      "property_type": "아파트형공장",
+      "property_type_class": "KNOWLEDGE_INDUSTRIAL_CENTER",
+      "property_group_count": 8,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 102,
+        "property_type_count": 8,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "파주시",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 8,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 36,
+        "property_type_count": 8,
+        "appraisal_candidate_count": 3,
+        "transaction_candidate_count": 3
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "화성시",
+      "property_type": "근린상가",
+      "property_type_class": "RETAIL",
+      "property_group_count": 8,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 113,
+        "property_type_count": 8,
+        "appraisal_candidate_count": 3,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경상남도",
+      "sigungu": "김해시",
+      "property_type": "전",
+      "property_type_class": "LAND",
+      "property_group_count": 8,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 188,
+        "sigungu_count": 49,
+        "property_type_count": 8,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 2
+      }
+    },
+    {
+      "sido": "경상북도",
+      "sigungu": "경주시",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 8,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 138,
+        "sigungu_count": 14,
+        "property_type_count": 10,
+        "appraisal_candidate_count": 7,
+        "transaction_candidate_count": 3
+      }
+    },
+    {
+      "sido": "대구광역시",
+      "sigungu": "달성군",
+      "property_type": "잡종지",
+      "property_type_class": "OTHER",
+      "property_group_count": 8,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 159,
+        "sigungu_count": 30,
+        "property_type_count": 8,
+        "appraisal_candidate_count": 1,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "대구광역시",
+      "sigungu": "수성구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 8,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 159,
+        "sigungu_count": 14,
+        "property_type_count": 10,
+        "appraisal_candidate_count": 2,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "부산광역시",
+      "sigungu": "동래구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 8,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 116,
+        "sigungu_count": 10,
+        "property_type_count": 9,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "전북특별자치도",
+      "sigungu": "전주시 덕진구",
+      "property_type": "5층 문화 및 집회시설, 판매 및 영업시설",
+      "property_type_class": "OTHER",
+      "property_group_count": 8,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 85,
+        "sigungu_count": 14,
+        "property_type_count": 8,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "고양시 일산서구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 7,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 25,
+        "property_type_count": 11,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "남양주시",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 7,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 41,
+        "property_type_count": 13,
+        "appraisal_candidate_count": 1,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "안산시 단원구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 7,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 24,
+        "property_type_count": 13,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경기도",
+      "sigungu": "포천시",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 7,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 1139,
+        "sigungu_count": 33,
+        "property_type_count": 14,
+        "appraisal_candidate_count": 1,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "경상북도",
+      "sigungu": "고령군",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 7,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 138,
+        "sigungu_count": 16,
+        "property_type_count": 14,
+        "appraisal_candidate_count": 1,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "서울특별시",
+      "sigungu": "노원구",
+      "property_type": "5층 공동주택(다세대주택)",
+      "property_type_class": "MULTIFAMILY",
+      "property_group_count": 7,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 355,
+        "sigungu_count": 30,
+        "property_type_count": 7,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "서울특별시",
+      "sigungu": "노원구",
+      "property_type": "다세대주택",
+      "property_type_class": "MULTIFAMILY",
+      "property_group_count": 7,
+      "reason_codes": [
+        "NO_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 355,
+        "sigungu_count": 30,
+        "property_type_count": 14,
+        "appraisal_candidate_count": 0,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "서울특별시",
+      "sigungu": "서초구",
+      "property_type": "아파트",
+      "property_type_class": "RESIDENTIAL_APARTMENT",
+      "property_group_count": 7,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 355,
+        "sigungu_count": 15,
+        "property_type_count": 11,
+        "appraisal_candidate_count": 2,
+        "transaction_candidate_count": 0
+      }
+    },
+    {
+      "sido": "인천광역시",
+      "sigungu": "서구",
+      "property_type": "공장",
+      "property_type_class": "FACTORY",
+      "property_group_count": 7,
+      "reason_codes": [
+        "HAS_SOURCE_BACKED_COMPARABLES"
+      ],
+      "probe_counts": {
+        "sido_count": 197,
+        "sigungu_count": 72,
+        "property_type_count": 27,
+        "appraisal_candidate_count": 3,
+        "transaction_candidate_count": 0
+      }
+    }
+  ]
+}
