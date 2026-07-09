@@ -107,3 +107,5 @@ docs/TRACK_*.md
 docs/AVM_PROJECT_STATUS_*.md
 docs/OFFICIAL_*.md
 docs/PROJECT_EXECUTION_*.md
+data/*checkpoint*.json
+_FICTION_QUARANTINE/
