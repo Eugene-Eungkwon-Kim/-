@@ -13,7 +13,8 @@ export default defineConfig({
       '@db': path.resolve(__dirname, './src/db'),
       '@repositories': path.resolve(__dirname, './src/repositories'),
       '@validation': path.resolve(__dirname, './src/validation'),
-      '@api': path.resolve(__dirname, './src/api')
+      '@api': path.resolve(__dirname, './src/api'),
+      '@audit': path.resolve(__dirname, './src/audit')
     }
   },
 

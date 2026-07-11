@@ -30,6 +30,7 @@ import { TrendMetric } from '../types/financialSnapshot';
 import { RecordPaymentInput } from '../types/loanPortfolio';
 import { RecordTransactionInput, TransactionFilter } from '../types/transaction';
 import { resolveServerEnv } from './env';
+import { AuditLogger } from '../audit/auditLogger';
 
 export interface BuildServerOptions {
   jwtSecret?: string;
@@ -458,6 +459,40 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
     if (!isAdmin(request)) return forbidden(reply);
     const { retentionDays, now } = request.body as { retentionDays: number; now: string };
     respond(reply, pruneOldBackups(db, backupDir, retentionDays, now));
+  });
+
+  // Day 13 - Task G (δ=550): 감사 로그 조회 엔드포인트
+  const auditLogger = new AuditLogger(db);
+
+  // 1. 모든 감사 로그 조회 (페이지네이션 지원)
+  app.get('/api/admin/audit-logs', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const query = request.query as { limit?: string; offset?: string; action?: string; resourceType?: string };
+    const limit = parseInt(query.limit ?? '100', 10);
+    const offset = parseInt(query.offset ?? '0', 10);
+    const logs = auditLogger.query({ limit, offset, action: query.action as any, resourceType: query.resourceType });
+    const count = auditLogger.count();
+    reply.send({ success: true, data: { logs, total: count, limit, offset } });
+  });
+
+  // 2. 특정 사용자의 감사 로그 조회
+  app.get('/api/admin/audit-logs/user/:userId', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const { userId } = request.params as { userId: string };
+    const query = request.query as { limit?: string; offset?: string };
+    const limit = parseInt(query.limit ?? '100', 10);
+    const offset = parseInt(query.offset ?? '0', 10);
+    const logs = auditLogger.getByUser(userId, { limit, offset });
+    const count = auditLogger.count({ userId });
+    reply.send({ success: true, data: { logs, total: count, limit, offset } });
+  });
+
+  // 3. 특정 리소스의 변경 이력 조회
+  app.get('/api/admin/audit-logs/resource/:resourceId', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const { resourceId } = request.params as { resourceId: string };
+    const logs = auditLogger.getResourceHistory(resourceId);
+    reply.send({ success: true, data: logs });
   });
 
   return app;
