@@ -12,6 +12,7 @@ import {
 } from '../types/user';
 import { DuplicateEmailError, OptimisticLockError, UserNotFoundError } from './errors';
 import { validateRegisterUserInput, validateUpdateUserInput } from '../validation/userValidation';
+import { encrypt, decrypt } from '../utils/encryption';
 
 const PASSWORD_SALT_ROUNDS = 10;
 
@@ -45,6 +46,9 @@ interface UserRow {
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
+  encrypted_email: string | null;
+  encrypted_phone: string | null;
+  encryption_version: number;
 }
 
 type UserRowColumn = keyof UserRow;
@@ -68,9 +72,13 @@ function computeCreditGrade(score: number | null | undefined): CreditGrade | nul
 }
 
 function mapRowToProfile(row: UserRow): UserProfile {
+  // 암호화된 PII 데이터를 복호화한다 (투명한 복호화)
+  const email = row.encrypted_email ? decrypt(row.encrypted_email) : row.email;
+  const phone = row.encrypted_phone ? decrypt(row.encrypted_phone) : row.phone;
+
   return {
     id: row.id,
-    email: row.email,
+    email,
     name: row.name,
     dateOfBirth: row.date_of_birth,
     employment: {
@@ -80,7 +88,7 @@ function mapRowToProfile(row: UserRow): UserProfile {
       company: row.employment_company
     },
     contact: {
-      phone: row.phone,
+      phone,
       address: {
         street: row.address_street,
         city: row.address_city,
@@ -130,19 +138,25 @@ export class UserRepository {
     const grade = computeCreditGrade(input.creditProfile?.score);
     const passwordHash = input.password ? bcrypt.hashSync(input.password, PASSWORD_SALT_ROUNDS) : null;
 
+    // PII 데이터를 암호화한다
+    const encryptedEmail = encrypt(input.email);
+    const encryptedPhone = input.contact?.phone ? encrypt(input.contact.phone) : null;
+
     const insert = this.db.prepare(`
       INSERT INTO users (
         id, email, name, password_hash, date_of_birth,
         employment_status, employment_industry, employment_tenure, employment_company,
         phone, address_street, address_city, address_zipcode, address_country,
         credit_score, credit_grade, credit_inquiries, credit_delinquency,
-        income, expenses, assets, debt, savings_rate
+        income, expenses, assets, debt, savings_rate,
+        encrypted_email, encrypted_phone, encryption_version
       ) VALUES (
         @id, @email, @name, @passwordHash, @dateOfBirth,
         @employmentStatus, @employmentIndustry, @employmentTenure, @employmentCompany,
         @phone, @addressStreet, @addressCity, @addressZipcode, @addressCountry,
         @creditScore, @creditGrade, @creditInquiries, @creditDelinquency,
-        @income, @expenses, @assets, @debt, @savingsRate
+        @income, @expenses, @assets, @debt, @savingsRate,
+        @encryptedEmail, @encryptedPhone, @encryptionVersion
       )
     `);
 
@@ -170,7 +184,10 @@ export class UserRepository {
         expenses: input.financialSnapshot?.monthlyExpenses ?? null,
         assets: input.financialSnapshot?.totalAssets ?? null,
         debt: input.financialSnapshot?.totalDebt ?? null,
-        savingsRate: input.financialSnapshot?.savingsRate ?? null
+        savingsRate: input.financialSnapshot?.savingsRate ?? null,
+        encryptedEmail,
+        encryptedPhone,
+        encryptionVersion: 1
       });
     } catch (error) {
       if (error instanceof Error && /UNIQUE constraint failed: users\.email/.test(error.message)) {
@@ -246,6 +263,13 @@ export class UserRepository {
     if (updates.creditProfile?.score !== undefined) {
       setIfChanged('credit_score', updates.creditProfile.score);
       setIfChanged('credit_grade', computeCreditGrade(updates.creditProfile.score));
+    }
+
+    // 암호화된 전화번호 업데이트
+    if (updates.contact?.phone !== undefined) {
+      const encryptedPhone = updates.contact.phone ? encrypt(updates.contact.phone) : null;
+      columnUpdates['encrypted_phone'] = encryptedPhone;
+      diff['encrypted_phone'] = { from: currentRow.encrypted_phone, to: encryptedPhone };
     }
 
     if (Object.keys(columnUpdates).length === 0) {

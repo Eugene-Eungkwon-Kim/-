@@ -1,6 +1,9 @@
 import { vi, beforeAll, afterEach, afterAll } from 'vitest';
 import { server } from './mocks/server';
 
+// 암호화 키 설정 (테스트용)
+process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
 // MSW 서버 시작 (모든 테스트 전)
 beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
