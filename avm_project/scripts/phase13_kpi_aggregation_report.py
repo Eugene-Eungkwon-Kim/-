@@ -142,9 +142,10 @@ def generate_report() -> None:
 
     log.info("\n3️⃣ International Expansion")
     log.info("   조건: KR MAPE < 8.5% 검증 완료")
-    log.info("   전략: UK, SG, HK, AU, TH 순서 적용")
-    log.info("   목표고객: 글로벌 핀테크, P2P 대출 플랫폼")
-    log.info("   예상 시간: 2~3주일")
+    log.info("   전략: BR(1순위), UK, SG, HK, AU, TH 순서 적용 (6개국)")
+    log.info("   목표고객: 글로벌 핀테크, P2P 대출 플랫폼, 신흥시장 금융기관")
+    log.info("   예상 시간: 4~4.5주일 (국가별 40분 × 6 = 4시간 학습)")
+    log.info("   우선순위: 브라질(주요 신흥시장) → 영국(선진) → 아시아 → 호주")
 
     log.info("\n" + "=" * 80)
     log.info("【리스크 평가】")
