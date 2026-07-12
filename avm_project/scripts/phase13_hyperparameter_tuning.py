@@ -31,9 +31,10 @@ def load_and_prepare(data_path: str):
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     if TARGET_COL in numeric_cols:
         numeric_cols.remove(TARGET_COL)
-    X = df[numeric_cols].fillna(df[numeric_cols].mean()).to_numpy(dtype=np.float32)
-    y = df[TARGET_COL].to_numpy(dtype=np.float32)
-    return train_test_split(X, y, test_size=0.2, random_state=42)
+    X = np.ascontiguousarray(df[numeric_cols].fillna(df[numeric_cols].mean()).to_numpy(dtype=np.float64))
+    y = np.ascontiguousarray(df[TARGET_COL].to_numpy(dtype=np.float64))
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
+    return np.ascontiguousarray(X_tr), np.ascontiguousarray(X_te), np.ascontiguousarray(y_tr), np.ascontiguousarray(y_te)
 
 
 def tune_xgboost(X_tr: np.ndarray, X_te: np.ndarray, y_tr: np.ndarray, y_te: np.ndarray) -> Dict[str, Any]:
