@@ -69,7 +69,13 @@ def evaluate_model(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float
     return r2_score(y_true, y_pred), mean_absolute_percentage_error(y_true, y_pred)
 
 
-def train_xgboost(X_tr, y_tr, X_te, y_te, device_id: Optional[int]) -> Tuple[float, float]:
+def train_xgboost(
+    X_tr: np.ndarray,
+    y_tr: np.ndarray,
+    X_te: np.ndarray,
+    y_te: np.ndarray,
+    device_id: Optional[int],
+) -> Tuple[float, float]:
     """Train XGBoost on GPU (RTX 5050) or CPU fallback."""
     import xgboost as xgb
 
@@ -82,7 +88,13 @@ def train_xgboost(X_tr, y_tr, X_te, y_te, device_id: Optional[int]) -> Tuple[flo
     return evaluate_model(y_te, model.predict(X_te))
 
 
-def train_lightgbm(X_tr, y_tr, X_te, y_te, device_id: Optional[int]) -> Tuple[float, float]:
+def train_lightgbm(
+    X_tr: np.ndarray,
+    y_tr: np.ndarray,
+    X_te: np.ndarray,
+    y_te: np.ndarray,
+    device_id: Optional[int],
+) -> Tuple[float, float]:
     """Train LightGBM on GPU (RTX 5050); fall back to CPU if GPU/OpenCL absent."""
     import lightgbm as lgb
 
@@ -100,7 +112,12 @@ def train_lightgbm(X_tr, y_tr, X_te, y_te, device_id: Optional[int]) -> Tuple[fl
         return _fit(configure_lightgbm_gpu(None))
 
 
-def train_gradient_boosting(X_tr, y_tr, X_te, y_te) -> Tuple[float, float]:
+def train_gradient_boosting(
+    X_tr: np.ndarray,
+    y_tr: np.ndarray,
+    X_te: np.ndarray,
+    y_te: np.ndarray,
+) -> Tuple[float, float]:
     """Train Gradient Boosting on CPU (diversity baseline)."""
     model = GradientBoostingRegressor(
         n_estimators=200, max_depth=5, learning_rate=0.05, subsample=0.8,

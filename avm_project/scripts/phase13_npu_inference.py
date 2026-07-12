@@ -6,6 +6,7 @@ Target: 1ms latency, 70% power reduction vs RTX training.
 """
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -87,7 +88,6 @@ def run_inference(compiled_model: object, features: np.ndarray,
                  model_name: str, country: str = 'KR') -> Optional[InferenceResult]:
     """Execute inference and return prediction. Supports OpenVINO IR, ONNX Runtime, and sklearn models."""
     try:
-        import time
         start = time.perf_counter()
 
         input_data = preprocess_input(features, country).reshape(1, -1)
@@ -208,7 +208,6 @@ class NPUInferenceEngine:
             log.error("No models loaded")
             return 0.0, 0.0, 0.0
 
-        import time
         start = time.perf_counter()
 
         avg_price, avg_confidence = ensemble_predict(self.models, property_features, self.country)
@@ -230,7 +229,6 @@ class NPUInferenceEngine:
 def main() -> None:
     """Demonstrate inference engine and report real per-model backend + latency."""
     import argparse
-    import time
 
     from country_configs import get_country_config
 

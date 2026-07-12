@@ -21,10 +21,28 @@ from typing import Callable, Dict, Optional
 
 import numpy as np
 
+try:
+    import openvino as ov
+except ImportError:
+    ov = None
+
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 FEATURE_COLS = ['area_sqm', 'old_price', 'latitude', 'longitude', 'property_type']
+
+
+def _save_onnx_model(onnx_model: object, name: str, output_dir: Path) -> Optional[str]:
+    """Save ONNX model and log size."""
+    try:
+        import onnx
+        onnx_path = output_dir / f"{name}.onnx"
+        onnx.save(onnx_model, str(onnx_path))
+        log.info(f"  [{name}] ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
+        return str(onnx_path)
+    except Exception as e:
+        log.warning(f"  [{name}] ONNX 저장 실패: {e}")
+        return None
 
 
 def convert_xgboost_native(model: object, name: str, output_dir: Path) -> Optional[str]:
@@ -34,16 +52,12 @@ def convert_xgboost_native(model: object, name: str, output_dir: Path) -> Option
     그 이름으로 저장할 뿐 실제 ONNX를 만들지 않는다(다운스트림에서 파싱 실패
     로 발견됨). onnxmltools를 통한 변환만 유효하다.
     """
-    onnx_path = output_dir / f"{name}.onnx"
     try:
-        import onnx
         import onnxmltools
         from skl2onnx.common.data_types import FloatTensorType
         initial_types = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
         onnx_model = onnxmltools.convert_xgboost(model, initial_types=initial_types)
-        onnx.save(onnx_model, str(onnx_path))
-        log.info(f"  [{name}] onnxmltools ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
-        return str(onnx_path)
+        return _save_onnx_model(onnx_model, name, output_dir)
     except Exception as e:
         log.warning(f"  [{name}] ONNX 변환 전체 실패: {e}")
         return None
@@ -67,14 +81,11 @@ def convert_lightgbm_native(model: object, name: str, output_dir: Path) -> Optio
         log.debug(f"  [{name}] hummingbird 실패: {e}")
 
     try:
-        import onnx
         import onnxmltools
         from skl2onnx.common.data_types import FloatTensorType
         initial_types = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
         onnx_model = onnxmltools.convert_lightgbm(model, initial_types=initial_types)
-        onnx.save(onnx_model, str(onnx_path))
-        log.info(f"  [{name}] onnxmltools ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
-        return str(onnx_path)
+        return _save_onnx_model(onnx_model, name, output_dir)
     except Exception as e:
         log.warning(f"  [{name}] ONNX 변환 전체 실패: {e}")
         return None
@@ -82,16 +93,12 @@ def convert_lightgbm_native(model: object, name: str, output_dir: Path) -> Optio
 
 def convert_sklearn_native(model: object, name: str, output_dir: Path) -> Optional[str]:
     """sklearn 호환 모델(GradientBoostingRegressor 등) → ONNX (skl2onnx)."""
-    onnx_path = output_dir / f"{name}.onnx"
     try:
-        import onnx
         from skl2onnx import convert_sklearn
         from skl2onnx.common.data_types import FloatTensorType
         initial_types = [('float_input', FloatTensorType([None, len(FEATURE_COLS)]))]
         onnx_model = convert_sklearn(model, initial_types=initial_types)
-        onnx.save(onnx_model, str(onnx_path))
-        log.info(f"  [{name}] skl2onnx ONNX: {onnx_path.stat().st_size/1024:.1f}KB")
-        return str(onnx_path)
+        return _save_onnx_model(onnx_model, name, output_dir)
     except Exception as e:
         log.warning(f"  [{name}] ONNX 변환 전체 실패: {e}")
         return None
@@ -106,16 +113,16 @@ def convert_to_openvino_ir(onnx_path: str, name: str, output_dir: Path) -> Optio
     위한 포맷이므로, 트리 모델은 이 단계에서 항상 실패하며 ONNX(onnxruntime)
     단계에 머무는 것이 설계상 정상이다 — 코드 버그가 아니다.
     """
+    if ov is None:
+        log.warning(f"  [{name}] openvino 미설치 - IR 변환 건너뜀")
+        return None
+
     xml_path = output_dir / f"{name}.xml"
     try:
-        import openvino as ov
         ov_model = ov.convert_model(onnx_path)
         ov.save_model(ov_model, str(xml_path))
         log.info(f"  [{name}] OpenVINO IR: {xml_path.stat().st_size/1024/1024:.2f}MB")
         return str(xml_path)
-    except ImportError:
-        log.warning(f"  [{name}] openvino 미설치 - IR 변환 건너뜀")
-        return None
     except Exception as e:
         log.info(
             f"  [{name}] OpenVINO IR 변환 불가 (트리 앙상블은 IR 미지원 - 정상, ONNX 유지): "
