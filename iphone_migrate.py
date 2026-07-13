@@ -72,6 +72,9 @@ def get_category(path: Path, live_photo_stems: set) -> str:
     ext  = path.suffix.lower()
     stem = path.stem
 
+    if ext in {".heic", ".heif"} and stem in live_photo_stems:
+        return "라이브포토"
+
     if ext == ".mov":
         if stem in live_photo_stems:
             return "라이브포토"
