@@ -171,6 +171,7 @@ DCIM/100APPLE/IMG_0001.HEIC  + IMG_0001.MOV  → 라이브포토/2024/01/
 - ✅ 파일명 충돌 시 `file_1_2_3` 형태 무한 증가 → 수정
 - ✅ `_getexif()` deprecated → `getexif()` API로 교체
 - ✅ Live Photo 크로스-디렉토리 감지 검증 완료
+- ✅ Live Photo의 HEIC가 `사진/`으로 분리되던 문제 → HEIC+MOV 쌍 모두 `라이브포토/`로 이동
 
 ---
 
