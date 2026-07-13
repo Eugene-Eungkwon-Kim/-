@@ -27,6 +27,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 TARGET_R2 = 0.84
 TARGET_MAPE = 0.105
+SUBPROCESS_TIMEOUT_SEC = 300
+MAX_STDERR_CHARS = 2000
+DEFAULT_DATA_ROWS = 10000
 
 
 @dataclass
@@ -69,16 +72,16 @@ def run_step(name: str, command: List[str]) -> StepResult:
     log.info(f"\n▶ {name}")
     t0 = time.time()
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_SEC)
         elapsed = time.time() - t0
         if result.returncode != 0:
-            return StepResult(name, False, elapsed, result.stderr[-2000:])
+            return StepResult(name, False, elapsed, result.stderr[-MAX_STDERR_CHARS:])
         return StepResult(name, True, elapsed)
     except subprocess.TimeoutExpired:
-        return StepResult(name, False, time.time() - t0, "timeout (300s 초과)")
+        return StepResult(name, False, time.time() - t0, f"timeout ({SUBPROCESS_TIMEOUT_SEC}s 초과)")
 
 
-def run_pipeline(data_rows: int = 10000) -> List[StepResult]:
+def run_pipeline(data_rows: int = DEFAULT_DATA_ROWS) -> List[StepResult]:
     """데이터 생성 → 학습 → 검증 → 변환 전체 파이프라인 실행."""
     py = sys.executable
     steps = [
@@ -182,7 +185,7 @@ def save_run_summary(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description='Phase 13.5 KR 자동화 엔진')
-    parser.add_argument('--rows', type=int, default=10000)
+    parser.add_argument('--rows', type=int, default=DEFAULT_DATA_ROWS)
     args = parser.parse_args()
 
     log.info("=" * 60)

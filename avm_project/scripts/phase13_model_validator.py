@@ -13,9 +13,10 @@ import argparse
 import json
 import logging
 import pickle
+import shutil
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -97,49 +98,65 @@ def select_best_model(validation_results: Dict[str, Dict[str, Any]]) -> str:
     return max(scores, key=scores.get)
 
 
+def _evaluate_single_model(
+    model_name: str,
+    pkl_path: Path,
+    X_train: np.ndarray,
+    X_test: np.ndarray,
+    y_train: np.ndarray,
+    y_test: np.ndarray,
+    models_dir: Path,
+    country: str,
+) -> Optional[Dict[str, Any]]:
+    """개별 모델 검증: CV → 튜닝 → 테스트 → 저장."""
+    from sklearn.metrics import mean_absolute_percentage_error, r2_score
+
+    if not pkl_path.exists():
+        log.warning(f"  {pkl_path} 없음 - 건너뜀")
+        return None
+
+    log.info(f"\n▶ {model_name}")
+    with open(pkl_path, 'rb') as f:
+        trained_model = pickle.load(f)
+
+    cv_result = cross_validate_model(trained_model, X_train, y_train)
+    log.info(f"  5-fold CV: R²={cv_result['r2_mean']:.4f} ± {cv_result['r2_std']:.4f}")
+
+    tuned_model, best_params, tuned_r2 = tune_hyperparameters(model_name, X_train, y_train)
+    log.info(f"  튜닝 결과: R²={tuned_r2:.4f} params={best_params}")
+
+    y_pred = tuned_model.predict(X_test)
+    test_r2 = float(r2_score(y_test, y_pred))
+    test_mape = float(mean_absolute_percentage_error(y_test, y_pred))
+    log.info(f"  홀드아웃: R²={test_r2:.4f} MAPE={test_mape*100:.2f}%")
+
+    importance = extract_feature_importance(tuned_model, X_test, y_test)
+    save_tuned_model(tuned_model, model_name, models_dir, country)
+
+    return {
+        'cv': cv_result,
+        'best_params': best_params,
+        'tuned_r2': tuned_r2,
+        'test_r2': test_r2,
+        'test_mape': test_mape,
+        'meets_target': test_r2 >= TARGET_R2 and test_mape <= TARGET_MAPE,
+        'feature_importance': importance,
+    }
+
+
 def validate_all_models(
     data_path: str, models_dir: Path, country: str = 'KR',
 ) -> Dict[str, Dict[str, Any]]:
-    """전체 검증 파이프라인: 데이터 로드 → CV → 튜닝 → 중요도 → 최적 모델."""
-    from sklearn.metrics import mean_absolute_percentage_error, r2_score
-
+    """전체 검증 파이프라인 오케스트레이션."""
     df = load_and_validate(data_path)
     X_train, X_test, y_train, y_test, _, _ = split_data(df, country)
 
     results: Dict[str, Dict[str, Any]] = {}
     for model_name in PARAM_GRIDS:
         pkl_path = models_dir / f"{model_name}_{country}.pkl"
-        if not pkl_path.exists():
-            log.warning(f"  {pkl_path} 없음 - 건너뜀")
-            continue
-
-        log.info(f"\n▶ {model_name}")
-        with open(pkl_path, 'rb') as f:
-            trained_model = pickle.load(f)
-
-        cv_result = cross_validate_model(trained_model, X_train, y_train)
-        log.info(f"  5-fold CV: R²={cv_result['r2_mean']:.4f} ± {cv_result['r2_std']:.4f}")
-
-        tuned_model, best_params, tuned_r2 = tune_hyperparameters(model_name, X_train, y_train)
-        log.info(f"  튜닝 결과: R²={tuned_r2:.4f} params={best_params}")
-
-        y_pred = tuned_model.predict(X_test)
-        test_r2 = float(r2_score(y_test, y_pred))
-        test_mape = float(mean_absolute_percentage_error(y_test, y_pred))
-        log.info(f"  홀드아웃: R²={test_r2:.4f} MAPE={test_mape*100:.2f}%")
-
-        importance = extract_feature_importance(tuned_model, X_test, y_test)
-
-        results[model_name] = {
-            'cv': cv_result,
-            'best_params': best_params,
-            'tuned_r2': tuned_r2,
-            'test_r2': test_r2,
-            'test_mape': test_mape,
-            'meets_target': test_r2 >= TARGET_R2 and test_mape <= TARGET_MAPE,
-            'feature_importance': importance,
-        }
-        save_tuned_model(tuned_model, model_name, models_dir, country)
+        result = _evaluate_single_model(model_name, pkl_path, X_train, X_test, y_train, y_test, models_dir, country)
+        if result:
+            results[model_name] = result
 
     return results
 
@@ -191,11 +208,9 @@ def main() -> None:
     save_validation_report(results, best_model, report_path)
 
     best_path = Path(args.models_dir) / f"{best_model}_{args.country}_tuned.pkl"
-    with open(best_path, 'rb') as f:
-        best_pkl = f.read()
-    with open(Path(args.models_dir) / f'best_model_{args.country}.pkl', 'wb') as f:
-        f.write(best_pkl)
-    log.info(f"✅ 최적 모델 저장: {Path(args.models_dir) / f'best_model_{args.country}.pkl'}")
+    best_model_path = Path(args.models_dir) / f'best_model_{args.country}.pkl'
+    shutil.copy(best_path, best_model_path)
+    log.info(f"✅ 최적 모델 저장: {best_model_path}")
 
 
 if __name__ == '__main__':

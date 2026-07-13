@@ -6,6 +6,7 @@ Target: 1ms latency, 70% power reduction vs RTX training.
 """
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -21,6 +22,10 @@ FEATURE_COLS = ['area_sqm', 'old_price', 'latitude', 'longitude', 'property_type
 # (단일 모델 배포용, 이 중 하나와 중복)과 coldstart_{country}(직전가 없을 때만
 # 쓰는 별도 목적 모델)은 앙상블 평균에 섞이면 안 되므로 제외한다.
 ENSEMBLE_BASE_MODEL_TYPES = ['xgboost', 'lightgbm', 'gradient_boosting']
+
+CONFIDENCE_LATENCY_THRESHOLD_MS = 2.0
+CONFIDENCE_FAST = 0.95
+CONFIDENCE_SLOW = 0.85
 
 
 @dataclass
@@ -87,7 +92,6 @@ def run_inference(compiled_model: object, features: np.ndarray,
                  model_name: str, country: str = 'KR') -> Optional[InferenceResult]:
     """Execute inference and return prediction. Supports OpenVINO IR, ONNX Runtime, and sklearn models."""
     try:
-        import time
         start = time.perf_counter()
 
         input_data = preprocess_input(features, country).reshape(1, -1)
@@ -108,7 +112,7 @@ def run_inference(compiled_model: object, features: np.ndarray,
             device = "CPU (sklearn)"
 
         latency_ms = (time.perf_counter() - start) * 1000.0
-        confidence = 0.95 if latency_ms < 2.0 else 0.85
+        confidence = CONFIDENCE_FAST if latency_ms < CONFIDENCE_LATENCY_THRESHOLD_MS else CONFIDENCE_SLOW
 
         return InferenceResult(
             predicted_price=predicted_price,
@@ -208,7 +212,6 @@ class NPUInferenceEngine:
             log.error("No models loaded")
             return 0.0, 0.0, 0.0
 
-        import time
         start = time.perf_counter()
 
         avg_price, avg_confidence = ensemble_predict(self.models, property_features, self.country)
@@ -230,7 +233,6 @@ class NPUInferenceEngine:
 def main() -> None:
     """Demonstrate inference engine and report real per-model backend + latency."""
     import argparse
-    import time
 
     from country_configs import get_country_config
 

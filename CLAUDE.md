@@ -176,8 +176,8 @@ avm_project/
 ## Critical Constants
 
 ```python
-# 8 target countries for expansion
-COUNTRIES = ['UK', 'SG', 'JP', 'DE', 'AU', 'CA', 'TH', 'HK']
+# 9 target countries for expansion (BR priority for Phase 13)
+COUNTRIES = ['BR', 'UK', 'SG', 'JP', 'DE', 'AU', 'CA', 'TH', 'HK']
 
 # Country-specific tolerance ranges
 TOLERANCE_MAP = {
