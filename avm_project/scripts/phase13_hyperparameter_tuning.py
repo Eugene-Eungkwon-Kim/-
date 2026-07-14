@@ -52,7 +52,7 @@ def tune_xgboost(X_tr: np.ndarray, X_te: np.ndarray, y_tr: np.ndarray, y_te: np.
     }
 
     xgb_model = xgb.XGBRegressor(n_estimators=300, n_jobs=1, random_state=42)
-    grid = RandomizedSearchCV(xgb_model, param_grid, n_iter=15, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
+    grid = RandomizedSearchCV(xgb_model, param_grid, n_iter=50, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
     grid.fit(X_tr, y_tr)
 
     y_pred = grid.best_estimator_.predict(X_te)
@@ -77,7 +77,7 @@ def tune_lightgbm(X_tr: np.ndarray, X_te: np.ndarray, y_tr: np.ndarray, y_te: np
     }
 
     lgb_model = lgb.LGBMRegressor(n_estimators=300, n_jobs=1, verbose=-1, random_state=42)
-    grid = RandomizedSearchCV(lgb_model, param_grid, n_iter=15, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
+    grid = RandomizedSearchCV(lgb_model, param_grid, n_iter=50, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
     grid.fit(X_tr, y_tr)
 
     y_pred = grid.best_estimator_.predict(X_te)
@@ -102,7 +102,7 @@ def tune_gradient_boosting(X_tr: np.ndarray, X_te: np.ndarray, y_tr: np.ndarray,
     }
 
     gb_model = GradientBoostingRegressor(n_estimators=100, random_state=42)
-    grid = RandomizedSearchCV(gb_model, param_grid, n_iter=15, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
+    grid = RandomizedSearchCV(gb_model, param_grid, n_iter=50, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
     grid.fit(X_tr, y_tr)
 
     y_pred = grid.best_estimator_.predict(X_te)
