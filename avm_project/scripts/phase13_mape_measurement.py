@@ -29,15 +29,21 @@ CRITICAL_MAPE = 0.10
 TARGET_MAPE = 0.085
 
 
+LEAK_PATTERNS = ('new_price', 'price_change_ratio', 'price_gain_pct')
+
+
 def load_data(data_path: str) -> Tuple[np.ndarray, np.ndarray]:
-    """데이터 로드 및 분할."""
+    """데이터 로드 및 분할 (타겟 파생 누수 컬럼 제거)."""
     df = pd.read_csv(data_path)
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if TARGET_COL in numeric_cols:
-        numeric_cols.remove(TARGET_COL)
-    X = df[numeric_cols].fillna(df[numeric_cols].mean()).to_numpy(dtype=np.float32)
-    y = df[TARGET_COL].to_numpy(dtype=np.float32)
-    return train_test_split(X, y, test_size=0.2, random_state=42)
+    dropped = [c for c in numeric_cols if any(p in c for p in LEAK_PATTERNS)]
+    numeric_cols = [c for c in numeric_cols if c not in dropped]
+    if dropped:
+        log.warning(f"누수 방지: {len(dropped)}개 컬럼 제외 {dropped}")
+    X = np.ascontiguousarray(df[numeric_cols].fillna(df[numeric_cols].mean()).fillna(0.0).to_numpy(dtype=np.float64))
+    y = np.ascontiguousarray(df[TARGET_COL].to_numpy(dtype=np.float64))
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
+    return np.ascontiguousarray(X_tr), np.ascontiguousarray(X_te), np.ascontiguousarray(y_tr), np.ascontiguousarray(y_te)
 
 
 def create_base_models() -> Dict[str, object]:

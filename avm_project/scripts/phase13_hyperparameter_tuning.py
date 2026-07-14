@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Dict, Any
-from sklearn.model_selection import GridSearchCV, train_test_split, cross_val_score
+from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 import xgboost as xgb
 import lightgbm as lgb
@@ -23,15 +23,18 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 TARGET_COL = 'new_price'
+LEAK_PATTERNS = ('new_price', 'price_change_ratio', 'price_gain_pct')
 
 
 def load_and_prepare(data_path: str):
-    """데이터 로드 및 분할."""
+    """데이터 로드 및 분할 (타겟 파생 누수 컬럼 제거)."""
     df = pd.read_csv(data_path)
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    if TARGET_COL in numeric_cols:
-        numeric_cols.remove(TARGET_COL)
-    X = np.ascontiguousarray(df[numeric_cols].fillna(df[numeric_cols].mean()).to_numpy(dtype=np.float64))
+    dropped = [c for c in numeric_cols if any(p in c for p in LEAK_PATTERNS)]
+    numeric_cols = [c for c in numeric_cols if c not in dropped]
+    if dropped:
+        log.warning(f"누수 방지: {len(dropped)}개 컬럼 제외 {dropped}")
+    X = np.ascontiguousarray(df[numeric_cols].fillna(df[numeric_cols].mean()).fillna(0.0).to_numpy(dtype=np.float64))
     y = np.ascontiguousarray(df[TARGET_COL].to_numpy(dtype=np.float64))
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
     return np.ascontiguousarray(X_tr), np.ascontiguousarray(X_te), np.ascontiguousarray(y_tr), np.ascontiguousarray(y_te)
@@ -49,7 +52,7 @@ def tune_xgboost(X_tr: np.ndarray, X_te: np.ndarray, y_tr: np.ndarray, y_te: np.
     }
 
     xgb_model = xgb.XGBRegressor(n_estimators=300, n_jobs=1, random_state=42)
-    grid = GridSearchCV(xgb_model, param_grid, cv=5, scoring='r2', n_jobs=-1, verbose=1)
+    grid = RandomizedSearchCV(xgb_model, param_grid, n_iter=15, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
     grid.fit(X_tr, y_tr)
 
     y_pred = grid.best_estimator_.predict(X_te)
@@ -74,7 +77,7 @@ def tune_lightgbm(X_tr: np.ndarray, X_te: np.ndarray, y_tr: np.ndarray, y_te: np
     }
 
     lgb_model = lgb.LGBMRegressor(n_estimators=300, n_jobs=1, verbose=-1, random_state=42)
-    grid = GridSearchCV(lgb_model, param_grid, cv=5, scoring='r2', n_jobs=-1, verbose=1)
+    grid = RandomizedSearchCV(lgb_model, param_grid, n_iter=15, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
     grid.fit(X_tr, y_tr)
 
     y_pred = grid.best_estimator_.predict(X_te)
@@ -98,8 +101,8 @@ def tune_gradient_boosting(X_tr: np.ndarray, X_te: np.ndarray, y_tr: np.ndarray,
         'max_features': [0.5, 0.7, 1.0],
     }
 
-    gb_model = GradientBoostingRegressor(n_estimators=300, random_state=42)
-    grid = GridSearchCV(gb_model, param_grid, cv=5, scoring='r2', n_jobs=-1, verbose=1)
+    gb_model = GradientBoostingRegressor(n_estimators=100, random_state=42)
+    grid = RandomizedSearchCV(gb_model, param_grid, n_iter=15, cv=3, scoring='r2', n_jobs=-1, verbose=1, random_state=42)
     grid.fit(X_tr, y_tr)
 
     y_pred = grid.best_estimator_.predict(X_te)

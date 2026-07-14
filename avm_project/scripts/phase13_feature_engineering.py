@@ -70,17 +70,16 @@ def add_floor_ratio(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_market_signals(df: pd.DataFrame) -> pd.DataFrame:
-    """시장 신호: 가격 변동률, 활성도, 계절."""
-    df['price_change_ratio'] = (df['new_price'] - df['old_price']) / df['old_price']
-    df['price_gain_pct'] = (df['price_change_ratio'] * 100).clip(-50, 100)
-
+    """시장 신호: 활성도, 계절 (타겟 new_price 파생 변수는 누수이므로 생성 금지)."""
     quarter_map = {1: 1, 2: 1, 3: 2, 4: 2, 5: 2, 6: 3, 7: 3, 8: 3, 9: 4, 10: 4, 11: 4, 12: 1}
     if 'transaction_month' in df.columns:
-        df['season'] = df['transaction_month'].map(quarter_map)
+        month = df['transaction_month'] % 100  # YYYYMM 형식 대응
+        month = month.where((month >= 1) & (month <= 12), df['transaction_month'])
+        df['season'] = month.map(quarter_map).fillna(2).astype(int)
+        df['is_winter'] = month.isin([12, 1, 2]).astype(int)
     else:
         df['season'] = 2
-
-    df['is_winter'] = (df.get('transaction_month', 1).isin([12, 1, 2])).astype(int)
+        df['is_winter'] = 0
     return df
 
 
@@ -100,10 +99,15 @@ def add_distance_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+TARGET_COL = 'new_price'
+
+
 def normalize_new_features(df: pd.DataFrame) -> pd.DataFrame:
-    """신규 특성 정규화."""
+    """신규 특성 정규화 (타겟은 제외 - 누수 방지)."""
     numeric_cols = df.select_dtypes(include=[np.number]).columns
     for col in numeric_cols:
+        if col == TARGET_COL:
+            continue
         if col not in FEATURE_COLS and df[col].notna().sum() > 0:
             min_val, max_val = df[col].min(), df[col].max()
             if max_val > min_val:
