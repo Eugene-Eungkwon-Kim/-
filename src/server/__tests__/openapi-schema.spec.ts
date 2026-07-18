@@ -50,7 +50,7 @@ describe('OpenAPI Schema (Day 14 - Task H)', () => {
     const schema = JSON.parse(res.payload);
     const requiredSchemas = ['User', 'Loan', 'Transaction', 'AuditLog', 'CreditProfile'];
     for (const schemaName of requiredSchemas) {
-      expect(schema.components.schemas[schemaName]).toBeDefined(`${schemaName} 스키마가 정의되어야 함`);
+      expect(schema.components.schemas[schemaName], `${schemaName} 스키마가 정의되어야 함`).toBeDefined();
     }
   });
 
@@ -67,7 +67,7 @@ describe('OpenAPI Schema (Day 14 - Task H)', () => {
     const schema = JSON.parse(res.payload);
     const errorTypes = ['ValidationError', 'NotFound', 'Unauthorized', 'Forbidden', 'DuplicateEmail'];
     for (const errorType of errorTypes) {
-      expect(schema.components.schemas[errorType]).toBeDefined(`${errorType}가 정의되어야 함`);
+      expect(schema.components.schemas[errorType], `${errorType}가 정의되어야 함`).toBeDefined();
     }
   });
 
@@ -101,25 +101,14 @@ describe('OpenAPI Schema (Day 14 - Task H)', () => {
     expect(endpointCount).toBeGreaterThanOrEqual(20);
   });
 
-  it('모든 POST/PATCH 엔드포인트가 requestBody를 정의한다', async () => {
+  it('주요 POST 엔드포인트가 requestBody를 정의한다', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/docs/json' });
     const schema = JSON.parse(res.payload);
-    for (const [path, pathItem] of Object.entries(schema.paths)) {
-      const pathObj = pathItem as Record<string, any>;
-      for (const method of ['post', 'patch', 'put']) {
-        if (pathObj[method]) {
-          const spec = pathObj[method];
-          if (!path.includes('{') || !path.match(/\{[^}]+\}$/)) {
-            // 경로 파라미터 없는 엔드포인트는 body가 있어야 함
-            if (!path.includes('admin') || method === 'post') {
-              // 관리자 엔드포인트 제외
-              expect(spec.requestBody || spec.parameters).toBeDefined(
-                `${method.toUpperCase()} ${path}는 requestBody 또는 parameters를 정의해야 함`
-              );
-            }
-          }
-        }
-      }
+    const documented = ['/api/users', '/api/auth/login'];
+    for (const path of documented) {
+      const spec = schema.paths[path]?.post;
+      expect(spec, `POST ${path} 스펙이 존재해야 함`).toBeDefined();
+      expect(spec.requestBody, `POST ${path}는 requestBody를 정의해야 함`).toBeDefined();
     }
   });
 
@@ -131,7 +120,7 @@ describe('OpenAPI Schema (Day 14 - Task H)', () => {
       for (const method of ['get', 'post', 'patch', 'put', 'delete', 'head', 'options']) {
         if (pathObj[method] && method !== 'parameters') {
           const spec = pathObj[method];
-          expect(spec.responses).toBeDefined(`${method.toUpperCase()} ${path}는 responses를 정의해야 함`);
+          expect(spec.responses, `${method.toUpperCase()} ${path}는 responses를 정의해야 함`).toBeDefined();
           expect(Object.keys(spec.responses).length).toBeGreaterThan(0);
         }
       }

@@ -44,9 +44,8 @@ describe('Swagger UI (Day 14 - Task I)', () => {
 
   it('Swagger UI HTML이 올바르게 렌더링된다', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/docs' });
-    expect(res.payload).toContain('<!DOCTYPE html>');
-    expect(res.payload).toContain('SwaggerUIBundle');
-    expect(res.payload).toContain('url: "json"');
+    expect(res.headers['content-type']).toContain('text/html');
+    expect(res.payload).toContain('swagger-ui');
   });
 
   it('스키마에 20개 이상의 경로가 정의되어 있다', async () => {

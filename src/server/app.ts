@@ -144,6 +144,8 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
 
   // Day 11 - Task 5 (δ=780): OpenAPI 자동 문서생성 (swagger + swagger-ui)
   // Day 14 - Task H (δ=400): OpenAPI 스키마 확장
+  // openAPISchemas의 JSON 스키마 리터럴이 @fastify/swagger의 OpenAPIV3 타입과
+  // 구조적으로 호환되지만 타입 추론이 실패하므로 옵션 객체를 한 번 캐스팅한다.
   await app.register(swagger, {
     openapi: {
       openapi: '3.0.0',
@@ -227,7 +229,7 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
         { name: 'Audit', description: '감사 로그 조회' }
       ]
     }
-  });
+  } as Parameters<typeof app.register>[1]);
   await app.register(swaggerUI, {
     routePrefix: '/api/docs',
     uiConfig: {
@@ -249,6 +251,9 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
     const path = request.url.split('?')[0];
     const isPublic = PUBLIC_ROUTES.some(([method, url]) => request.method === method && path === url);
     if (isPublic) return;
+
+    // Day 14 - Task I (δ=400): API 문서(Swagger UI)는 인증 없이 접근 가능
+    if (request.method === 'GET' && (path === '/api/docs' || path.startsWith('/api/docs/'))) return;
 
     try {
       await request.jwtVerify();

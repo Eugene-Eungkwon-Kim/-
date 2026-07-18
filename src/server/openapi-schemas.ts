@@ -284,13 +284,18 @@ export const routeSchemas = {
       200: {
         description: '회원가입 성공',
         type: 'object',
-        properties: {
-          success: { const: true },
-          data: { $ref: '#/components/schemas/User' }
-        }
+        additionalProperties: true
       },
-      400: { $ref: '#/components/responses/ValidationError' },
-      409: { $ref: '#/components/responses/DuplicateEmail' }
+      400: {
+        description: '입력 검증 오류',
+        type: 'object',
+        additionalProperties: true
+      },
+      409: {
+        description: '이메일 중복',
+        type: 'object',
+        additionalProperties: true
+      }
     }
   },
 
