@@ -17,7 +17,7 @@ class ValidationResult:
     """Result of validation check"""
     passed: bool
     message: str
-    severity: str  # 'error', 'warning', 'info'
+    severity: str
 
 
 @dataclass
@@ -30,6 +30,9 @@ class SheetValidation:
     validation_columns: Dict[str, bool]
     has_colors: bool
     issues: List[ValidationResult]
+    numeric_errors: int = 0
+    grade_errors: int = 0
+    color_mismatches: int = 0
 
 
 class Phase12Validator:
@@ -58,7 +61,15 @@ class Phase12Validator:
     }
 
     VALIDATION_COLUMNS = {'가격부합성', '편차율', '최종조치'}
-    GRADE_COLORS = {'C6EFCE', 'FFEB9C', 'FFC7CE', 'FF0000'}
+    VALID_GRADES = {'적정', '확인필요', '편차주의', '추가확인'}
+    GRADE_COLOR_MAP = {
+        '적정': 'C6EFCE', '확인필요': 'FFEB9C',
+        '편차주의': 'FFC7CE', '추가확인': 'FF0000'
+    }
+    GRADE_COLORS = set(GRADE_COLOR_MAP.values())
+    PRICE_MIN = 100_000
+    PRICE_MAX = 10_000_000_000
+    COUNTRIES = {'UK', 'SG', 'JP', 'DE', 'AU', 'CA', 'TH', 'HK', 'KR'}
 
     def __init__(self, workbook_path: str) -> None:
         self.workbook_path = Path(workbook_path)
@@ -72,6 +83,7 @@ class Phase12Validator:
             self._validate_sheet_structure(wb)
             self._validate_sheet_contents(wb)
             self._validate_styling(wb)
+            self._validate_cross_sheet_consistency(wb)
             wb.close()
 
             return self._summarize_results()
@@ -79,7 +91,7 @@ class Phase12Validator:
             self.results.append(
                 ValidationResult(False, f"Validation failed: {e}", 'error')
             )
-            return False, {'errors': 1}
+            return False, {'errors': 1, 'warnings': 0, 'info': 0}
 
     def _validate_sheet_structure(self, wb) -> None:
         """Check workbook sheet structure."""
@@ -172,6 +184,8 @@ class Phase12Validator:
 
         expected_cols = ws.max_column
         empty_count = 0
+        numeric_errors = 0
+        grade_errors = 0
 
         for row in range(2, min(ws.max_row + 1, 100)):
             row_has_data = False
@@ -179,29 +193,83 @@ class Phase12Validator:
                 cell = ws.cell(row, col)
                 if cell.value is not None:
                     row_has_data = True
-                    break
+
             if not row_has_data:
                 empty_count += 1
+                continue
+
+            numeric_errors, grade_errors = self._validate_row_data(
+                ws, row, sheet_name, validation, numeric_errors, grade_errors
+            )
+
+        validation.numeric_errors = numeric_errors
+        validation.grade_errors = grade_errors
 
         if empty_count > 0:
             validation.issues.append(
-                ValidationResult(
-                    True,
-                    f"{sheet_name}: {empty_count} empty rows detected",
-                    'warning',
-                )
+                ValidationResult(True, f"{sheet_name}: {empty_count} empty rows", 'warning')
             )
+
+    def _validate_row_data(self, ws, row: int, sheet_name: str, validation: SheetValidation,
+                          numeric_errors: int, grade_errors: int) -> Tuple[int, int]:
+        """Validate individual row data types and values."""
+        headers = [str(ws.cell(1, col).value or '').strip() for col in range(1, ws.max_column + 1)]
+
+        for col_idx, header in enumerate(headers, 1):
+            cell = ws.cell(row, col_idx)
+            value = cell.value
+
+            if value is None or value == '':
+                continue
+
+            if '가격' in header:
+                if not self._is_valid_price(value):
+                    numeric_errors += 1
+
+            elif '편차' in header or '율' in header:
+                if not self._is_valid_percentage(value):
+                    numeric_errors += 1
+
+            elif '부합성' in header:
+                if str(value).strip() not in self.VALID_GRADES:
+                    grade_errors += 1
+
+        return numeric_errors, grade_errors
+
+    def _is_valid_price(self, value) -> bool:
+        """Check if value is valid price."""
+        try:
+            if isinstance(value, (int, float)):
+                price = float(value)
+            else:
+                text = str(value).replace(',', '').replace('원', '').replace('₩', '')
+                price = float(text)
+            return self.PRICE_MIN <= price <= self.PRICE_MAX
+        except (ValueError, TypeError):
+            return False
+
+    def _is_valid_percentage(self, value) -> bool:
+        """Check if value is valid percentage."""
+        try:
+            if isinstance(value, (int, float)):
+                return -1.0 <= float(value) <= 1.0
+            text = str(value).replace('%', '').strip()
+            pct = float(text) / 100
+            return -1.0 <= pct <= 1.0
+        except (ValueError, TypeError):
+            return False
 
     def _validate_styling(self, wb) -> None:
         """Check color coding on validation columns."""
-        for sheet_name in ('아파트', '빌라'):
+        domestic_sheets = ('아파트', '빌라')
+
+        for sheet_name in domestic_sheets:
             if sheet_name not in wb.sheetnames:
                 continue
 
             ws = wb[sheet_name]
             grade_col = None
 
-            # Find 가격부합성 column
             for col in range(1, ws.max_column + 1):
                 if str(ws.cell(1, col).value or '').strip() == '가격부합성':
                     grade_col = col
@@ -210,20 +278,90 @@ class Phase12Validator:
             if not grade_col:
                 continue
 
-            colored_count = 0
-            for row in range(2, min(ws.max_row + 1, 100)):
-                cell = ws.cell(row, grade_col)
-                if cell.fill and cell.fill.fgColor:
-                    color = str(cell.fill.fgColor.rgb or '')
-                    if color.upper() in self.GRADE_COLORS:
-                        colored_count += 1
+            color_mismatches = self._check_grade_color_consistency(ws, grade_col, sheet_name)
 
-            if colored_count > 0:
+        for country in self.COUNTRIES:
+            if country == 'KR':
+                continue
+            for suffix in ('_Residential', '_Prediction'):
+                sheet_name = f"{country}{suffix}"
+                if sheet_name not in wb.sheetnames:
+                    continue
+                ws = wb[sheet_name]
+                grade_col = self._find_column(ws, 'Conformity')
+                if grade_col:
+                    self._check_grade_color_consistency(ws, grade_col, sheet_name)
+
+    def _find_column(self, ws, col_name: str) -> Optional[int]:
+        """Find column index by header name."""
+        for col in range(1, ws.max_column + 1):
+            header = str(ws.cell(1, col).value or '').strip()
+            if header == col_name:
+                return col
+        return None
+
+    def _check_grade_color_consistency(self, ws, grade_col: int, sheet_name: str) -> int:
+        """Verify grade values match their cell colors."""
+        mismatches = 0
+        colored_count = 0
+
+        for row in range(2, min(ws.max_row + 1, 100)):
+            grade_cell = ws.cell(row, grade_col)
+            grade_value = str(grade_cell.value or '').strip()
+
+            if not grade_value:
+                continue
+
+            cell_color = self._get_cell_color(grade_cell)
+            expected_color = self.GRADE_COLOR_MAP.get(grade_value)
+
+            if cell_color and expected_color:
+                if cell_color.upper() != expected_color.upper():
+                    mismatches += 1
+                colored_count += 1
+
+        if colored_count > 0:
+            self.results.append(
+                ValidationResult(
+                    True,
+                    f"{sheet_name}: {colored_count} grades colored, {mismatches} mismatches",
+                    'warning' if mismatches > 0 else 'info',
+                )
+            )
+        return mismatches
+
+    def _get_cell_color(self, cell) -> Optional[str]:
+        """Extract RGB color from cell."""
+        if not cell.fill or not cell.fill.fgColor:
+            return None
+        color_str = str(cell.fill.fgColor.rgb or '')
+        if color_str and color_str.startswith('FF'):
+            return color_str[2:]
+        return color_str
+
+    def _validate_cross_sheet_consistency(self, wb) -> None:
+        """Validate consistency between related sheets."""
+        for country in self.COUNTRIES:
+            if country == 'KR':
+                continue
+            res_name = f"{country}_Residential"
+            pred_name = f"{country}_Prediction"
+
+            if res_name not in wb.sheetnames or pred_name not in wb.sheetnames:
+                continue
+
+            res_ws = wb[res_name]
+            pred_ws = wb[pred_name]
+
+            res_count = max(0, res_ws.max_row - 1)
+            pred_count = max(0, pred_ws.max_row - 1)
+
+            if res_count != pred_count:
                 self.results.append(
                     ValidationResult(
-                        True,
-                        f"{sheet_name}: {colored_count} cells with grade colors",
-                        'info',
+                        False,
+                        f"{res_name} ({res_count} rows) ≠ {pred_name} ({pred_count} rows)",
+                        'warning',
                     )
                 )
 
@@ -239,7 +377,7 @@ class Phase12Validator:
 
     def get_report(self) -> str:
         """Generate text report of validation."""
-        lines = ['Loan4U Phase 12 Validation Report', '=' * 40, '']
+        lines = ['Loan4U Phase 12 Validation Report', '=' * 60, '']
 
         for result in self.results:
             status = '✓' if result.passed else '✗'
@@ -249,10 +387,17 @@ class Phase12Validator:
         lines.append('Sheet Details:')
         for sv in self.sheet_validations:
             issue_count = len(sv.issues)
-            lines.append(
-                f"  {sv.sheet_name}: {sv.row_count} rows, "
-                f"{sv.header_count} cols, {issue_count} issues"
-            )
+            detail_parts = [
+                f"{sv.row_count} rows",
+                f"{sv.header_count} cols",
+                f"{issue_count} issues",
+            ]
+            if sv.numeric_errors > 0:
+                detail_parts.append(f"{sv.numeric_errors} numeric errors")
+            if sv.grade_errors > 0:
+                detail_parts.append(f"{sv.grade_errors} grade errors")
+
+            lines.append(f"  {sv.sheet_name}: {', '.join(detail_parts)}")
 
         return '\n'.join(lines)
 
