@@ -10,6 +10,7 @@ import {
 } from '../types/transaction';
 import { UserNotFoundError, ValidationError } from './errors';
 import { AuditLogger } from './AuditLogger';
+import { MemoryCache, getDbCache } from '../cache/memoryCache';
 
 interface TransactionRow {
   id: string;
@@ -54,9 +55,17 @@ function mapRow(row: TransactionRow): TransactionRecord {
  */
 export class TransactionRepository {
   private readonly auditLogger: AuditLogger;
+  // Day 15 - Task L: 집계 결과(요약/월별 추세) 캐시. DB 인스턴스 단위로 공유되어
+  // 리포지토리가 요청마다 새로 생성돼도 유효하며, 쓰기 시 사용자 단위로 무효화한다.
+  private readonly cache: MemoryCache;
 
   constructor(private readonly db: Database.Database) {
     this.auditLogger = new AuditLogger(db);
+    this.cache = getDbCache(db);
+  }
+
+  private invalidateUserAggregates(userId: string): void {
+    this.cache.deleteByPrefix(`txn:${userId}:`);
   }
 
   recordTransaction(input: RecordTransactionInput): TransactionRecord {
@@ -85,6 +94,8 @@ export class TransactionRepository {
       input.userId,
       input.occurredAt
     );
+
+    this.invalidateUserAggregates(input.userId);
 
     return this.getTransactionOrThrow(id);
   }
@@ -149,6 +160,8 @@ export class TransactionRepository {
     });
     flagBatch();
 
+    if (candidates.length > 0) this.invalidateUserAggregates(userId);
+
     return candidates.map((row) => this.getTransactionOrThrow(row.id));
   }
 
@@ -157,40 +170,44 @@ export class TransactionRepository {
   }
 
   getSummary(userId: string): TransactionSummary {
-    const rows = this.getTransactions(userId);
-    const totalDeposits = rows.filter((r) => r.transactionType === 'deposit').reduce((sum, r) => sum + r.amount, 0);
-    const totalWithdrawals = rows
-      .filter((r) => r.transactionType === 'withdrawal')
-      .reduce((sum, r) => sum + r.amount, 0);
+    return this.cache.getOrCompute(`txn:${userId}:summary`, () => {
+      const rows = this.getTransactions(userId);
+      const totalDeposits = rows.filter((r) => r.transactionType === 'deposit').reduce((sum, r) => sum + r.amount, 0);
+      const totalWithdrawals = rows
+        .filter((r) => r.transactionType === 'withdrawal')
+        .reduce((sum, r) => sum + r.amount, 0);
 
-    return {
-      userId,
-      transactionCount: rows.length,
-      totalDeposits,
-      totalWithdrawals,
-      flaggedCount: rows.filter((r) => r.status === 'flagged').length,
-      lastTransactionAt: rows.length > 0 ? rows[rows.length - 1].occurredAt : null
-    };
+      return {
+        userId,
+        transactionCount: rows.length,
+        totalDeposits,
+        totalWithdrawals,
+        flaggedCount: rows.filter((r) => r.status === 'flagged').length,
+        lastTransactionAt: rows.length > 0 ? rows[rows.length - 1].occurredAt : null
+      };
+    }) as TransactionSummary;
   }
 
   getMonthlyTrend(userId: string): MonthlyTrendPoint[] {
-    const rows = this.db
-      .prepare(
+    return this.cache.getOrCompute(`txn:${userId}:trend`, () => {
+      const rows = this.db
+        .prepare(
+          `
+          SELECT substr(occurred_at, 1, 7) as month, SUM(amount) as total_amount, COUNT(*) as transaction_count
+          FROM transactions
+          WHERE user_id = ?
+          GROUP BY month
+          ORDER BY month ASC
         `
-        SELECT substr(occurred_at, 1, 7) as month, SUM(amount) as total_amount, COUNT(*) as transaction_count
-        FROM transactions
-        WHERE user_id = ?
-        GROUP BY month
-        ORDER BY month ASC
-      `
-      )
-      .all(userId) as { month: string; total_amount: number; transaction_count: number }[];
+        )
+        .all(userId) as { month: string; total_amount: number; transaction_count: number }[];
 
-    return rows.map((row) => ({
-      month: row.month,
-      totalAmount: row.total_amount,
-      transactionCount: row.transaction_count
-    }));
+      return rows.map((row) => ({
+        month: row.month,
+        totalAmount: row.total_amount,
+        transactionCount: row.transaction_count
+      }));
+    }) as MonthlyTrendPoint[];
   }
 
   private getTransactionOrThrow(transactionId: string): TransactionRecord {
