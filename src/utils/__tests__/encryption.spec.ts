@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { encrypt, decrypt, generateEncryptionKey, hashData, getEncryptionKey } from '../encryption';
 
 /**

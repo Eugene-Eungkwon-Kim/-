@@ -3,7 +3,7 @@
  * Week 1 Thursday: 4개 기본 테스트 케이스
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { validateDocument, validateDocuments } from './document-validator';
 
 // Mock File 생성 헬퍼

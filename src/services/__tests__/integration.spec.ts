@@ -261,7 +261,7 @@ describe('Integration: Financial Calculation Flows', () => {
       // Step 5: 최종 결과 요약
       console.log('Step 5: 최종 결과 요약');
       const result = {
-        creditGrade: creditAssessment.grade,
+        recommendation: creditAssessment.recommendation,
         approved: creditAssessment.approved,
         maxLoanAmount: creditAssessment.maxLoanAmount,
         selectedProduct: selectedProduct.name,

@@ -149,7 +149,7 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
   });
 
   it('연체 감지 — 관리자만 가능', async () => {
-    const { userId: adminId, token: adminToken } = await registerAndLogin('delinquency-admin@example.com', 'Admin');
+    const { userId: adminId } = await registerAndLogin('delinquency-admin@example.com', 'Admin');
     const { token: userToken } = await registerAndLogin('delinquency-user@example.com', 'User');
 
     // 일반 사용자 시도 — 403
@@ -182,7 +182,7 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
   });
 
   it('백업 관련 엔드포인트 — 관리자 전용', async () => {
-    const { userId: adminId, token: adminToken } = await registerAndLogin('backup-admin@example.com', 'Admin');
+    const { userId: adminId } = await registerAndLogin('backup-admin@example.com', 'Admin');
     const { token: userToken } = await registerAndLogin('backup-user@example.com', 'User');
 
     // 일반 사용자의 시도 — 403

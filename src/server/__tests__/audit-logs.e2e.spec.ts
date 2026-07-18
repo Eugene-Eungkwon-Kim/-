@@ -56,7 +56,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     });
 
     it('관리자는 감사 로그를 조회할 수 있다', async () => {
-      const { userId, token } = await registerAndLogin('admin@example.com', 'Admin User');
+      const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
       db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
 
       // 관리자로 재로그인
@@ -129,7 +129,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     });
 
     it('모든 감사 로그를 조회할 수 있다', async () => {
-      const { userId, token } = await registerAndLogin('admin@example.com', 'Admin User');
+      const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
       db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
 
       const loginRes = await app.inject({
@@ -151,7 +151,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     });
 
     it('페이지네이션을 지원한다', async () => {
-      const { userId, token } = await registerAndLogin('admin@example.com', 'Admin User');
+      const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
       db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
 
       const loginRes = await app.inject({
@@ -181,7 +181,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     });
 
     it('액션으로 필터링할 수 있다', async () => {
-      const { userId, token } = await registerAndLogin('admin@example.com', 'Admin User');
+      const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
       db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
 
       const loginRes = await app.inject({
@@ -203,7 +203,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     });
 
     it('리소스 타입으로 필터링할 수 있다', async () => {
-      const { userId, token } = await registerAndLogin('admin@example.com', 'Admin User');
+      const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
       db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
 
       const loginRes = await app.inject({
@@ -250,7 +250,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     });
 
     it('특정 사용자의 감사 로그를 조회할 수 있다', async () => {
-      const { userId, token } = await registerAndLogin('admin@example.com', 'Admin User');
+      const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
       db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
 
       const loginRes = await app.inject({
@@ -308,7 +308,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     });
 
     it('특정 리소스의 모든 변경 이력을 조회할 수 있다', async () => {
-      const { userId, token } = await registerAndLogin('admin@example.com', 'Admin User');
+      const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
       db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
 
       const loginRes = await app.inject({

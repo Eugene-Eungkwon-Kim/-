@@ -11,7 +11,6 @@ import { randomBytes, createCipheriv, createDecipheriv, createHash } from 'node:
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32; // 256 bits
 const IV_LENGTH = 16;  // 128 bits
-const AUTH_TAG_LENGTH = 16;
 
 /**
  * 환경변수에서 암호화 키를 로드한다.
@@ -74,10 +73,7 @@ export function decrypt(encrypted: string): string {
     const decipher = createDecipheriv(ALGORITHM, key, iv);
     decipher.setAuthTag(authTag);
 
-    let plaintext = decipher.update(ciphertext, 'hex', 'utf-8');
-    plaintext += decipher.final('utf-8');
-
-    return plaintext;
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf-8');
   } catch (error) {
     throw new Error(`Decryption failed: ${error instanceof Error ? error.message : String(error)}`);
   }

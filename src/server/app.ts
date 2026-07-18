@@ -274,6 +274,13 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
               status: { type: 'string', enum: ['ok', 'error'] },
               db: { type: 'string', enum: ['connected', 'disconnected'] }
             }
+          },
+          503: {
+            type: 'object',
+            properties: {
+              status: { type: 'string', enum: ['ok', 'error'] },
+              db: { type: 'string', enum: ['connected', 'disconnected'] }
+            }
           }
         }
       }

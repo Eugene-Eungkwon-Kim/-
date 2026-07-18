@@ -7,7 +7,6 @@ export const loanHandlers = [
   // 상환 일정 조회
   rest.get('/api/v1/loans/:loanId/repayment-schedule', (req, res, ctx) => {
     const { loanId } = req.params;
-    const format = req.url.searchParams.get('format') || 'summary';
     const currency = req.url.searchParams.get('currency') || 'KRW';
 
     // 모의 대출 정보
@@ -28,7 +27,7 @@ export const loanHandlers = [
       }
     };
 
-    const loan = loanInfo[loanId];
+    const loan = loanInfo[String(loanId)];
     if (!loan) {
       return res(ctx.status(404), ctx.json({ error: 'Loan not found' }));
     }
@@ -968,8 +967,6 @@ export const loanHandlers = [
     const userId = body.userId || 'user-001';
     const creditScore = body.creditScore || 750;
     const income = body.income || 5000000;
-    const debt = body.debt || 50000000;
-    const assets = body.assets || 300000000;
     const purpose = body.purpose || 'purchase';
     const preferenceType = body.preferenceType || 'balanced';
     const maxMonthlyPaymentRatio = body.maxMonthlyPaymentRatio ?? 40;
@@ -1102,32 +1099,6 @@ export const loanHandlers = [
     const loanTerm = body.loanTerm || 240;
     const currentRate = body.currentRate || 3.2;
     const currentIncome = body.currentIncome || 5000000;
-    const scenario = body.scenarios?.scenario || 'rate-increase';
-    const stressLevel = body.scenarios?.stressLevel || 'mild';
-
-    const stressDefaults = {
-      mild: { rateChange: 1, incomeChange: 0 },
-      moderate: { rateChange: 2, incomeChange: -15 },
-      severe: { rateChange: 3, incomeChange: -25 }
-    };
-
-    let rateChange = body.scenarios?.rateChange ?? 0;
-    let incomeChange = body.scenarios?.incomeChange ?? 0;
-
-    if (stressLevel && !body.scenarios?.rateChange && !body.scenarios?.incomeChange) {
-      const defaults = stressDefaults[stressLevel as keyof typeof stressDefaults];
-      if (scenario === 'rate-increase') {
-        rateChange = defaults.rateChange;
-        incomeChange = 0;
-      } else if (scenario === 'income-decrease') {
-        rateChange = 0;
-        incomeChange = defaults.incomeChange;
-      } else {
-        rateChange = defaults.rateChange;
-        incomeChange = defaults.incomeChange;
-      }
-    }
-
     const calculatePayment = (amount: number, term: number, rate: number) => {
       const monthlyRate = rate / 12 / 100;
       return amount * (monthlyRate * Math.pow(1 + monthlyRate, term)) / (Math.pow(1 + monthlyRate, term) - 1);
@@ -1158,7 +1129,7 @@ export const loanHandlers = [
       const paymentRatioChange = newPaymentRatio - basePaymentRatio;
       const isAffordable = newPaymentRatio <= 40;
 
-      let riskLevel = 'low' as const;
+      let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
       if (newPaymentRatio > 50) riskLevel = 'critical';
       else if (newPaymentRatio > 40) riskLevel = 'high';
       else if (newPaymentRatio > 30) riskLevel = 'medium';
@@ -1339,8 +1310,8 @@ export const loanHandlers = [
       r.financialMetrics.paymentRatio
     ]);
     const winner = [0, 0, 0, 0];
-    metrics.forEach((m, idx) => {
-      winner[idx] = values.findIndex((v: any[]) => v[idx] === Math.min(...values.map(vv => vv[idx])));
+    metrics.forEach((_m, idx) => {
+      winner[idx] = values.findIndex((v: any[]) => v[idx] === Math.min(...values.map((vv: any[]) => vv[idx])));
     });
 
     const personalAdvice = bestOption.overallScore >= 80 ?

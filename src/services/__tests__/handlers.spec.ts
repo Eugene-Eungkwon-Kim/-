@@ -1537,7 +1537,7 @@ describe('MSW Handlers: Portfolio Inquiry Endpoint (Task 3 - Day 3)', () => {
       expect(data.portfolio.delinquencyCount).toBeGreaterThanOrEqual(0);
 
       // user-001은 loan-003에서 15일 연체 중
-      const delinquentLoans = data.loans.filter(loan => loan.delinquencyDays > 0);
+      const delinquentLoans = data.loans.filter((loan: any) => loan.delinquencyDays > 0);
       if (delinquentLoans.length > 0) {
         expect(data.portfolio.delinquencyCount).toBe(delinquentLoans.length);
       }
@@ -2068,8 +2068,6 @@ async function loanProductRecommendationEndpoint(input: any): Promise<any> {
   const userId = input.userId || 'user-001';
   const creditScore = input.creditScore || 750;
   const income = input.income || 5000000;
-  const debt = input.debt || 50000000;
-  const assets = input.assets || 300000000;
   const purpose = input.purpose || 'purchase';
   const preferenceType = input.preferenceType || 'balanced';
   const maxMonthlyPaymentRatio = input.maxMonthlyPaymentRatio ?? 40;
@@ -2212,32 +2210,6 @@ async function stressTestEndpoint(input: any): Promise<any> {
   const loanTerm = input.loanTerm || 240;
   const currentRate = input.currentRate || 3.2;
   const currentIncome = input.currentIncome || 5000000;
-  const scenario = input.scenarios?.scenario || 'rate-increase';
-  const stressLevel = input.scenarios?.stressLevel || 'mild';
-
-  // 스트레스 시나리오 기본값
-  const stressDefaults = {
-    mild: { rateChange: 1, incomeChange: 0 },
-    moderate: { rateChange: 2, incomeChange: -15 },
-    severe: { rateChange: 3, incomeChange: -25 }
-  };
-
-  let rateChange = input.scenarios?.rateChange ?? 0;
-  let incomeChange = input.scenarios?.incomeChange ?? 0;
-
-  if (stressLevel && !input.scenarios?.rateChange && !input.scenarios?.incomeChange) {
-    const defaults = stressDefaults[stressLevel as keyof typeof stressDefaults];
-    if (scenario === 'rate-increase') {
-      rateChange = defaults.rateChange;
-      incomeChange = 0;
-    } else if (scenario === 'income-decrease') {
-      rateChange = 0;
-      incomeChange = defaults.incomeChange;
-    } else {
-      rateChange = defaults.rateChange;
-      incomeChange = defaults.incomeChange;
-    }
-  }
 
   const calculatePayment = (amount: number, term: number, rate: number) => {
     const monthlyRate = rate / 12 / 100;
@@ -2271,7 +2243,7 @@ async function stressTestEndpoint(input: any): Promise<any> {
     const paymentRatioChange = newPaymentRatio - basePaymentRatio;
     const isAffordable = newPaymentRatio <= 40;
 
-    let riskLevel = 'low' as const;
+    let riskLevel: 'low' | 'medium' | 'high' | 'critical' = 'low';
     if (newPaymentRatio > 50) riskLevel = 'critical';
     else if (newPaymentRatio > 40) riskLevel = 'high';
     else if (newPaymentRatio > 30) riskLevel = 'medium';
@@ -2359,7 +2331,7 @@ async function loanComparisonEndpoint(input: any): Promise<any> {
     return amount * (monthlyRate * Math.pow(1 + monthlyRate, term)) / (Math.pow(1 + monthlyRate, term) - 1);
   };
 
-  const results = options.map((opt: any, idx: number) => {
+  const results = options.map((opt: any) => {
     const monthlyPayment = calculatePayment(loanAmount, opt.term, opt.rate);
     const totalPayment = monthlyPayment * opt.term;
     const totalInterest = totalPayment - loanAmount;
@@ -2440,7 +2412,7 @@ async function loanComparisonEndpoint(input: any): Promise<any> {
   // 비용 순위 업데이트
   const costSorted = [...results].sort((a: any, b: any) => a.financialMetrics.totalCost - b.financialMetrics.totalCost);
   costSorted.forEach((item: any, idx: number) => {
-    const original = results.find(r => r.optionId === item.optionId);
+    const original = results.find((r: any) => r.optionId === item.optionId);
     if (original) original.financialMetrics.costRank = idx + 1;
   });
 
@@ -2455,17 +2427,15 @@ async function loanComparisonEndpoint(input: any): Promise<any> {
 
   // 비교 매트릭스
   const metrics = ['월상환액', '총이자', '수수료', '부담도(%)'];
-  const values = sorted.map(r => [
+  const values = sorted.map((r: any) => [
     r.financialMetrics.monthlyPayment,
     r.financialMetrics.totalInterest,
     r.financialMetrics.totalCost - r.financialMetrics.totalInterest,
     r.financialMetrics.paymentRatio
   ]);
   const winner = [0, 0, 0, 0]; // 각 지표별 가장 좋은 옵션 인덱스
-  metrics.forEach((m, idx) => {
-    winner[idx] = idx < 3 ?
-      values.findIndex((v: any[]) => v[idx] === Math.min(...values.map(vv => vv[idx]))) :
-      values.findIndex((v: any[]) => v[idx] === Math.min(...values.map(vv => vv[idx])));
+  metrics.forEach((_m, idx) => {
+    winner[idx] = values.findIndex((v: any[]) => v[idx] === Math.min(...values.map((vv: any[]) => vv[idx])));
   });
 
   const personalAdvice = bestOption.overallScore >= 80 ?

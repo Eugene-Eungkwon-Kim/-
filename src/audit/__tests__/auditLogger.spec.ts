@@ -357,11 +357,6 @@ describe('AuditLogger', () => {
 
   describe('JSON 직렬화', () => {
     it('changesBefore와 changesAfter를 JSON으로 저장/복원한다', () => {
-      const changes = {
-        email: { from: 'old@example.com', to: 'new@example.com' },
-        phone: { from: '010-1111-1111', to: '010-2222-2222' }
-      };
-
       auditLogger.log({
         userId: testUserId,
         action: AuditAction.UPDATE,
