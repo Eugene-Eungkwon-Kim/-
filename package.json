@@ -20,6 +20,7 @@
     "lint": "biome lint .",
     "format": "biome format .",
     "type-check": "tsc --noEmit",
+    "pg:schema": "vite-node scripts/generate-pg-schema.ts",
     "db:migrate": "vite-node src/db/migrate-cli.ts up",
     "db:migrate:status": "vite-node src/db/migrate-cli.ts status",
     "db:migrate:rollback": "vite-node src/db/migrate-cli.ts down",
