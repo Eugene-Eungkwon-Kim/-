@@ -31,6 +31,7 @@ import { RecordPaymentInput } from '../types/loanPortfolio';
 import { RecordTransactionInput, TransactionFilter } from '../types/transaction';
 import { resolveServerEnv } from './env';
 import { AuditLogger } from '../audit/auditLogger';
+import { openAPISchemas, routeSchemas } from './openapi-schemas';
 
 export interface BuildServerOptions {
   jwtSecret?: string;
@@ -142,22 +143,97 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
   await app.register(helmet, { contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } });
 
   // Day 11 - Task 5 (δ=780): OpenAPI 자동 문서생성 (swagger + swagger-ui)
+  // Day 14 - Task H (δ=400): OpenAPI 스키마 확장
   await app.register(swagger, {
     openapi: {
       openapi: '3.0.0',
       info: {
         title: 'MAARS 금융 플랫폼 API',
         version: '1.0.0',
-        description: 'Day 11까지 구현된 실제 백엔드 API 명세'
+        description: 'Multi-Agent AI Risk & Loan Service API',
+        contact: {
+          name: 'API Support',
+          email: 'support@maars.example.com'
+        },
+        license: {
+          name: 'MIT'
+        }
       },
       servers: [
-        { url: 'http://localhost:3000', description: 'Development' },
+        { url: 'http://localhost:3001', description: 'Development' },
         { url: 'https://api.maars.example.com', description: 'Production' }
+      ],
+      components: {
+        schemas: openAPISchemas,
+        securitySchemes: {
+          Bearer: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+            description: 'JWT Access Token (유효 기간: 1시간)'
+          }
+        },
+        responses: {
+          ValidationError: {
+            description: '입력 검증 오류',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ValidationError' }
+              }
+            }
+          },
+          DuplicateEmail: {
+            description: '이메일 중복',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/DuplicateEmail' }
+              }
+            }
+          },
+          NotFound: {
+            description: '리소스를 찾을 수 없음',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/NotFound' }
+              }
+            }
+          },
+          Unauthorized: {
+            description: '인증 실패',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Unauthorized' }
+              }
+            }
+          },
+          Forbidden: {
+            description: '권한 없음',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/Forbidden' }
+              }
+            }
+          }
+        }
+      },
+      security: [{ Bearer: [] }],
+      tags: [
+        { name: 'Authentication', description: '인증 관련 엔드포인트' },
+        { name: 'Users', description: '사용자 프로필 관리' },
+        { name: 'Loans', description: '대출 신청 및 관리' },
+        { name: 'Transactions', description: '거래 기록 및 조회' },
+        { name: 'Analytics', description: '금융 분석 및 시뮬레이션' },
+        { name: 'Admin', description: '관리자 전용 기능' },
+        { name: 'Audit', description: '감사 로그 조회' }
       ]
     }
   });
   await app.register(swaggerUI, {
-    routePrefix: '/api/docs'
+    routePrefix: '/api/docs',
+    uiConfig: {
+      docExpansion: 'full',
+      deepLinking: true
+    }
   });
 
   await app.register(jwt, { secret: jwtSecret });
@@ -208,7 +284,7 @@ export async function buildServer(db: Database.Database, options: BuildServerOpt
     }
   );
 
-  app.post('/api/users', async (request, reply) => {
+  app.post('/api/users', { schema: routeSchemas.postUsers }, async (request, reply) => {
     respond(reply, registerUser(db, request.body as Parameters<typeof registerUser>[1]));
   });
 
