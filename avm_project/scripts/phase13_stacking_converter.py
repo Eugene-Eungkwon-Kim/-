@@ -28,8 +28,7 @@ import pandas as pd
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
-TARGET_COL = 'new_price'
-LEAK_PATTERNS = ('new_price', 'price_change_ratio', 'price_gain_pct')
+DEFAULT_LEAK_PATTERNS = 'new_price,price_change_ratio,price_gain_pct'
 MATCH_RTOL = 1e-3  # ONNX는 float32 연산이므로 상대 오차 기준 사용
 
 
@@ -54,11 +53,11 @@ def register_gbm_converters() -> None:
     log.info("✅ XGBoost/LightGBM 컨버터 등록 완료")
 
 
-def load_features(data_path: str) -> Tuple[np.ndarray, list]:
+def load_features(data_path: str, leak_patterns: Tuple[str, ...]) -> Tuple[np.ndarray, list]:
     """학습과 동일한 전처리로 특성 행렬 재구성 (누수 컬럼 제거)."""
     df = pd.read_csv(data_path)
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    numeric_cols = [c for c in numeric_cols if not any(p in c for p in LEAK_PATTERNS)]
+    numeric_cols = [c for c in numeric_cols if not any(p in c for p in leak_patterns)]
     X = df[numeric_cols].fillna(df[numeric_cols].mean()).fillna(0.0).to_numpy(dtype=np.float32)
     return np.ascontiguousarray(X), numeric_cols
 
@@ -112,7 +111,10 @@ def main() -> None:
     parser.add_argument('--model', default='output/models/kr_production_v1.0_8p62_mape.pkl')
     parser.add_argument('--data', default='data/processed/KR_engineered.csv')
     parser.add_argument('--output', default='output/converted_models/kr_production_v1.0.onnx')
+    parser.add_argument('--leak-patterns', default=DEFAULT_LEAK_PATTERNS,
+                        help='쉼표 구분 누수 컬럼 패턴 (학습 시와 동일해야 함)')
     args = parser.parse_args()
+    leak_patterns = tuple(p.strip() for p in args.leak_patterns.split(',') if p.strip())
 
     log.info("=" * 70)
     log.info("Phase 13.2.5 Stacking Ensemble ONNX 변환 시작")
@@ -123,7 +125,7 @@ def main() -> None:
     pkl_mb = Path(args.model).stat().st_size / 1024 / 1024
     log.info(f"✅ 모델 로드: {args.model} ({pkl_mb:.1f}MB, {type(model).__name__})")
 
-    X, feature_cols = load_features(args.data)
+    X, feature_cols = load_features(args.data, leak_patterns)
     log.info(f"✅ 특성 행렬: {X.shape[0]} rows × {X.shape[1]} features")
 
     register_gbm_converters()
@@ -151,7 +153,7 @@ def main() -> None:
         'validation': validation,
         'status': 'PASS' if validation['match_rate'] >= 0.99 else 'FAIL',
     }
-    report_path = output_path.parent / 'conversion_report.json'
+    report_path = output_path.parent / f'{output_path.stem}_conversion_report.json'
     with open(report_path, 'w', encoding='utf-8') as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
