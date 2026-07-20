@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-Phase 13.4 - AVM REST API Server (FastAPI)
+Phase 13.5 - AVM REST API Server (FastAPI, Multi-Country)
 
-ONNX 추론 엔진 기반 프로덕션 API. 부동산 가격 예측 서비스.
+ONNX 추론 엔진 기반 프로덕션 API. 9개국 부동산 가격 예측 서비스.
 
 실행:
-    python scripts/phase13_inference_api.py \
-      --model output/converted_models/kr_production_v1.0.onnx \
-      --port 5000
+    python scripts/phase13_inference_api.py --port 5000
 
 Endpoints:
-    POST /predict          단일/배치 예측
-    GET  /health           헬스 체크
-    GET  /model-info       모델 메타데이터
-    GET  /benchmark        성능 벤치마크
+    POST /predict?country=BR           단일/배치 예측 (국가 선택)
+    GET  /health                        헬스 체크 (전체)
+    GET  /health?country=SG             국가별 헬스 체크
+    GET  /models                        등록된 모델 목록
+    GET  /model/{country}/info          국가별 메타데이터
+    GET  /benchmark?country=UK          국가별 성능 벤치마크
 """
 
 import argparse
@@ -28,45 +28,51 @@ import numpy as np
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
-MODEL_META = {
-    'model_id': 'kr_production_v1.0',
-    'country': 'KR',
-    'mape': 0.0862,
-    'r2': 0.9732,
-    'n_features': 59,
-    'created_date': '2026-07-15',
-}
 
-
-def create_app(model_path: str, backend: str = 'auto'):
-    """FastAPI 앱 생성 (엔진 초기화 포함)."""
-    from fastapi import FastAPI, HTTPException
+def create_app(backend: str = 'auto'):
+    """다국가 FastAPI 앱 생성."""
+    from fastapi import FastAPI, HTTPException, Query
     from pydantic import BaseModel
 
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
-    from phase13_inference_engine import AVMInferenceEngine
+    from phase13_model_registry import ModelRegistry
 
+    registry = ModelRegistry()
     app = FastAPI(
-        title="Loan4U AVM Inference API",
-        description="부동산 자동 가치평가 모델 (MAPE 8.62%)",
-        version="1.0.0",
+        title="Loan4U AVM Global API",
+        description="9-country property valuation service",
+        version="2.0.0",
     )
-    engine = AVMInferenceEngine(model_path, backend=backend)
-    log.info(f"✅ 엔진 초기화: backend={engine.backend}")
+    log.info(f"✅ 레지스트리 초기화: {registry.list_countries()}")
 
     class PredictRequest(BaseModel):
-        features: List[List[float]]  # shape (n, 59)
+        features: List[List[float]]
         property_ids: Optional[List[str]] = None
 
+    def _validate_country(country: str) -> None:
+        """국가 코드 검증."""
+        if country not in registry.list_countries():
+            raise HTTPException(
+                400, f"Invalid country: {country}. Supported: {registry.list_countries()}"
+            )
+
     @app.post('/predict')
-    async def predict(req: PredictRequest) -> Dict:
+    async def predict(req: PredictRequest, country: str = Query('KR')) -> Dict:
+        _validate_country(country)
+        engine = registry.load_model(country)
+
         x = np.asarray(req.features, dtype=np.float32)
-        if x.ndim != 2 or x.shape[1] != engine.n_features:
-            raise HTTPException(422, f"features shape must be (n, {engine.n_features})")
+        if not registry.validate_features(country, x):
+            expected = registry.get_feature_count(country)
+            raise HTTPException(
+                422, f"Invalid shape for {country}: expected (n, {expected}), got {x.shape}"
+            )
+
         result = engine.predict(x)
-        ids = req.property_ids or [f'prop_{i}' for i in range(len(result['prices']))]
+        ids = req.property_ids or [f'{country}_{i}' for i in range(len(result['prices']))]
         return {
+            'country': country,
             'predictions': [
                 {'property_id': pid, 'predicted_price': price}
                 for pid, price in zip(ids, result['prices'])
@@ -77,30 +83,55 @@ def create_app(model_path: str, backend: str = 'auto'):
         }
 
     @app.get('/health')
-    async def health() -> Dict:
-        return {'status': 'healthy', 'backend': engine.backend,
-                'model': MODEL_META['model_id']}
+    async def health(country: Optional[str] = Query(None)) -> Dict:
+        if country:
+            _validate_country(country)
+            engine = registry.load_model(country)
+            return {
+                'status': 'healthy',
+                'country': country,
+                'backend': engine.backend,
+                'model': registry.get_info(country).get('model_id'),
+            }
+        summary = registry.get_model_summary()
+        return {
+            'status': 'healthy',
+            'countries_available': summary['countries'],
+            'timestamp': summary['timestamp'],
+        }
 
-    @app.get('/model-info')
-    async def model_info() -> Dict:
-        return MODEL_META
+    @app.get('/models')
+    async def list_models() -> Dict:
+        return registry.get_model_summary()
+
+    @app.get('/model/{country}/info')
+    async def model_info(country: str) -> Dict:
+        _validate_country(country)
+        return registry.get_info(country) or {'error': f'{country} not found'}
 
     @app.get('/benchmark')
-    async def benchmark() -> Dict:
-        return engine.benchmark(batch_sizes=[1, 100], reps=20)
+    async def benchmark(country: str = Query('KR')) -> Dict:
+        _validate_country(country)
+        engine = registry.load_model(country)
+        return {
+            'country': country,
+            'backend': engine.backend,
+            **engine.benchmark(batch_sizes=[1, 100], reps=20),
+        }
 
-    return app
+    return app, registry
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Phase 13.4 AVM API 서버')
-    parser.add_argument('--model', default='output/converted_models/kr_production_v1.0.onnx')
+    parser = argparse.ArgumentParser(description='Phase 13.5 Multi-Country AVM API')
     parser.add_argument('--backend', default='auto')
     parser.add_argument('--port', type=int, default=5000)
     args = parser.parse_args()
 
     import uvicorn
-    app = create_app(args.model, args.backend)
+    app, registry = create_app(args.backend)
+    log.info(f"🚀 Starting API on http://0.0.0.0:{args.port}")
+    log.info(f"   Available countries: {registry.list_countries()}")
     uvicorn.run(app, host='0.0.0.0', port=args.port)
 
 
