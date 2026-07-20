@@ -31,15 +31,28 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 
 def load_real_data(country: str) -> pd.DataFrame:
-    """국가별 실데이터 수집기 동적 임포트 및 실행."""
+    """Load country-specific real data collector and execute."""
     try:
-        if country == 'BR':
-            from phase13_real_data_br import BrazilCollector
-            collector = BrazilCollector()
-            df = collector.collect_enriched(n_records=20000)
-            return df
-        # 추후 SG, HK 등 추가
-        raise NotImplementedError(f"Real data collector not yet implemented for {country}")
+        collectors = {
+            'BR': ('phase13_real_data_br', 'BrazilCollector', 20000),
+            'SG': ('phase13_real_data_sg', 'SingaporeCollector', 15000),
+            'HK': ('phase13_real_data_hk', 'HongKongCollector', 12000),
+            'UK': ('phase13_real_data_uk', 'UKCollector', 50000),
+            'DE': ('phase13_real_data_de', 'GermanyCollector', 30000),
+            'AU': ('phase13_real_data_au', 'AustraliaCollector', 40000),
+            'CA': ('phase13_real_data_ca', 'CanadaCollector', 35000),
+            'TH': ('phase13_real_data_th', 'ThailandCollector', 8000),
+        }
+
+        if country not in collectors:
+            raise NotImplementedError(f"Real data collector not implemented for {country}")
+
+        module_name, class_name, n_records = collectors[country]
+        module = __import__(module_name)
+        collector_class = getattr(module, class_name)
+        collector = collector_class()
+        df = collector.collect_enriched(n_records=n_records)
+        return df
     except Exception as e:
         log.error(f"Real data loading failed: {e}")
         raise
