@@ -1,0 +1,80 @@
+name: Phase 14 - Model Deployment
+
+on:
+  workflow_run:
+    workflows: [Phase 14 - Model Validation & ONNX Conversion]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  deploy-models:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -q numpy pandas onnxruntime
+
+      - name: Download validation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: validation-summary
+          path: output/
+
+      - name: Verify all models passed validation
+        run: |
+          python -c "
+          import json
+          with open('output/validation_summary.json') as f:
+            summary = json.load(f)
+          all_pass = all(m['status'] == 'PASS' for m in summary['models'].values())
+          if not all_pass:
+            print('❌ Some models failed validation')
+            exit(1)
+          print('✅ All models validated')
+          "
+
+      - name: Update model registry
+        run: |
+          python scripts/phase13_model_registry.py > output/model_registry_status.json
+
+      - name: Commit model registry update
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add output/model_registry_status.json || true
+          git commit -m "[Phase 14] Model registry updated - $(date +%Y-%m-%d)" || true
+          git push || true
+        continue-on-error: true
+
+      - name: Notify deployment complete
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event_type: 'model-deployment-complete',
+              client_payload: {
+                timestamp: new Date().toISOString(),
+                models_deployed: 9
+              }
+            })
+        continue-on-error: true
+
+      - name: Archive deployment log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-log
+          path: output/model_registry_status.json
+          retention-days: 90
