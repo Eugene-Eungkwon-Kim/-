@@ -18,10 +18,14 @@ describe('errorMapping (Day 6 - Task 3: 응답 표준화 & 에러 처리, δ=144
       expect(mapErrorToCode(new OverpaymentError('l1', 100, 50)).code).toBe('OVERPAYMENT');
     });
 
-    it('[T-SVC-302] 알 수 없는 에러는 INTERNAL_ERROR로 폴백한다', () => {
+    it('[T-SVC-302] 알 수 없는 에러는 INTERNAL_ERROR로 폴백하고 내부 메시지를 유출하지 않는다', () => {
       expect(mapErrorToCode(new Error('boom')).code).toBe('INTERNAL_ERROR');
       expect(mapErrorToCode('a plain string throw').code).toBe('INTERNAL_ERROR');
-      expect(mapErrorToCode(new Error('boom')).message).toBe('boom');
+      // 미매핑 예외의 원본 메시지(SQL 오류, 암호화 키 상태 등)는 서버 로그에만
+      // 남기고 클라이언트에는 일반화된 메시지만 내보낸다 (정보 노출 방지)
+      const leaked = mapErrorToCode(new Error('ENCRYPTION_KEY environment variable is not set'));
+      expect(leaked.message).toBe('An unexpected internal error occurred');
+      expect(leaked.message).not.toContain('ENCRYPTION_KEY');
     });
 
     it('[T-SVC-303] 성공 값은 그대로 통과한다', () => {

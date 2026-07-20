@@ -93,3 +93,33 @@ export function generateEncryptionKey(): string {
 export function hashData(data: string): string {
   return createHash('sha256').update(data).digest('hex');
 }
+
+/**
+ * 현재 ENCRYPTION_KEY가 DB에 이미 저장된 암호문과 일치하는지 부팅 시점에 검증한다.
+ *
+ * 키가 교체된 채 기동되면 서버는 정상으로 보이지만 암호화 컬럼을 읽는 모든
+ * 요청(로그인, 프로필 조회)이 사용자별로 산발적인 500을 낸다 — 원인 추적이
+ * 어려운 장애라 부팅 단계에서 명확한 메시지로 즉시 실패시키는 편이 낫다.
+ *
+ * @returns 'ok' 검증 통과 | 'no-data' 검증할 암호문 없음 (신규 DB)
+ * @throws 저장된 암호문을 현재 키로 복호화할 수 없을 때
+ */
+export function verifyEncryptionKeyAgainstDb(db: {
+  prepare: (sql: string) => { get: () => unknown };
+}): 'ok' | 'no-data' {
+  const row = db
+    .prepare('SELECT encrypted_email FROM users WHERE encrypted_email IS NOT NULL LIMIT 1')
+    .get() as { encrypted_email: string } | undefined;
+
+  if (!row) return 'no-data';
+
+  try {
+    decrypt(row.encrypted_email);
+    return 'ok';
+  } catch {
+    throw new Error(
+      'ENCRYPTION_KEY does not match existing encrypted data in the database. ' +
+        'The key may have been rotated or mistyped — refusing to start with undecryptable data.'
+    );
+  }
+}

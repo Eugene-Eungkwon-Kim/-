@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { encrypt, decrypt, generateEncryptionKey, hashData, getEncryptionKey } from '../encryption';
+import {
+  encrypt,
+  decrypt,
+  generateEncryptionKey,
+  hashData,
+  getEncryptionKey,
+  verifyEncryptionKeyAgainstDb
+} from '../encryption';
+import { createDatabase } from '../../db/connection';
 
 /**
  * Day 13 - Task F (δ=650): 암호화 유틸리티 테스트
@@ -161,6 +169,41 @@ describe('encryption.ts', () => {
       }
       const duration = performance.now() - start;
       expect(duration).toBeLessThan(1000); // 100 iterations < 1000ms = 10ms avg
+    });
+  });
+
+  describe('verifyEncryptionKeyAgainstDb (부팅 시 키 일치 검증)', () => {
+    function insertUserWithEncryptedEmail(db: ReturnType<typeof createDatabase>): void {
+      db.prepare(
+        'INSERT INTO users (id, email, name, encrypted_email) VALUES (?, ?, ?, ?)'
+      ).run('verify-user', 'verify@example.com', 'Verify User', encrypt('verify@example.com'));
+    }
+
+    it('현재 키로 암호화된 데이터가 있으면 ok를 반환한다', () => {
+      const db = createDatabase(':memory:');
+      insertUserWithEncryptedEmail(db);
+      expect(verifyEncryptionKeyAgainstDb(db)).toBe('ok');
+      db.close();
+    });
+
+    it('암호화된 데이터가 없는 신규 DB는 no-data를 반환한다', () => {
+      const db = createDatabase(':memory:');
+      expect(verifyEncryptionKeyAgainstDb(db)).toBe('no-data');
+      db.close();
+    });
+
+    it('키가 교체되면 명확한 메시지와 함께 실패한다', () => {
+      const db = createDatabase(':memory:');
+      insertUserWithEncryptedEmail(db);
+
+      // 다른 키로 교체된 상황 재현
+      process.env.ENCRYPTION_KEY =
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+
+      expect(() => verifyEncryptionKeyAgainstDb(db)).toThrow(
+        /ENCRYPTION_KEY does not match existing encrypted data/
+      );
+      db.close();
     });
   });
 });

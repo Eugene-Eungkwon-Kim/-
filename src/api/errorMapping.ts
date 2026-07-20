@@ -39,7 +39,12 @@ export function mapErrorToCode(error: unknown): { code: string; message: string 
   for (const [ctor, code] of ERROR_CODE_MAP) {
     if (error instanceof ctor) return { code, message: error.message };
   }
-  return { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) };
+  // 매핑되지 않은 예외는 내부 구현 세부사항(SQL 오류, 암호화 키 상태 등)을
+  // 담고 있을 수 있다. 원본은 서버 로그에만 남기고 클라이언트에는 일반화된
+  // 메시지만 내보낸다.
+  // eslint-disable-next-line no-console
+  console.error('[errorMapping] unmapped error:', error);
+  return { code: 'INTERNAL_ERROR', message: 'An unexpected internal error occurred' };
 }
 
 export function toServiceResult<T>(fn: () => T): ServiceResult<T> {
