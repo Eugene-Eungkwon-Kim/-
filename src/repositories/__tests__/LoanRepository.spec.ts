@@ -1,26 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { getTestPool, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import { UserRepository } from '@repositories/UserRepository';
 import { LoanRepository, OverpaymentError } from '@repositories/LoanRepository';
 import { UserNotFoundError } from '@repositories/errors';
 import { calculateLoanPayment } from '@services/interest-calculator';
 
 describe('LoanRepository (Day 5 - Task 2: 대출 포트폴리오 관리, δ=1570)', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let users: UserRepository;
   let loans: LoanRepository;
   let userId: string;
 
-  beforeEach(() => {
-    db = createDatabase(':memory:');
-    users = new UserRepository(db);
-    loans = new LoanRepository(db);
-    userId = users.register({ email: 'borrower@example.com', name: 'Borrower' }).id;
+  beforeEach(async () => {
+    pool = getTestPool();
+    users = new UserRepository(pool);
+    loans = new LoanRepository(pool);
+    userId = (await users.register({ email: 'borrower@example.com', name: 'Borrower' })).id;
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
+    await cleanupTestDatabase();
   });
 
   describe('[T-API-A07~A12] 대출 포트폴리오 관리', () => {
@@ -58,7 +58,7 @@ describe('LoanRepository (Day 5 - Task 2: 대출 포트폴리오 관리, δ=1570
       await loans.registerLoan({ userId, productId: 'prod-1', originalAmount: 300000000, interestRate: 3.2, termMonths: 240, startDate: '2026-01-01' });
       await loans.registerLoan({ userId, productId: 'prod-2', originalAmount: 100000000, interestRate: 2.8, termMonths: 120, startDate: '2026-02-01' });
 
-      const portfolio = loans.getPortfolio(userId);
+      const portfolio = await loans.getPortfolio(userId);
       expect(portfolio.length).toBe(2);
       expect(portfolio.map((l) => l.productId)).toEqual(['prod-1', 'prod-2']);
     });
@@ -66,7 +66,7 @@ describe('LoanRepository (Day 5 - Task 2: 대출 포트폴리오 관리, δ=1570
     it('[T-API-A09] 상환 기록 추가', async () => {
       const loan = await loans.registerLoan({ userId, productId: 'prod-1', originalAmount: 300000000, interestRate: 3.2, termMonths: 240, startDate: '2026-01-01' });
 
-      const updated = loans.recordPayment(loan.id, { paymentDate: '2026-02-01', principal: 1000000, interest: 800000 });
+      const updated = await loans.recordPayment(loan.id, { paymentDate: '2026-02-01', principal: 1000000, interest: 800000 });
 
       expect(updated.currentBalance).toBe(299000000);
       expect(updated.totalPaid).toBe(1800000);
@@ -74,7 +74,7 @@ describe('LoanRepository (Day 5 - Task 2: 대출 포트폴리오 관리, δ=1570
       expect(updated.nextPaymentDate).toBe('2026-03-01');
       expect(updated.status).toBe('active');
 
-      const history = loans.getLoanHistory(loan.id);
+      const history = await loans.getLoanHistory(loan.id);
       expect(history.length).toBe(2); // CREATED + PAYMENT
       expect(history[1].action).toBe('PAYMENT');
       expect(history[1].previousBalance).toBe(300000000);
