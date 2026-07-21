@@ -29,6 +29,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent))
 from phase13_brazil_model_trainer import build_stacking_model, evaluate
+from phase13_data_quality import generate_quality_report, save_report
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
@@ -147,6 +148,21 @@ def collect_country_data(country: str, config: Dict, n_records: int) -> pd.DataF
     return pd.DataFrame(rows)
 
 
+def validate_quality(df: pd.DataFrame, country: str, raw_path: Path) -> bool:
+    """Validate data quality and log results."""
+    report = generate_quality_report(df, country, str(raw_path))
+    report_path = raw_path.parent / f'{country}_quality_report.json'
+    save_report(report, report_path)
+
+    if not report.overall_passed:
+        log.warning(f"⚠️  Data quality check failed: {report.pass_rate:.1%} pass rate")
+        for rec in report.recommendations:
+            log.warning(f"    {rec}")
+    else:
+        log.info(f"✅ 품질검사: {report.pass_rate:.1%} 통과 ({report.passed_records:,}/{report.total_records:,})")
+    return report.overall_passed
+
+
 def engineer_features(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
     """도시/유형 인코딩, 연식, 면적, 접근성, 경제 상호작용 특성 생성."""
     city_centers = {c: (v[0], v[1]) for c, v in config['cities'].items()}
@@ -241,6 +257,10 @@ def run_pipeline(country: str, n_records: int, use_real: bool = False) -> Dict:
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(raw_path, index=False)
     log.info(f"✅ 수집: {len(df):,} rows → {raw_path}")
+
+    quality_passed = validate_quality(df, country, raw_path)
+    if not quality_passed and use_real:
+        log.warning(f"⚠️  Proceeding with training despite quality warnings")
 
     df = engineer_features(df, config)
     proc_path = Path(f'data/processed/{country}_engineered.csv')
