@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import {
   AuditAction,
@@ -58,10 +58,6 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/**
- * 신용점수 → 등급 매핑. Day 4 상품추천(δ=520)에서 사용한 800/700/600 경계를 그대로 따르되,
- * 사용자 프로필 명세(A/B/C/D/F)에 맞춰 D/F 구간을 추가한다.
- */
 function computeCreditGrade(score: number | null | undefined): CreditGrade | null {
   if (score === null || score === undefined) return null;
   if (score >= 800) return 'A';
@@ -72,7 +68,6 @@ function computeCreditGrade(score: number | null | undefined): CreditGrade | nul
 }
 
 function mapRowToProfile(row: UserRow): UserProfile {
-  // 암호화된 PII 데이터를 복호화한다 (투명한 복호화)
   const email = row.encrypted_email ? decrypt(row.encrypted_email) : row.email;
   const phone = row.encrypted_phone ? decrypt(row.encrypted_phone) : row.phone;
 
@@ -120,83 +115,69 @@ function mapRowToProfile(row: UserRow): UserProfile {
   };
 }
 
-/**
- * 사용자 프로필 & 계정 관리 리포지토리 (Day 5 - Task 1, δ=1635)
- *
- * 낙관적 동시성 제어(version 컬럼)와 감사 로그(users_audit)를 리포지토리 레벨에서
- * 강제하여, 호출자가 매번 동시성/추적 로직을 재구현하지 않도록 한다.
- * 입력 검증은 src/validation/userValidation.ts (Task 5, δ=1605)에 위임하며,
- * DB CHECK 제약은 애플리케이션 검증을 우회하는 경로에 대비한 최후 방어선이다.
- */
 export class UserRepository {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly pool: Pool) {}
 
-  register(input: RegisterUserInput): UserProfile {
+  async register(input: RegisterUserInput): Promise<UserProfile> {
     validateRegisterUserInput(input, todayIso());
 
     const id = randomUUID();
     const grade = computeCreditGrade(input.creditProfile?.score);
     const passwordHash = input.password ? bcrypt.hashSync(input.password, PASSWORD_SALT_ROUNDS) : null;
 
-    // PII 데이터를 암호화한다
     const encryptedEmail = encrypt(input.email);
     const encryptedPhone = input.contact?.phone ? encrypt(input.contact.phone) : null;
 
-    const insert = this.db.prepare(`
-      INSERT INTO users (
-        id, email, name, password_hash, date_of_birth,
-        employment_status, employment_industry, employment_tenure, employment_company,
-        phone, address_street, address_city, address_zipcode, address_country,
-        credit_score, credit_grade, credit_inquiries, credit_delinquency,
-        income, expenses, assets, debt, savings_rate,
-        encrypted_email, encrypted_phone, encryption_version
-      ) VALUES (
-        @id, @email, @name, @passwordHash, @dateOfBirth,
-        @employmentStatus, @employmentIndustry, @employmentTenure, @employmentCompany,
-        @phone, @addressStreet, @addressCity, @addressZipcode, @addressCountry,
-        @creditScore, @creditGrade, @creditInquiries, @creditDelinquency,
-        @income, @expenses, @assets, @debt, @savingsRate,
-        @encryptedEmail, @encryptedPhone, @encryptionVersion
-      )
-    `);
-
     try {
-      insert.run({
-        id,
-        email: input.email,
-        name: input.name,
-        passwordHash,
-        dateOfBirth: input.dateOfBirth ?? null,
-        employmentStatus: input.employment?.status ?? null,
-        employmentIndustry: input.employment?.industry ?? null,
-        employmentTenure: input.employment?.tenure ?? null,
-        employmentCompany: input.employment?.company ?? null,
-        phone: input.contact?.phone ?? null,
-        addressStreet: input.contact?.address?.street ?? null,
-        addressCity: input.contact?.address?.city ?? null,
-        addressZipcode: input.contact?.address?.zipCode ?? null,
-        addressCountry: input.contact?.address?.country ?? null,
-        creditScore: input.creditProfile?.score ?? null,
-        creditGrade: grade,
-        creditInquiries: input.creditProfile?.inquiries ?? 0,
-        creditDelinquency: input.creditProfile?.delinquency ?? 0,
-        income: input.financialSnapshot?.monthlyIncome ?? null,
-        expenses: input.financialSnapshot?.monthlyExpenses ?? null,
-        assets: input.financialSnapshot?.totalAssets ?? null,
-        debt: input.financialSnapshot?.totalDebt ?? null,
-        savingsRate: input.financialSnapshot?.savingsRate ?? null,
-        encryptedEmail,
-        encryptedPhone,
-        encryptionVersion: 1
-      });
+      await this.pool.query(
+        `INSERT INTO users (
+          id, email, name, password_hash, date_of_birth,
+          employment_status, employment_industry, employment_tenure, employment_company,
+          phone, address_street, address_city, address_zipcode, address_country,
+          credit_score, credit_grade, credit_inquiries, credit_delinquency,
+          income, expenses, assets, debt, savings_rate,
+          encrypted_email, encrypted_phone, encryption_version
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
+        )`,
+        [
+          id,
+          input.email,
+          input.name,
+          passwordHash,
+          input.dateOfBirth ?? null,
+          input.employment?.status ?? null,
+          input.employment?.industry ?? null,
+          input.employment?.tenure ?? null,
+          input.employment?.company ?? null,
+          input.contact?.phone ?? null,
+          input.contact?.address?.street ?? null,
+          input.contact?.address?.city ?? null,
+          input.contact?.address?.zipCode ?? null,
+          input.contact?.address?.country ?? null,
+          input.creditProfile?.score ?? null,
+          grade,
+          input.creditProfile?.inquiries ?? 0,
+          input.creditProfile?.delinquency ?? 0,
+          input.financialSnapshot?.monthlyIncome ?? null,
+          input.financialSnapshot?.monthlyExpenses ?? null,
+          input.financialSnapshot?.totalAssets ?? null,
+          input.financialSnapshot?.totalDebt ?? null,
+          input.financialSnapshot?.savingsRate ?? null,
+          encryptedEmail,
+          encryptedPhone,
+          1
+        ]
+      );
     } catch (error) {
-      if (error instanceof Error && /UNIQUE constraint failed: users\.email/.test(error.message)) {
+      if (error instanceof Error && /duplicate key value violates unique constraint "users_email_key"/.test(error.message)) {
         throw new DuplicateEmailError(input.email);
       }
       throw error;
     }
 
-    this.recordAudit(id, 'CREATE', {
+    await this.recordAudit(id, 'CREATE', {
       email: { from: null, to: input.email },
       name: { from: null, to: input.name }
     });
@@ -204,25 +185,24 @@ export class UserRepository {
     return this.getProfileOrThrow(id);
   }
 
-  getProfile(userId: string): UserProfile | null {
-    const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+  async getProfile(userId: string): Promise<UserProfile | null> {
+    const result = await this.pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    const row = result.rows[0] as UserRow | undefined;
     return row ? mapRowToProfile(row) : null;
   }
 
-  /**
-   * 이메일+비밀번호를 검증한다. 비밀번호를 설정하지 않고 등록된 사용자(password_hash가 null)는
-   * 어떤 입력으로도 로그인할 수 없다 — null과 일치하는 해시는 존재하지 않으므로 안전하다.
-   */
-  verifyPassword(email: string, plainPassword: string): UserProfile | null {
-    const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
+  async verifyPassword(email: string, plainPassword: string): Promise<UserProfile | null> {
+    const result = await this.pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const row = result.rows[0] as UserRow | undefined;
     if (!row || !row.password_hash) return null;
     return bcrypt.compareSync(plainPassword, row.password_hash) ? mapRowToProfile(row) : null;
   }
 
-  updateProfile(userId: string, updates: UpdateUserInput, expectedVersion: number): UserProfile {
+  async updateProfile(userId: string, updates: UpdateUserInput, expectedVersion: number): Promise<UserProfile> {
     validateUpdateUserInput(updates, todayIso());
 
-    const currentRow = this.db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+    const currentResult = await this.pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    const currentRow = currentResult.rows[0] as UserRow | undefined;
     if (!currentRow) throw new UserNotFoundError(userId);
     if (currentRow.version !== expectedVersion) {
       throw new OptimisticLockError(userId, expectedVersion, currentRow.version);
@@ -265,7 +245,6 @@ export class UserRepository {
       setIfChanged('credit_grade', computeCreditGrade(updates.creditProfile.score));
     }
 
-    // 암호화된 전화번호 업데이트
     if (updates.contact?.phone !== undefined) {
       const encryptedPhone = updates.contact.phone ? encrypt(updates.contact.phone) : null;
       columnUpdates['encrypted_phone'] = encryptedPhone;
@@ -276,78 +255,73 @@ export class UserRepository {
       return mapRowToProfile(currentRow);
     }
 
-    const setClauses = Object.keys(columnUpdates)
-      .map((column) => `${column} = @${column}`)
-      .concat(["updated_at = datetime('now')", 'version = version + 1'])
+    const entries = Object.entries(columnUpdates);
+    const setClauses = entries
+      .map((_, i) => `${entries[i][0]} = $${i + 1}`)
+      .concat(['updated_at = CURRENT_TIMESTAMP', 'version = version + 1'])
       .join(', ');
 
-    const update = this.db.prepare(`UPDATE users SET ${setClauses} WHERE id = @id AND version = @expectedVersion`);
-    const result = update.run({ ...columnUpdates, id: userId, expectedVersion });
+    const values = [...entries.map(([, v]) => v), userId, expectedVersion];
+    const updateResult = await this.pool.query(
+      `UPDATE users SET ${setClauses} WHERE id = $${entries.length + 1} AND version = $${entries.length + 2}`,
+      values
+    );
 
-    if (result.changes === 0) {
-      const latest = this.db.prepare('SELECT version FROM users WHERE id = ?').get(userId) as
-        | { version: number }
-        | undefined;
-      throw new OptimisticLockError(userId, expectedVersion, latest?.version ?? -1);
+    if (updateResult.rowCount === 0) {
+      const latest = await this.pool.query('SELECT version FROM users WHERE id = $1', [userId]);
+      const latestRow = latest.rows[0] as { version: number } | undefined;
+      throw new OptimisticLockError(userId, expectedVersion, latestRow?.version ?? -1);
     }
 
-    this.recordAudit(userId, 'UPDATE', diff);
+    await this.recordAudit(userId, 'UPDATE', diff);
 
     return this.getProfileOrThrow(userId);
   }
 
-  getCreditHistory(userId: string): CreditHistoryEntry[] {
-    const rows = this.db
-      .prepare(
-        `
-        SELECT changed_at,
-               json_extract(changed_fields, '$.credit_score.from') as from_value,
-               json_extract(changed_fields, '$.credit_score.to') as to_value
-        FROM users_audit
-        WHERE user_id = ? AND action = 'UPDATE' AND json_extract(changed_fields, '$.credit_score') IS NOT NULL
-        ORDER BY changed_at ASC
-      `
-      )
-      .all(userId) as { changed_at: string; from_value: number | null; to_value: number | null }[];
+  async getCreditHistory(userId: string): Promise<CreditHistoryEntry[]> {
+    const result = await this.pool.query(
+      `SELECT changed_at,
+              (changed_fields->'credit_score'->>'from')::numeric as from_value,
+              (changed_fields->'credit_score'->>'to')::numeric as to_value
+       FROM users_audit
+       WHERE user_id = $1 AND action = 'UPDATE' AND changed_fields ? 'credit_score'
+       ORDER BY changed_at ASC`,
+      [userId]
+    );
 
-    return rows.map((row) => ({
+    return result.rows.map((row) => ({
       changedAt: row.changed_at,
       from: row.from_value,
       to: row.to_value
     }));
   }
 
-  getAuditLog(userId: string): AuditLogEntry[] {
-    const rows = this.db
-      .prepare('SELECT * FROM users_audit WHERE user_id = ? ORDER BY changed_at ASC')
-      .all(userId) as {
-      id: string;
-      user_id: string;
-      action: string;
-      changed_fields: string;
-      changed_by: string;
-      changed_at: string;
-    }[];
+  async getAuditLog(userId: string): Promise<AuditLogEntry[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM users_audit WHERE user_id = $1 ORDER BY changed_at ASC',
+      [userId]
+    );
 
-    return rows.map((row) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       userId: row.user_id,
       action: row.action as AuditAction,
-      changedFields: JSON.parse(row.changed_fields) as AuditDiff,
+      changedFields: typeof row.changed_fields === 'string' ? JSON.parse(row.changed_fields) : row.changed_fields,
       changedBy: row.changed_by,
       changedAt: row.changed_at
     }));
   }
 
-  private getProfileOrThrow(userId: string): UserProfile {
-    const profile = this.getProfile(userId);
+  private async getProfileOrThrow(userId: string): Promise<UserProfile> {
+    const profile = await this.getProfile(userId);
     if (!profile) throw new UserNotFoundError(userId);
     return profile;
   }
 
-  private recordAudit(userId: string, action: AuditAction, diff: AuditDiff): void {
-    this.db
-      .prepare('INSERT INTO users_audit (id, user_id, action, changed_fields) VALUES (?, ?, ?, ?)')
-      .run(randomUUID(), userId, action, JSON.stringify(diff));
+  private async recordAudit(userId: string, action: AuditAction, diff: AuditDiff): Promise<void> {
+    await this.pool.query(
+      'INSERT INTO users_audit (id, user_id, action, changed_fields) VALUES ($1, $2, $3, $4)',
+      [randomUUID(), userId, action, JSON.stringify(diff)]
+    );
   }
 }

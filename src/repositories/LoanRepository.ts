@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type Database from 'better-sqlite3';
+import type { Pool, PoolClient } from 'pg';
 import { calculateLoanPayment } from '../services/interest-calculator';
 import {
   LoanHistoryAction,
@@ -69,28 +69,20 @@ function mapRowToLoan(row: LoanRow): LoanRecord {
   };
 }
 
-/** 'YYYY-MM-DD' 문자열에 개월 수를 더한 'YYYY-MM-DD'를 반환 (UTC 기준, TZ 영향 없음) */
 function addMonths(dateStr: string, months: number): string {
   const [year, month, day] = dateStr.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1 + months, day));
   return date.toISOString().slice(0, 10);
 }
 
-/**
- * 대출 포트폴리오 관리 리포지토리 (Day 5 - Task 2, δ=1570)
- *
- * 월상환액 계산은 src/services/interest-calculator.ts 의 기존 상각 공식을 재사용한다
- * (Day3/4 MSW mock에서 동일 공식을 여러 번 복제했던 것과 달리, 실제 저장 계층에서는
- * 단일 출처를 유지해 공식이 어긋날 여지를 없앤다).
- */
 export class LoanRepository {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly pool: Pool) {}
 
   async registerLoan(input: RegisterLoanInput): Promise<LoanRecord> {
     validateRegisterLoanInput(input);
 
-    const userExists = this.db.prepare('SELECT 1 FROM users WHERE id = ?').get(input.userId);
-    if (!userExists) throw new UserNotFoundError(input.userId);
+    const userResult = await this.pool.query('SELECT 1 FROM users WHERE id = $1', [input.userId]);
+    if (!userResult.rows.length) throw new UserNotFoundError(input.userId);
 
     const { monthlyPayment } = await calculateLoanPayment({
       principal: input.originalAmount,
@@ -102,148 +94,152 @@ export class LoanRepository {
     const maturityDate = addMonths(input.startDate, input.termMonths);
     const nextPaymentDate = addMonths(input.startDate, 1);
 
-    this.db
-      .prepare(
-        `
-        INSERT INTO loans (
-          id, user_id, product_id, original_amount, current_balance,
-          interest_rate, term_months, start_date, maturity_date,
-          monthly_payment, next_payment_date
-        ) VALUES (
-          @id, @userId, @productId, @originalAmount, @originalAmount,
-          @interestRate, @termMonths, @startDate, @maturityDate,
-          @monthlyPayment, @nextPaymentDate
-        )
-      `
-      )
-      .run({
+    await this.pool.query(
+      `INSERT INTO loans (
+        id, user_id, product_id, original_amount, current_balance,
+        interest_rate, term_months, start_date, maturity_date,
+        monthly_payment, next_payment_date
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+      )`,
+      [
         id,
-        userId: input.userId,
-        productId: input.productId,
-        originalAmount: input.originalAmount,
-        interestRate: input.interestRate,
-        termMonths: input.termMonths,
-        startDate: input.startDate,
+        input.userId,
+        input.productId,
+        input.originalAmount,
+        input.originalAmount,
+        input.interestRate,
+        input.termMonths,
+        input.startDate,
         maturityDate,
         monthlyPayment,
         nextPaymentDate
-      });
+      ]
+    );
 
-    this.recordHistory(id, 'CREATED', 0, input.originalAmount);
+    await this.recordHistory(id, 'CREATED', 0, input.originalAmount);
 
     return this.getLoanOrThrow(id);
   }
 
-  getLoan(loanId: string): LoanRecord | null {
-    const row = this.db.prepare('SELECT * FROM loans WHERE id = ?').get(loanId) as LoanRow | undefined;
+  async getLoan(loanId: string): Promise<LoanRecord | null> {
+    const result = await this.pool.query('SELECT * FROM loans WHERE id = $1', [loanId]);
+    const row = result.rows[0] as LoanRow | undefined;
     return row ? mapRowToLoan(row) : null;
   }
 
-  getPortfolio(userId: string): LoanRecord[] {
-    const rows = this.db
-      .prepare('SELECT * FROM loans WHERE user_id = ? ORDER BY created_at ASC')
-      .all(userId) as LoanRow[];
-    return rows.map(mapRowToLoan);
+  async getPortfolio(userId: string): Promise<LoanRecord[]> {
+    const result = await this.pool.query('SELECT * FROM loans WHERE user_id = $1 ORDER BY created_at ASC', [userId]);
+    return (result.rows as LoanRow[]).map(mapRowToLoan);
   }
 
-  recordPayment(loanId: string, input: RecordPaymentInput): LoanRecord {
-    const row = this.db.prepare('SELECT * FROM loans WHERE id = ?').get(loanId) as LoanRow | undefined;
-    if (!row) throw new LoanNotFoundError(loanId);
+  async recordPayment(loanId: string, input: RecordPaymentInput): Promise<LoanRecord> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const fees = input.fees ?? 0;
-    if (input.principal + input.interest + fees <= 0) {
-      throw new ValidationError('Payment amount (principal + interest + fees) must be greater than 0');
-    }
-    if (input.principal > row.current_balance) {
-      throw new OverpaymentError(loanId, input.principal, row.current_balance);
-    }
+      const rowResult = await client.query('SELECT * FROM loans WHERE id = $1', [loanId]);
+      const row = rowResult.rows[0] as LoanRow | undefined;
+      if (!row) throw new LoanNotFoundError(loanId);
 
-    const newBalance = row.current_balance - input.principal;
-    const isPaidOff = newBalance === 0;
+      const fees = input.fees ?? 0;
+      if (input.principal + input.interest + fees <= 0) {
+        throw new ValidationError('Payment amount (principal + interest + fees) must be greater than 0');
+      }
+      if (input.principal > row.current_balance) {
+        throw new OverpaymentError(loanId, input.principal, row.current_balance);
+      }
 
-    const recordPaymentStmt = this.db.transaction(() => {
-      this.db
-        .prepare(
-          'INSERT INTO loan_payments (id, loan_id, payment_date, principal, interest, fees, status) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        )
-        .run(randomUUID(), loanId, input.paymentDate, input.principal, input.interest, fees, input.status ?? 'completed');
+      const newBalance = row.current_balance - input.principal;
+      const isPaidOff = newBalance === 0;
 
-      this.db
-        .prepare(
-          `
-          UPDATE loans SET
-            current_balance = @newBalance,
-            total_paid = total_paid + @totalPayment,
-            total_interest_paid = total_interest_paid + @interest,
-            next_payment_date = @nextPaymentDate,
-            status = @status,
-            closed_at = @closedAt,
-            updated_at = datetime('now')
-          WHERE id = @id
-        `
-        )
-        .run({
-          id: loanId,
+      await client.query(
+        'INSERT INTO loan_payments (id, loan_id, payment_date, principal, interest, fees, status) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [randomUUID(), loanId, input.paymentDate, input.principal, input.interest, fees, input.status ?? 'completed']
+      );
+
+      await client.query(
+        `UPDATE loans SET
+          current_balance = $1,
+          total_paid = total_paid + $2,
+          total_interest_paid = total_interest_paid + $3,
+          next_payment_date = $4,
+          status = $5,
+          closed_at = $6,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $7`,
+        [
           newBalance,
-          totalPayment: input.principal + input.interest + fees,
-          interest: input.interest,
-          nextPaymentDate: isPaidOff ? null : addMonths(input.paymentDate, 1),
-          status: isPaidOff ? 'closed' : row.status,
-          closedAt: isPaidOff ? new Date().toISOString() : null
-        });
+          input.principal + input.interest + fees,
+          input.interest,
+          isPaidOff ? null : addMonths(input.paymentDate, 1),
+          isPaidOff ? 'closed' : row.status,
+          isPaidOff ? new Date().toISOString() : null,
+          loanId
+        ]
+      );
 
-      this.recordHistory(loanId, 'PAYMENT', row.current_balance, newBalance);
-    });
-    recordPaymentStmt();
+      await this.recordHistory(loanId, 'PAYMENT', row.current_balance, newBalance, client);
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     return this.getLoanOrThrow(loanId);
   }
 
-  updateLoanStatus(loanId: string, status: LoanStatus): LoanRecord {
-    const row = this.db.prepare('SELECT * FROM loans WHERE id = ?').get(loanId) as LoanRow | undefined;
+  async updateLoanStatus(loanId: string, status: LoanStatus): Promise<LoanRecord> {
+    const rowResult = await this.pool.query('SELECT * FROM loans WHERE id = $1', [loanId]);
+    const row = rowResult.rows[0] as LoanRow | undefined;
     if (!row) throw new LoanNotFoundError(loanId);
     if (row.status === status) return mapRowToLoan(row);
 
-    this.db
-      .prepare("UPDATE loans SET status = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(status, loanId);
+    await this.pool.query('UPDATE loans SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, loanId]);
 
-    this.recordHistory(loanId, 'STATUS_CHANGE', row.current_balance, row.current_balance);
+    await this.recordHistory(loanId, 'STATUS_CHANGE', row.current_balance, row.current_balance);
 
     return this.getLoanOrThrow(loanId);
   }
 
-  /** next_payment_date가 오늘보다 과거인 active 대출을 delinquent로 전환한다 */
-  detectDelinquentLoans(asOfDate: string): LoanRecord[] {
-    const overdue = this.db
-      .prepare("SELECT * FROM loans WHERE status = 'active' AND next_payment_date < ? ORDER BY next_payment_date ASC")
-      .all(asOfDate) as LoanRow[];
+  async detectDelinquentLoans(asOfDate: string): Promise<LoanRecord[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // updateLoanStatus를 건별로 호출하면 N개의 개별 트랜잭션이 생긴다. 배치 전체를
-    // 하나의 트랜잭션으로 묶어 원자성을 보장하고(중간 실패 시 부분 반영 방지) 커밋 횟수를 줄인다.
-    const flagBatch = this.db.transaction(() => {
+      const overdueResult = await client.query(
+        "SELECT * FROM loans WHERE status = 'active' AND next_payment_date < $1 ORDER BY next_payment_date ASC",
+        [asOfDate]
+      );
+      const overdue = overdueResult.rows as LoanRow[];
+
       for (const row of overdue) {
-        this.updateLoanStatus(row.id, 'delinquent');
+        await client.query('UPDATE loans SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [
+          'delinquent',
+          row.id
+        ]);
+        await this.recordHistory(row.id, 'STATUS_CHANGE', row.current_balance, row.current_balance, client);
       }
-    });
-    flagBatch();
 
-    return overdue.map((row) => this.getLoanOrThrow(row.id));
+      await client.query('COMMIT');
+      return overdue.map(mapRowToLoan);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
-  getLoanHistory(loanId: string): LoanHistoryEntry[] {
-    const rows = this.db
-      .prepare('SELECT * FROM loan_history WHERE loan_id = ? ORDER BY action_date ASC')
-      .all(loanId) as {
-      id: string;
-      loan_id: string;
-      action: string;
-      previous_balance: number;
-      new_balance: number;
-      action_date: string;
-    }[];
+  async getLoanHistory(loanId: string): Promise<LoanHistoryEntry[]> {
+    const result = await this.pool.query('SELECT * FROM loan_history WHERE loan_id = $1 ORDER BY action_date ASC', [
+      loanId
+    ]);
 
-    return rows.map((row) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       loanId: row.loan_id,
       action: row.action as LoanHistoryAction,
@@ -253,8 +249,8 @@ export class LoanRepository {
     }));
   }
 
-  getPortfolioSummary(userId: string): PortfolioSummary {
-    const loans = this.getPortfolio(userId);
+  async getPortfolioSummary(userId: string): Promise<PortfolioSummary> {
+    const loans = await this.getPortfolio(userId);
     const activeLoans = loans.filter((l) => l.status === 'active' || l.status === 'delinquent');
 
     const totalOriginalAmount = loans.reduce((sum, l) => sum + l.originalAmount, 0);
@@ -277,17 +273,27 @@ export class LoanRepository {
     };
   }
 
-  private getLoanOrThrow(loanId: string): LoanRecord {
-    const loan = this.getLoan(loanId);
+  private async getLoanOrThrow(loanId: string): Promise<LoanRecord> {
+    const loan = await this.getLoan(loanId);
     if (!loan) throw new LoanNotFoundError(loanId);
     return loan;
   }
 
-  private recordHistory(loanId: string, action: LoanHistoryAction, previousBalance: number, newBalance: number): void {
-    this.db
-      .prepare(
-        'INSERT INTO loan_history (id, loan_id, action, previous_balance, new_balance) VALUES (?, ?, ?, ?, ?)'
-      )
-      .run(randomUUID(), loanId, action, previousBalance, newBalance);
+  private async recordHistory(
+    loanId: string,
+    action: LoanHistoryAction,
+    previousBalance: number,
+    newBalance: number,
+    client?: PoolClient
+  ): Promise<void> {
+    const query =
+      'INSERT INTO loan_history (id, loan_id, action, previous_balance, new_balance) VALUES ($1, $2, $3, $4, $5)';
+    const values = [randomUUID(), loanId, action, previousBalance, newBalance];
+
+    if (client) {
+      await client.query(query, values);
+    } else {
+      await this.pool.query(query, values);
+    }
   }
 }
