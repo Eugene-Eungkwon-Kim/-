@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 import {
   AuditLogRecord,
   MonthlyTrendPoint,
@@ -45,48 +45,36 @@ function mapRow(row: TransactionRow): TransactionRecord {
   };
 }
 
-/**
- * 거래 기록 & 감시 로깅 (Day 5 - Task 3, δ=1415)
- *
- * 사용자 소득 대비 과도한 거래는 기록 시점에 즉시 플래깅한다. 다만 소득은
- * 거래 이후에도 바뀔 수 있으므로(UserRepository.updateProfile), rescanForAnomalies로
- * 기존 'completed' 거래를 현재 소득 기준으로 재평가할 수 있게 한다
- * (IntegrityChecker의 "쓰기 시점 검증만으론 부족하다"는 설계와 동일한 원칙).
- */
 export class TransactionRepository {
   private readonly auditLogger: AuditLogger;
-  // Day 15 - Task L: 집계 결과(요약/월별 추세) 캐시. DB 인스턴스 단위로 공유되어
-  // 리포지토리가 요청마다 새로 생성돼도 유효하며, 쓰기 시 사용자 단위로 무효화한다.
   private readonly cache: MemoryCache;
 
-  constructor(private readonly db: Database.Database) {
-    this.auditLogger = new AuditLogger(db);
-    this.cache = getDbCache(db);
+  constructor(private readonly pool: Pool) {
+    this.auditLogger = new AuditLogger(pool);
+    this.cache = getDbCache(pool);
   }
 
   private invalidateUserAggregates(userId: string): void {
     this.cache.deleteByPrefix(`txn:${userId}:`);
   }
 
-  recordTransaction(input: RecordTransactionInput): TransactionRecord {
+  async recordTransaction(input: RecordTransactionInput): Promise<TransactionRecord> {
     if (input.amount <= 0) throw new ValidationError('amount must be greater than 0');
 
-    const user = this.db.prepare('SELECT id, income FROM users WHERE id = ?').get(input.userId) as
-      | { id: string; income: number | null }
-      | undefined;
+    const userResult = await this.pool.query('SELECT id, income FROM users WHERE id = $1', [input.userId]);
+    const user = userResult.rows[0] as { id: string; income: number | null } | undefined;
     if (!user) throw new UserNotFoundError(input.userId);
 
     const isAnomalous = user.income !== null && input.amount > user.income * ANOMALY_INCOME_RATIO;
     const status = isAnomalous ? 'flagged' : 'completed';
     const id = randomUUID();
 
-    this.db
-      .prepare(
-        'INSERT INTO transactions (id, user_id, transaction_type, amount, description, status, occurred_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      )
-      .run(id, input.userId, input.transactionType, input.amount, input.description ?? null, status, input.occurredAt);
+    await this.pool.query(
+      'INSERT INTO transactions (id, user_id, transaction_type, amount, description, status, occurred_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, input.userId, input.transactionType, input.amount, input.description ?? null, status, input.occurredAt]
+    );
 
-    this.auditLogger.record(
+    await this.auditLogger.record(
       'transaction',
       id,
       'CREATE',
@@ -100,56 +88,60 @@ export class TransactionRepository {
     return this.getTransactionOrThrow(id);
   }
 
-  getTransaction(transactionId: string): TransactionRecord | null {
-    const row = this.db.prepare('SELECT * FROM transactions WHERE id = ?').get(transactionId) as
-      | TransactionRow
-      | undefined;
+  async getTransaction(transactionId: string): Promise<TransactionRecord | null> {
+    const result = await this.pool.query('SELECT * FROM transactions WHERE id = $1', [transactionId]);
+    const row = result.rows[0] as TransactionRow | undefined;
     return row ? mapRow(row) : null;
   }
 
-  getTransactions(userId: string, filter: TransactionFilter = {}): TransactionRecord[] {
-    const conditions: string[] = ['user_id = @userId'];
-    const params: Record<string, unknown> = { userId };
+  async getTransactions(userId: string, filter: TransactionFilter = {}): Promise<TransactionRecord[]> {
+    const conditions: string[] = ['user_id = $1'];
+    const params: unknown[] = [userId];
+    let paramIndex = 2;
 
     if (filter.status) {
-      conditions.push('status = @status');
-      params.status = filter.status;
+      conditions.push(`status = $${paramIndex}`);
+      params.push(filter.status);
+      paramIndex++;
     }
     if (filter.from) {
-      conditions.push('date(occurred_at) >= date(@from)');
-      params.from = filter.from;
+      conditions.push(`date(occurred_at) >= date($${paramIndex})`);
+      params.push(filter.from);
+      paramIndex++;
     }
     if (filter.to) {
-      conditions.push('date(occurred_at) <= date(@to)');
-      params.to = filter.to;
+      conditions.push(`date(occurred_at) <= date($${paramIndex})`);
+      params.push(filter.to);
+      paramIndex++;
     }
 
-    const rows = this.db
-      .prepare(`SELECT * FROM transactions WHERE ${conditions.join(' AND ')} ORDER BY occurred_at ASC`)
-      .all(params) as TransactionRow[];
+    const result = await this.pool.query(
+      `SELECT * FROM transactions WHERE ${conditions.join(' AND ')} ORDER BY occurred_at ASC`,
+      params
+    );
 
-    return rows.map(mapRow);
+    return (result.rows as TransactionRow[]).map(mapRow);
   }
 
-  /** 소득 변경 이후에도 과거 'completed' 거래를 현재 기준으로 재평가해 드리프트를 감지한다 */
-  rescanForAnomalies(userId: string): TransactionRecord[] {
-    const user = this.db.prepare('SELECT income FROM users WHERE id = ?').get(userId) as
-      | { income: number | null }
-      | undefined;
+  async rescanForAnomalies(userId: string): Promise<TransactionRecord[]> {
+    const userResult = await this.pool.query('SELECT income FROM users WHERE id = $1', [userId]);
+    const user = userResult.rows[0] as { income: number | null } | undefined;
     if (!user || user.income === null) return [];
 
-    const threshold = user.income * ANOMALY_INCOME_RATIO;
-    const candidates = this.db
-      .prepare("SELECT * FROM transactions WHERE user_id = ? AND status = 'completed' AND amount > ?")
-      .all(userId, threshold) as TransactionRow[];
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // 여러 건을 개별 statement로 갱신하면 건당 암묵적 트랜잭션이 생겨 느리고,
-    // 중간에 실패하면 일부만 flagged된 채로 남는다. 하나의 트랜잭션으로 묶어
-    // 전부 성공하거나 전부 롤백되도록 한다.
-    const flagBatch = this.db.transaction(() => {
+      const threshold = user.income * ANOMALY_INCOME_RATIO;
+      const candidatesResult = await client.query(
+        "SELECT * FROM transactions WHERE user_id = $1 AND status = 'completed' AND amount > $2",
+        [userId, threshold]
+      );
+      const candidates = candidatesResult.rows as TransactionRow[];
+
       for (const row of candidates) {
-        this.db.prepare("UPDATE transactions SET status = 'flagged' WHERE id = ?").run(row.id);
-        this.auditLogger.record(
+        await client.query("UPDATE transactions SET status = 'flagged' WHERE id = $1", [row.id]);
+        await this.auditLogger.record(
           'transaction',
           row.id,
           'FLAGGED',
@@ -157,21 +149,27 @@ export class TransactionRepository {
           userId
         );
       }
-    });
-    flagBatch();
 
-    if (candidates.length > 0) this.invalidateUserAggregates(userId);
+      await client.query('COMMIT');
 
-    return candidates.map((row) => this.getTransactionOrThrow(row.id));
+      if (candidates.length > 0) this.invalidateUserAggregates(userId);
+
+      return candidates.map((row) => this.getTransactionOrThrow(row.id));
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
-  getAuditLog(transactionId?: string, options: { from?: string; to?: string } = {}): AuditLogRecord[] {
+  async getAuditLog(transactionId?: string, options: { from?: string; to?: string } = {}): Promise<AuditLogRecord[]> {
     return this.auditLogger.query('transaction', { entityId: transactionId, ...options });
   }
 
-  getSummary(userId: string): TransactionSummary {
-    return this.cache.getOrCompute(`txn:${userId}:summary`, () => {
-      const rows = this.getTransactions(userId);
+  async getSummary(userId: string): Promise<TransactionSummary> {
+    return this.cache.getOrCompute(`txn:${userId}:summary`, async () => {
+      const rows = await this.getTransactions(userId);
       const totalDeposits = rows.filter((r) => r.transactionType === 'deposit').reduce((sum, r) => sum + r.amount, 0);
       const totalWithdrawals = rows
         .filter((r) => r.transactionType === 'withdrawal')
@@ -185,33 +183,30 @@ export class TransactionRepository {
         flaggedCount: rows.filter((r) => r.status === 'flagged').length,
         lastTransactionAt: rows.length > 0 ? rows[rows.length - 1].occurredAt : null
       };
-    }) as TransactionSummary;
+    }) as Promise<TransactionSummary>;
   }
 
-  getMonthlyTrend(userId: string): MonthlyTrendPoint[] {
-    return this.cache.getOrCompute(`txn:${userId}:trend`, () => {
-      const rows = this.db
-        .prepare(
-          `
-          SELECT substr(occurred_at, 1, 7) as month, SUM(amount) as total_amount, COUNT(*) as transaction_count
-          FROM transactions
-          WHERE user_id = ?
-          GROUP BY month
-          ORDER BY month ASC
-        `
-        )
-        .all(userId) as { month: string; total_amount: number; transaction_count: number }[];
+  async getMonthlyTrend(userId: string): Promise<MonthlyTrendPoint[]> {
+    return this.cache.getOrCompute(`txn:${userId}:trend`, async () => {
+      const result = await this.pool.query(
+        `SELECT to_char(occurred_at, 'YYYY-MM') as month, SUM(amount) as total_amount, COUNT(*) as transaction_count
+         FROM transactions
+         WHERE user_id = $1
+         GROUP BY month
+         ORDER BY month ASC`,
+        [userId]
+      );
 
-      return rows.map((row) => ({
+      return result.rows.map((row) => ({
         month: row.month,
         totalAmount: row.total_amount,
         transactionCount: row.transaction_count
       }));
-    }) as MonthlyTrendPoint[];
+    }) as Promise<MonthlyTrendPoint[]>;
   }
 
-  private getTransactionOrThrow(transactionId: string): TransactionRecord {
-    const record = this.getTransaction(transactionId);
+  private async getTransactionOrThrow(transactionId: string): Promise<TransactionRecord> {
+    const record = await this.getTransaction(transactionId);
     if (!record) throw new TransactionNotFoundError(transactionId);
     return record;
   }
