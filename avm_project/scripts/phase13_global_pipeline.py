@@ -103,6 +103,19 @@ COUNTRY_CONFIGS: Dict[str, Dict] = {
 }
 
 
+def _load_real_data(country: str, n_records: int) -> pd.DataFrame:
+    """Load real data from Phase 13.6 collection."""
+    real_file = Path(f'data/raw/{country}_real.csv')
+    if not real_file.exists():
+        raise FileNotFoundError(f"Real data not found: {real_file}")
+
+    df = pd.read_csv(real_file)
+    if len(df) > n_records:
+        df = df.sample(n=n_records, random_state=42)
+    log.info(f"✅ Loaded real data: {len(df):,} records from {real_file}")
+    return df
+
+
 def collect_country_data(country: str, config: Dict, n_records: int) -> pd.DataFrame:
     """특성 기반 가격 시뮬레이션으로 국가 데이터 수집."""
     noise_sigma = min(config['tolerance'], 0.10)
@@ -205,14 +218,25 @@ def train_and_save(df: pd.DataFrame, country: str, output_dir: Path) -> Dict:
     return metadata
 
 
-def run_pipeline(country: str, n_records: int) -> Dict:
+def run_pipeline(country: str, n_records: int, use_real: bool = False) -> Dict:
     """국가 전체 파이프라인: 수집 → 특성공학 → 학습 → 저장."""
-    config = COUNTRY_CONFIGS[country]
+    config = COUNTRY_CONFIGS.get(country)
+    if not config and not use_real:
+        raise ValueError(f"Country {country} not in COUNTRY_CONFIGS")
+
     log.info("=" * 70)
-    log.info(f"Phase 13.X.{country} - {config['name']} 파이프라인")
+    log.info(f"Phase 13.X.{country} - {'Real Data' if use_real else config['name']} Pipeline")
     log.info("=" * 70)
 
-    df = collect_country_data(country, config, n_records)
+    # Load data (real or simulated)
+    if use_real:
+        df = _load_real_data(country, n_records)
+        source = 'real'
+    else:
+        df = collect_country_data(country, config, n_records)
+        source = 'simulated'
+
+    log.info(f"📊 Data source: {source}")
     raw_path = Path(f'data/raw/{country}_raw.csv')
     raw_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(raw_path, index=False)
@@ -236,12 +260,13 @@ def run_pipeline(country: str, n_records: int) -> Dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description='Phase 13.X 글로벌 확장 파이프라인')
-    parser.add_argument('--country', required=True, choices=sorted(COUNTRY_CONFIGS.keys()))
+    parser = argparse.ArgumentParser(description='Phase 13.X Global Expansion Pipeline')
+    parser.add_argument('--country', required=True, choices=sorted(list(COUNTRY_CONFIGS.keys()) + ['BR', 'SG', 'HK', 'UK', 'DE', 'AU', 'CA', 'TH']))
     parser.add_argument('--records', type=int, default=20000)
+    parser.add_argument('--use-real-data', action='store_true', help='Use real data from Phase 13.6')
     args = parser.parse_args()
 
-    metadata = run_pipeline(args.country, args.records)
+    metadata = run_pipeline(args.country, args.records, use_real=args.use_real_data)
     exit(0 if metadata['target_met'] else 1)
 
 
