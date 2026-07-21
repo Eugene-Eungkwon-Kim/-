@@ -109,3 +109,4 @@ docs/OFFICIAL_*.md
 docs/PROJECT_EXECUTION_*.md
 data/*checkpoint*.json
 _FICTION_QUARANTINE/
+data/test/
