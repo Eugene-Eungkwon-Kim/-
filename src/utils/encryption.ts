@@ -104,14 +104,16 @@ export function hashData(data: string): string {
  * @returns 'ok' 검증 통과 | 'no-data' 검증할 암호문 없음 (신규 DB)
  * @throws 저장된 암호문을 현재 키로 복호화할 수 없을 때
  */
-export function verifyEncryptionKeyAgainstDb(db: {
-  prepare: (sql: string) => { get: () => unknown };
-}): 'ok' | 'no-data' {
-  const row = db
-    .prepare('SELECT encrypted_email FROM users WHERE encrypted_email IS NOT NULL LIMIT 1')
-    .get() as { encrypted_email: string } | undefined;
+export async function verifyEncryptionKeyAgainstDb(pool: {
+  query: (text: string, values?: any[]) => Promise<{ rows: any[] }>;
+}): Promise<'ok' | 'no-data'> {
+  const result = await pool.query(
+    'SELECT encrypted_email FROM users WHERE encrypted_email IS NOT NULL LIMIT 1'
+  );
 
-  if (!row) return 'no-data';
+  if (!result.rows.length) return 'no-data';
+
+  const row = result.rows[0] as { encrypted_email: string };
 
   try {
     decrypt(row.encrypted_email);

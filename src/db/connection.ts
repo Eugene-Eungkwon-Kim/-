@@ -1,20 +1,49 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import Database from 'better-sqlite3';
+import { Pool, PoolClient } from 'pg';
 import { applyMigrations } from './migrationRunner';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 export const MIGRATIONS_DIR = path.join(currentDir, 'migrations');
 
-/**
- * SQLite는 서버 프로세스 없이 임베디드로 동작하는 실제 SQL 엔진이다.
- * 실제 제약조건(CHECK/UNIQUE/FK)과 인덱스를 강제할 수 있어 테스트 환경에서도
- * "가짜 DB"가 아닌 진짜 무결성 검증이 가능하다. filename에 ':memory:'를 넘기면
- * 테스트마다 격리된 인스턴스를, 파일 경로를 넘기면 영속 저장소를 얻는다.
- */
-export function createDatabase(filename: string = ':memory:'): Database.Database {
-  const db = new Database(filename);
-  db.pragma('foreign_keys = ON');
-  applyMigrations(db, MIGRATIONS_DIR);
-  return db;
+export interface DBConnection {
+  query: (text: string, values?: any[]) => Promise<any>;
+  close: () => Promise<void>;
+}
+
+let globalPool: Pool | null = null;
+
+export function createPgPool(): Pool {
+  return new Pool({
+    host: process.env.PG_HOST || 'localhost',
+    port: parseInt(process.env.PG_PORT || '5432'),
+    database: process.env.PG_DATABASE || 'maars',
+    user: process.env.PG_USER || 'postgres',
+    password: process.env.PG_PASSWORD,
+    max: 20,
+  });
+}
+
+export async function initializeDatabase(pool: Pool): Promise<void> {
+  globalPool = pool;
+  const client = await pool.connect();
+  try {
+    await applyMigrations(client as any, MIGRATIONS_DIR);
+  } finally {
+    client.release();
+  }
+}
+
+export function getDatabase(): Pool {
+  if (!globalPool) {
+    throw new Error('Database pool not initialized. Call initializeDatabase first.');
+  }
+  return globalPool;
+}
+
+export async function closeDatabasePool(): Promise<void> {
+  if (globalPool) {
+    await globalPool.end();
+    globalPool = null;
+  }
 }

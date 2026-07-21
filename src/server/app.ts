@@ -6,7 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import swagger from '@fastify/swagger';
 import swaggerUI from '@fastify/swagger-ui';
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 import { LoanRepository } from '../repositories/LoanRepository';
 import { getUserProfile, registerUser } from '../api/userService';
 import { applyForLoan, detectDelinquentLoans, getLoanPortfolio, getLoanPortfolioSummary, recordLoanPayment } from '../api/loanService';
@@ -106,7 +106,7 @@ function forbidden(reply: FastifyReply): void {
   reply.code(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'You do not have access to this resource' } });
 }
 
-export async function buildServer(db: Database.Database, options: BuildServerOptions = {}): Promise<FastifyInstance> {
+export async function buildServer(pool: Pool, options: BuildServerOptions = {}): Promise<FastifyInstance> {
   // Day 9 - Task 1 (δ=1270): JWT_SECRET을 여기서 조용히 폴백시키지 않는다.
   // 실제 기동 경로(src/server/index.ts)는 resolveServerEnv()를 직접 호출해
   // production에서 시크릿 누락 시 서버가 뜨기도 전에 실패하도록 하고, 그 결과를
