@@ -287,8 +287,7 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     },
     async (_request, reply) => {
       try {
-        // DB 연결 상태 확인 (간단한 ping 쿼리)
-        db.prepare('SELECT 1').get();
+        await pool.query('SELECT 1');
         reply.send({ status: 'ok', db: 'connected' });
       } catch (error) {
         reply.code(503).send({ status: 'error', db: 'disconnected' });
@@ -297,7 +296,7 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   );
 
   app.post('/api/users', { schema: routeSchemas.postUsers }, async (request, reply) => {
-    respond(reply, registerUser(db, request.body as Parameters<typeof registerUser>[1]));
+    respond(reply, await registerUser(pool, request.body as Parameters<typeof registerUser>[1]));
   });
 
   app.post(
@@ -357,12 +356,12 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     },
     async (request, reply) => {
       const { email, password } = request.body as { email: string; password: string };
-      const result = verifyCredentials(db, email, password);
+      const result = await verifyCredentials(pool, email, password);
       if (!result.success) {
         respond(reply, result);
         return;
       }
-      const refreshResult = issueRefreshToken(db, result.data.id);
+      const refreshResult = await issueRefreshToken(pool, result.data.id);
       if (!refreshResult.success) {
         respond(reply, refreshResult);
         return;
@@ -374,7 +373,7 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
 
   app.post('/api/auth/refresh', async (request, reply) => {
     const { refreshToken } = request.body as { refreshToken: string };
-    const verified = verifyRefreshToken(db, refreshToken);
+    const verified = await verifyRefreshToken(pool, refreshToken);
     if (!verified.success) {
       respond(reply, verified);
       return;
@@ -382,8 +381,8 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
 
     // 회전(rotation): 제시된 리프레시 토큰은 즉시 무효화하고 새 토큰을 발급한다.
     // 탈취된 리프레시 토큰이 갱신 이후에도 재사용될 여지를 없앤다.
-    revokeRefreshToken(db, refreshToken);
-    const rotated = issueRefreshToken(db, verified.data.userId);
+    await revokeRefreshToken(pool, refreshToken);
+    const rotated = await issueRefreshToken(pool, verified.data.userId);
     if (!rotated.success) {
       respond(reply, rotated);
       return;
@@ -391,7 +390,7 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
 
     // role은 로그인 이후 바뀌었을 수 있으므로(관리자 승격 등) 리프레시 토큰이
     // 아니라 최신 프로필에서 다시 읽어 새 액세스 토큰에 반영한다.
-    const profile = getUserProfile(db, verified.data.userId);
+    const profile = await getUserProfile(pool, verified.data.userId);
     const role = profile.success ? profile.data.metadata.role : 'user';
 
     const token = await reply.jwtSign({ userId: verified.data.userId, role }, { expiresIn: '1h' });
@@ -400,32 +399,32 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
 
   app.post('/api/auth/logout', async (request, reply) => {
     const { refreshToken } = request.body as { refreshToken: string };
-    respond(reply, revokeRefreshToken(db, refreshToken));
+    respond(reply, await revokeRefreshToken(pool, refreshToken));
   });
 
   app.get('/api/users/:userId', async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
-    respond(reply, getUserProfile(db, userId));
+    respond(reply, await getUserProfile(pool, userId));
   });
 
   app.post('/api/loans', async (request, reply) => {
     const body = request.body as Parameters<typeof applyForLoan>[1];
     if (!isOwner(request, body.userId)) return forbidden(reply);
-    const result = await applyForLoan(db, body);
+    const result = await applyForLoan(pool, body);
     respond(reply, result);
   });
 
   app.get('/api/users/:userId/loans', async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
-    respond(reply, getLoanPortfolio(db, userId));
+    respond(reply, await getLoanPortfolio(pool, userId));
   });
 
   app.get('/api/users/:userId/loans/summary', async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
-    respond(reply, getLoanPortfolioSummary(db, userId));
+    respond(reply, await getLoanPortfolioSummary(pool, userId));
   });
 
   // Day 10 - Task 1 (δ=1270): 금융분석 서비스(Day6/7에서 이미 구현·테스트됨)를
@@ -434,28 +433,28 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   app.post('/api/analytics/credit-simulation', async (request, reply) => {
     const body = request.body as { userId: string } & CreditSimulationRequest;
     if (!isOwner(request, body.userId)) return forbidden(reply);
-    const result = await runCreditSimulation(db, body.userId, { scenario: body.scenario, duration: body.duration });
+    const result = await runCreditSimulation(pool, body.userId, { scenario: body.scenario, duration: body.duration });
     respond(reply, result);
   });
 
   app.post('/api/analytics/risk-assessment', async (request, reply) => {
     const body = request.body as { userId: string; snapshotDate: string };
     if (!isOwner(request, body.userId)) return forbidden(reply);
-    const result = await runRiskAssessment(db, body.userId, body.snapshotDate);
+    const result = await runRiskAssessment(pool, body.userId, body.snapshotDate);
     respond(reply, result);
   });
 
   app.post('/api/analytics/financial-analysis', async (request, reply) => {
     const body = request.body as { userId: string; snapshotDate: string };
     if (!isOwner(request, body.userId)) return forbidden(reply);
-    const result = await runFinancialAnalysis(db, body.userId, body.snapshotDate);
+    const result = await runFinancialAnalysis(pool, body.userId, body.snapshotDate);
     respond(reply, result);
   });
 
   app.get('/api/users/:userId/snapshots/trend/:metric', async (request, reply) => {
     const { userId, metric } = request.params as { userId: string; metric: TrendMetric };
     if (!isOwner(request, userId)) return forbidden(reply);
-    respond(reply, getSnapshotTrend(db, userId, metric));
+    respond(reply, await getSnapshotTrend(pool, userId, metric));
   });
 
   // Day 10 - Task 2 (δ=1220): transactionService.ts(Day6에서 구현·테스트됨)도
@@ -463,26 +462,26 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   app.post('/api/transactions', async (request, reply) => {
     const body = request.body as RecordTransactionInput;
     if (!isOwner(request, body.userId)) return forbidden(reply);
-    respond(reply, recordTransaction(db, body));
+    respond(reply, await recordTransaction(pool, body));
   });
 
   app.get('/api/users/:userId/transactions', async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
     const filter = request.query as TransactionFilter;
-    respond(reply, getTransactionHistory(db, userId, filter));
+    respond(reply, await getTransactionHistory(pool, userId, filter));
   });
 
   app.get('/api/users/:userId/transactions/summary', async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
-    respond(reply, getTransactionSummary(db, userId));
+    respond(reply, await getTransactionSummary(pool, userId));
   });
 
   app.post('/api/users/:userId/transactions/rescan', async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
-    respond(reply, rescanAnomalies(db, userId));
+    respond(reply, await rescanAnomalies(pool, userId));
   });
 
   // Day 10 - Task 4 (δ=1065): adminService.ts도 HTTP로 노출한다. isOwner가 아니라
@@ -491,23 +490,23 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   app.post('/api/admin/integrity-check', async (request, reply) => {
     if (!isAdmin(request)) return forbidden(reply);
     const { asOfDate } = request.body as { asOfDate: string };
-    respond(reply, await runIntegrityCheck(db, asOfDate));
+    respond(reply, await runIntegrityCheck(pool, asOfDate));
   });
 
   app.post('/api/admin/backups', async (request, reply) => {
     if (!isAdmin(request)) return forbidden(reply);
-    respond(reply, await createBackup(db, backupDir));
+    respond(reply, await createBackup(pool, backupDir));
   });
 
   app.get('/api/admin/backups', async (request, reply) => {
     if (!isAdmin(request)) return forbidden(reply);
-    respond(reply, listBackups(db, backupDir));
+    respond(reply, await listBackups(pool, backupDir));
   });
 
   app.post('/api/admin/backups/:id/verify', async (request, reply) => {
     if (!isAdmin(request)) return forbidden(reply);
     const { id } = request.params as { id: string };
-    respond(reply, verifyBackup(db, backupDir, id));
+    respond(reply, await verifyBackup(pool, backupDir, id));
   });
 
   // Day 11 - Task 2 (δ=1080): 남아있던 4개 라우트를 노출한다.
@@ -515,7 +514,7 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   app.post('/api/loans/:loanId/payments', async (request, reply) => {
     const { loanId } = request.params as { loanId: string };
     const input = request.body as RecordPaymentInput;
-    const loan = new LoanRepository(db).getLoan(loanId);
+    const loan = await new LoanRepository(pool).getLoan(loanId);
     if (!loan) {
       return reply.code(404).send({ success: false, error: { code: 'LOAN_NOT_FOUND', message: `Loan ${loanId} not found` } });
     }
@@ -523,14 +522,14 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     if (loan.userId !== authUser.userId) {
       return forbidden(reply);
     }
-    respond(reply, recordLoanPayment(db, loanId, input));
+    respond(reply, await recordLoanPayment(pool, loanId, input));
   });
 
   // 2. 연체 대출 감지 (관리자 전용 배치)
   app.post('/api/admin/delinquency-check', async (request, reply) => {
     if (!isAdmin(request)) return forbidden(reply);
     const { asOfDate } = request.body as { asOfDate: string };
-    respond(reply, detectDelinquentLoans(db, asOfDate));
+    respond(reply, await detectDelinquentLoans(pool, asOfDate));
   });
 
   // 3. 백업 필요 여부 확인
@@ -539,18 +538,18 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     const query = request.query as { intervalHours?: string; now?: string };
     const intervalHours = parseInt(query.intervalHours ?? '24', 10);
     const now = query.now ?? new Date().toISOString().slice(0, 10);
-    respond(reply, checkBackupDue(db, backupDir, intervalHours, now));
+    respond(reply, await checkBackupDue(pool, backupDir, intervalHours, now));
   });
 
-  // 4. 보존기간 초과 백업 정리
+  // 4. 보존기간 초과 백압 정리
   app.post('/api/admin/backups/prune', async (request, reply) => {
     if (!isAdmin(request)) return forbidden(reply);
     const { retentionDays, now } = request.body as { retentionDays: number; now: string };
-    respond(reply, pruneOldBackups(db, backupDir, retentionDays, now));
+    respond(reply, await pruneOldBackups(pool, backupDir, retentionDays, now));
   });
 
   // Day 13 - Task G (δ=550): 감사 로그 조회 엔드포인트
-  const auditLogger = new AuditLogger(db);
+  const auditLogger = new AuditLogger(pool);
 
   // 1. 모든 감사 로그 조회 (페이지네이션 지원)
   app.get('/api/admin/audit-logs', async (request, reply) => {
@@ -558,8 +557,8 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     const query = request.query as { limit?: string; offset?: string; action?: string; resourceType?: string };
     const limit = parseInt(query.limit ?? '100', 10);
     const offset = parseInt(query.offset ?? '0', 10);
-    const logs = auditLogger.query({ limit, offset, action: query.action as any, resourceType: query.resourceType });
-    const count = auditLogger.count();
+    const logs = await auditLogger.query({ limit, offset, action: query.action as any, resourceType: query.resourceType });
+    const count = await auditLogger.count();
     reply.send({ success: true, data: { logs, total: count, limit, offset } });
   });
 
@@ -570,8 +569,8 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     const query = request.query as { limit?: string; offset?: string };
     const limit = parseInt(query.limit ?? '100', 10);
     const offset = parseInt(query.offset ?? '0', 10);
-    const logs = auditLogger.getByUser(userId, { limit, offset });
-    const count = auditLogger.count({ userId });
+    const logs = await auditLogger.getByUser(userId, { limit, offset });
+    const count = await auditLogger.count({ userId });
     reply.send({ success: true, data: { logs, total: count, limit, offset } });
   });
 
@@ -579,7 +578,7 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   app.get('/api/admin/audit-logs/resource/:resourceId', async (request, reply) => {
     if (!isAdmin(request)) return forbidden(reply);
     const { resourceId } = request.params as { resourceId: string };
-    const logs = auditLogger.getResourceHistory(resourceId);
+    const logs = await auditLogger.getResourceHistory(resourceId);
     reply.send({ success: true, data: logs });
   });
 

@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 
 export enum AuditAction {
   CREATE = 'CREATE',
@@ -45,42 +45,37 @@ export interface AuditFilterOptions {
 }
 
 export class AuditLogger {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly pool: Pool) {}
 
   /**
    * 감사 로그를 기록한다.
    */
-  log(entry: Omit<AuditLogEntry, 'id' | 'createdAt'>): string {
+  async log(entry: Omit<AuditLogEntry, 'id' | 'createdAt'>): Promise<string> {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
 
-    this.db
-      .prepare(
-        `
-        INSERT INTO audit_logs (
-          id, user_id, action, resource_type, resource_id,
-          changes_before, changes_after, metadata_ip,
-          status, error_message, created_at
-        ) VALUES (
-          @id, @userId, @action, @resourceType, @resourceId,
-          @changesBefore, @changesAfter, @metadataIp,
-          @status, @errorMessage, @createdAt
-        )
-      `
-      )
-      .run({
+    await this.pool.query(
+      `INSERT INTO audit_logs (
+        id, user_id, action, resource_type, resource_id,
+        changes_before, changes_after, metadata_ip,
+        status, error_message, created_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+      )`,
+      [
         id,
-        userId: entry.userId,
-        action: entry.action,
-        resourceType: entry.resourceType,
-        resourceId: entry.resourceId,
-        changesBefore: entry.changesBefore ? JSON.stringify(entry.changesBefore) : null,
-        changesAfter: entry.changesAfter ? JSON.stringify(entry.changesAfter) : null,
-        metadataIp: entry.metadataIp || null,
-        status: entry.status,
-        errorMessage: entry.errorMessage || null,
+        entry.userId,
+        entry.action,
+        entry.resourceType,
+        entry.resourceId,
+        entry.changesBefore ? JSON.stringify(entry.changesBefore) : null,
+        entry.changesAfter ? JSON.stringify(entry.changesAfter) : null,
+        entry.metadataIp || null,
+        entry.status,
+        entry.errorMessage || null,
         createdAt
-      });
+      ]
+    );
 
     return id;
   }
@@ -88,53 +83,62 @@ export class AuditLogger {
   /**
    * 감사 로그를 필터링하여 조회한다.
    */
-  query(options: AuditFilterOptions): AuditLogEntry[] {
-    let sql = 'SELECT * FROM audit_logs WHERE 1=1';
-    const params: Record<string, unknown> = {};
+  async query(options: AuditFilterOptions): Promise<AuditLogEntry[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
 
     if (options.userId) {
-      sql += ' AND user_id = @userId';
-      params.userId = options.userId;
+      conditions.push(`user_id = $${paramIndex}`);
+      params.push(options.userId);
+      paramIndex++;
     }
 
     if (options.action) {
-      sql += ' AND action = @action';
-      params.action = options.action;
+      conditions.push(`action = $${paramIndex}`);
+      params.push(options.action);
+      paramIndex++;
     }
 
     if (options.resourceType) {
-      sql += ' AND resource_type = @resourceType';
-      params.resourceType = options.resourceType;
+      conditions.push(`resource_type = $${paramIndex}`);
+      params.push(options.resourceType);
+      paramIndex++;
     }
 
     if (options.resourceId) {
-      sql += ' AND resource_id = @resourceId';
-      params.resourceId = options.resourceId;
+      conditions.push(`resource_id = $${paramIndex}`);
+      params.push(options.resourceId);
+      paramIndex++;
     }
 
     if (options.fromDate) {
-      sql += ' AND created_at >= @fromDate';
-      params.fromDate = options.fromDate;
+      conditions.push(`created_at >= $${paramIndex}`);
+      params.push(options.fromDate);
+      paramIndex++;
     }
 
     if (options.toDate) {
-      sql += ' AND created_at <= @toDate';
-      params.toDate = options.toDate;
+      conditions.push(`created_at <= $${paramIndex}`);
+      params.push(options.toDate);
+      paramIndex++;
     }
 
-    sql += ' ORDER BY created_at DESC';
+    let sql = `SELECT * FROM audit_logs WHERE ${conditions.length > 0 ? conditions.join(' AND ') : '1=1'} ORDER BY created_at DESC`;
 
     if (options.limit) {
-      sql += ' LIMIT @limit';
-      params.limit = options.limit;
+      sql += ` LIMIT $${paramIndex}`;
+      params.push(options.limit);
+      paramIndex++;
     }
 
     if (options.offset) {
-      sql += ' OFFSET @offset';
-      params.offset = options.offset;
+      sql += ` OFFSET $${paramIndex}`;
+      params.push(options.offset);
     }
 
-    const rows = this.db.prepare(sql).all(params) as {
+    const result = await this.pool.query(sql, params);
+    const rows = result.rows as {
       id: string;
       user_id: string;
       action: string;
@@ -166,7 +170,7 @@ export class AuditLogger {
   /**
    * 특정 사용자의 모든 감사 로그를 조회한다.
    */
-  getByUser(userId: string, options?: { limit?: number; offset?: number }): AuditLogEntry[] {
+  async getByUser(userId: string, options?: { limit?: number; offset?: number }): Promise<AuditLogEntry[]> {
     return this.query({
       userId,
       limit: options?.limit || 100,
@@ -177,7 +181,7 @@ export class AuditLogger {
   /**
    * 특정 리소스의 모든 변경 이력을 조회한다.
    */
-  getResourceHistory(resourceId: string): AuditLogEntry[] {
+  async getResourceHistory(resourceId: string): Promise<AuditLogEntry[]> {
     return this.query({
       resourceId,
       limit: 1000
@@ -187,7 +191,7 @@ export class AuditLogger {
   /**
    * 특정 액션의 모든 로그를 조회한다.
    */
-  getByAction(action: AuditAction, options?: { limit?: number; offset?: number }): AuditLogEntry[] {
+  async getByAction(action: AuditAction, options?: { limit?: number; offset?: number }): Promise<AuditLogEntry[]> {
     return this.query({
       action,
       limit: options?.limit || 100,
@@ -198,26 +202,30 @@ export class AuditLogger {
   /**
    * 감사 로그 개수를 조회한다.
    */
-  count(options?: Omit<AuditFilterOptions, 'limit' | 'offset'>): number {
-    let sql = 'SELECT COUNT(*) as count FROM audit_logs WHERE 1=1';
-    const params: Record<string, unknown> = {};
+  async count(options?: Omit<AuditFilterOptions, 'limit' | 'offset'>): Promise<number> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIndex = 1;
 
     if (options?.userId) {
-      sql += ' AND user_id = @userId';
-      params.userId = options.userId;
+      conditions.push(`user_id = $${paramIndex}`);
+      params.push(options.userId);
+      paramIndex++;
     }
 
     if (options?.action) {
-      sql += ' AND action = @action';
-      params.action = options.action;
+      conditions.push(`action = $${paramIndex}`);
+      params.push(options.action);
+      paramIndex++;
     }
 
     if (options?.resourceType) {
-      sql += ' AND resource_type = @resourceType';
-      params.resourceType = options.resourceType;
+      conditions.push(`resource_type = $${paramIndex}`);
+      params.push(options.resourceType);
     }
 
-    const result = this.db.prepare(sql).get(params) as { count: number };
-    return result.count;
+    const sql = `SELECT COUNT(*) as count FROM audit_logs WHERE ${conditions.length > 0 ? conditions.join(' AND ') : '1=1'}`;
+    const result = await this.pool.query(sql, params);
+    return parseInt((result.rows[0] as { count: string }).count, 10);
   }
 }

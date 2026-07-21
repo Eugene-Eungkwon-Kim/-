@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 import {
   FinancialSnapshotRecord,
   PerformanceComparison,
@@ -52,7 +52,6 @@ const METRIC_COLUMNS: Record<TrendMetric, string> = {
   monthlySurplus: 'monthly_surplus'
 };
 
-/** true면 값이 클수록 좋은 지표 (riskScore는 낮을수록 좋으므로 false) */
 const HIGHER_IS_BETTER: Record<TrendMetric, boolean> = {
   creditScore: true,
   financialHealthScore: true,
@@ -104,81 +103,88 @@ const THRESHOLD_RULES: ThresholdRule[] = [
   }
 ];
 
-/**
- * 금융 지표 저장소 (Day 5 - Task 4, δ=1255)
- *
- * Day 4의 신용시뮬레이션/재정분석/리스크평가 엔드포인트는 계산 결과를 응답으로만
- * 돌려주고 버렸다. 이 리포지토리는 그 결과를 사용자별 월간 스냅샷으로 저장해
- * 시계열 추세/임계값 경고/기간 비교를 가능하게 한다.
- */
 export class FinancialSnapshotRepository {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly pool: Pool) {}
 
-  /** (user_id, snapshot_date) upsert — 같은 날짜로 재실행해도 최신 값으로 갱신될 뿐 중복 생성되지 않는다 */
-  recordSnapshot(input: RecordSnapshotInput): FinancialSnapshotRecord {
+  async recordSnapshot(input: RecordSnapshotInput): Promise<FinancialSnapshotRecord> {
     const id = randomUUID();
 
-    this.db
-      .prepare(
-        `
-        INSERT INTO financial_snapshots (
-          id, user_id, snapshot_date, credit_score, financial_health_score, health_grade,
-          debt_to_income_ratio, asset_to_debt_ratio, monthly_surplus, risk_score, risk_level, probability_of_default
-        ) VALUES (
-          @id, @userId, @snapshotDate, @creditScore, @financialHealthScore, @healthGrade,
-          @debtToIncomeRatio, @assetToDebtRatio, @monthlySurplus, @riskScore, @riskLevel, @probabilityOfDefault
-        )
-        ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
-          credit_score = excluded.credit_score,
-          financial_health_score = excluded.financial_health_score,
-          health_grade = excluded.health_grade,
-          debt_to_income_ratio = excluded.debt_to_income_ratio,
-          asset_to_debt_ratio = excluded.asset_to_debt_ratio,
-          monthly_surplus = excluded.monthly_surplus,
-          risk_score = excluded.risk_score,
-          risk_level = excluded.risk_level,
-          probability_of_default = excluded.probability_of_default
-      `
+    await this.pool.query(
+      `INSERT INTO financial_snapshots (
+        id, user_id, snapshot_date, credit_score, financial_health_score, health_grade,
+        debt_to_income_ratio, asset_to_debt_ratio, monthly_surplus, risk_score, risk_level, probability_of_default
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
       )
-      .run({ id, ...input });
+      ON CONFLICT(user_id, snapshot_date) DO UPDATE SET
+        credit_score = EXCLUDED.credit_score,
+        financial_health_score = EXCLUDED.financial_health_score,
+        health_grade = EXCLUDED.health_grade,
+        debt_to_income_ratio = EXCLUDED.debt_to_income_ratio,
+        asset_to_debt_ratio = EXCLUDED.asset_to_debt_ratio,
+        monthly_surplus = EXCLUDED.monthly_surplus,
+        risk_score = EXCLUDED.risk_score,
+        risk_level = EXCLUDED.risk_level,
+        probability_of_default = EXCLUDED.probability_of_default`,
+      [
+        id,
+        input.userId,
+        input.snapshotDate,
+        input.creditScore,
+        input.financialHealthScore,
+        input.healthGrade,
+        input.debtToIncomeRatio,
+        input.assetToDebtRatio,
+        input.monthlySurplus,
+        input.riskScore,
+        input.riskLevel,
+        input.probabilityOfDefault
+      ]
+    );
 
     return this.getSnapshotByDateOrThrow(input.userId, input.snapshotDate);
   }
 
-  getSnapshotByDate(userId: string, snapshotDate: string): FinancialSnapshotRecord | null {
-    const row = this.db
-      .prepare('SELECT * FROM financial_snapshots WHERE user_id = ? AND snapshot_date = ?')
-      .get(userId, snapshotDate) as SnapshotRow | undefined;
+  async getSnapshotByDate(userId: string, snapshotDate: string): Promise<FinancialSnapshotRecord | null> {
+    const result = await this.pool.query(
+      'SELECT * FROM financial_snapshots WHERE user_id = $1 AND snapshot_date = $2',
+      [userId, snapshotDate]
+    );
+    const row = result.rows[0] as SnapshotRow | undefined;
     return row ? mapRow(row) : null;
   }
 
-  getHistory(userId: string, from?: string, to?: string): FinancialSnapshotRecord[] {
-    const conditions: string[] = ['user_id = @userId'];
-    const params: Record<string, unknown> = { userId };
+  async getHistory(userId: string, from?: string, to?: string): Promise<FinancialSnapshotRecord[]> {
+    const conditions: string[] = ['user_id = $1'];
+    const params: unknown[] = [userId];
+    let paramIndex = 2;
 
     if (from) {
-      conditions.push('snapshot_date >= @from');
-      params.from = from;
+      conditions.push(`snapshot_date >= $${paramIndex}`);
+      params.push(from);
+      paramIndex++;
     }
     if (to) {
-      conditions.push('snapshot_date <= @to');
-      params.to = to;
+      conditions.push(`snapshot_date <= $${paramIndex}`);
+      params.push(to);
+      paramIndex++;
     }
 
-    const rows = this.db
-      .prepare(`SELECT * FROM financial_snapshots WHERE ${conditions.join(' AND ')} ORDER BY snapshot_date ASC`)
-      .all(params) as SnapshotRow[];
+    const result = await this.pool.query(
+      `SELECT * FROM financial_snapshots WHERE ${conditions.join(' AND ')} ORDER BY snapshot_date ASC`,
+      params
+    );
 
-    return rows.map(mapRow);
+    return (result.rows as SnapshotRow[]).map(mapRow);
   }
 
-  getTrend(userId: string, metric: TrendMetric): TrendAnalysis {
+  async getTrend(userId: string, metric: TrendMetric): Promise<TrendAnalysis> {
     const column = METRIC_COLUMNS[metric];
-    const rows = this.db
-      .prepare(
-        `SELECT snapshot_date as date, ${column} as value FROM financial_snapshots WHERE user_id = ? ORDER BY snapshot_date ASC`
-      )
-      .all(userId) as { date: string; value: number }[];
+    const result = await this.pool.query(
+      `SELECT snapshot_date as date, ${column} as value FROM financial_snapshots WHERE user_id = $1 ORDER BY snapshot_date ASC`,
+      [userId]
+    );
+    const rows = result.rows as { date: string; value: number }[];
 
     const points: TrendPoint[] = rows.map((r) => ({ date: r.date, value: r.value }));
     if (points.length === 0) {
@@ -200,11 +206,12 @@ export class FinancialSnapshotRepository {
     return { metric, points, direction, changeFromFirst };
   }
 
-  /** 가장 최근 스냅샷을 기준으로 위험 임계값을 초과한 지표를 경고한다 */
-  checkThresholds(userId: string): ThresholdAlert[] {
-    const latest = this.db
-      .prepare('SELECT * FROM financial_snapshots WHERE user_id = ? ORDER BY snapshot_date DESC LIMIT 1')
-      .get(userId) as SnapshotRow | undefined;
+  async checkThresholds(userId: string): Promise<ThresholdAlert[]> {
+    const result = await this.pool.query(
+      'SELECT * FROM financial_snapshots WHERE user_id = $1 ORDER BY snapshot_date DESC LIMIT 1',
+      [userId]
+    );
+    const latest = result.rows[0] as SnapshotRow | undefined;
     if (!latest) return [];
 
     const alerts: ThresholdAlert[] = [];
@@ -219,9 +226,9 @@ export class FinancialSnapshotRepository {
     return alerts;
   }
 
-  comparePerformance(userId: string, fromDate: string, toDate: string): PerformanceComparison[] {
-    const from = this.getSnapshotByDate(userId, fromDate);
-    const to = this.getSnapshotByDate(userId, toDate);
+  async comparePerformance(userId: string, fromDate: string, toDate: string): Promise<PerformanceComparison[]> {
+    const from = await this.getSnapshotByDate(userId, fromDate);
+    const to = await this.getSnapshotByDate(userId, toDate);
     if (!from || !to) {
       throw new Error(`Snapshot not found for comparison (from=${fromDate}, to=${toDate})`);
     }
@@ -243,8 +250,8 @@ export class FinancialSnapshotRepository {
     });
   }
 
-  private getSnapshotByDateOrThrow(userId: string, snapshotDate: string): FinancialSnapshotRecord {
-    const record = this.getSnapshotByDate(userId, snapshotDate);
+  private async getSnapshotByDateOrThrow(userId: string, snapshotDate: string): Promise<FinancialSnapshotRecord> {
+    const record = await this.getSnapshotByDate(userId, snapshotDate);
     if (!record) throw new Error(`Snapshot not found after write: user=${userId} date=${snapshotDate}`);
     return record;
   }

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 import { calculateLoanPayment } from '../services/interest-calculator';
 import { calculateAge, MAX_AGE, MIN_AGE } from '../validation/userValidation';
 import { LoanNotFoundError } from './LoanRepository';
@@ -25,28 +25,17 @@ export interface IntegrityLogEntry {
   checkedAt: string;
 }
 
-/**
- * DB 무결성 자동 검사 (Day 5 - Task 5, δ=1605)
- *
- * DB 제약(CHECK/UNIQUE/FK)은 "쓰기 시점"의 위반만 막는다. 시간에 따라 조건이
- * 바뀌는 값(나이 등)이나, 두 컬럼이 서로 다른 시점에 각각 정상적으로 쓰였지만
- * 상호 불일치가 발생한 경우(월상환액 재계산 결과와 저장값의 드리프트 등)는
- * 주기적 스캔으로만 잡아낼 수 있다. 모든 검사 결과는 data_integrity_log에 남는다.
- */
 export class IntegrityChecker {
-  constructor(private readonly db: Database.Database) {}
+  constructor(private readonly pool: Pool) {}
 
-  checkOrphanedLoans(): IntegrityCheckResult {
-    const orphans = this.db
-      .prepare(
-        `
-        SELECT l.id as loan_id
-        FROM loans l
-        LEFT JOIN users u ON l.user_id = u.id
-        WHERE u.id IS NULL
-      `
-      )
-      .all() as { loan_id: string }[];
+  async checkOrphanedLoans(): Promise<IntegrityCheckResult> {
+    const result = await this.pool.query(`
+      SELECT l.id as loan_id
+      FROM loans l
+      LEFT JOIN users u ON l.user_id = u.id
+      WHERE u.id IS NULL
+    `);
+    const orphans = result.rows as { loan_id: string }[];
 
     const findings: IntegrityFinding[] = orphans.map((o) => ({
       entityId: o.loan_id,
@@ -56,10 +45,9 @@ export class IntegrityChecker {
     return this.logResult('orphaned_loan', findings);
   }
 
-  checkAgeConsistency(asOfDate: string): IntegrityCheckResult {
-    const users = this.db
-      .prepare('SELECT id, date_of_birth FROM users WHERE date_of_birth IS NOT NULL')
-      .all() as { id: string; date_of_birth: string }[];
+  async checkAgeConsistency(asOfDate: string): Promise<IntegrityCheckResult> {
+    const result = await this.pool.query('SELECT id, date_of_birth FROM users WHERE date_of_birth IS NOT NULL');
+    const users = result.rows as { id: string; date_of_birth: string }[];
 
     const findings: IntegrityFinding[] = [];
     for (const user of users) {
@@ -76,9 +64,16 @@ export class IntegrityChecker {
   }
 
   async checkMonthlyPaymentConsistency(): Promise<IntegrityCheckResult> {
-    const loans = this.db
-      .prepare("SELECT id, original_amount, interest_rate, term_months, monthly_payment FROM loans WHERE status != 'closed'")
-      .all() as { id: string; original_amount: number; interest_rate: number; term_months: number; monthly_payment: number }[];
+    const result = await this.pool.query(
+      "SELECT id, original_amount, interest_rate, term_months, monthly_payment FROM loans WHERE status != 'closed'"
+    );
+    const loans = result.rows as {
+      id: string;
+      original_amount: number;
+      interest_rate: number;
+      term_months: number;
+      monthly_payment: number;
+    }[];
 
     const findings: IntegrityFinding[] = [];
     for (const loan of loans) {
@@ -99,14 +94,24 @@ export class IntegrityChecker {
   }
 
   async runFullCheck(asOfDate: string): Promise<IntegrityCheckResult[]> {
-    return [this.checkOrphanedLoans(), this.checkAgeConsistency(asOfDate), await this.checkMonthlyPaymentConsistency()];
+    return [
+      await this.checkOrphanedLoans(),
+      await this.checkAgeConsistency(asOfDate),
+      await this.checkMonthlyPaymentConsistency()
+    ];
   }
 
-  /** monthly_payment 드리프트를 재계산값으로 고치고 'repaired' 상태로 기록한다 */
   async repairMonthlyPaymentDrift(loanId: string): Promise<IntegrityCheckResult> {
-    const loan = this.db
-      .prepare('SELECT id, original_amount, interest_rate, term_months FROM loans WHERE id = ?')
-      .get(loanId) as { id: string; original_amount: number; interest_rate: number; term_months: number } | undefined;
+    const loanResult = await this.pool.query(
+      'SELECT id, original_amount, interest_rate, term_months FROM loans WHERE id = $1',
+      [loanId]
+    );
+    const loan = loanResult.rows[0] as {
+      id: string;
+      original_amount: number;
+      interest_rate: number;
+      term_months: number;
+    } | undefined;
 
     if (!loan) throw new LoanNotFoundError(loanId);
 
@@ -116,9 +121,10 @@ export class IntegrityChecker {
       term: loan.term_months
     });
 
-    this.db
-      .prepare("UPDATE loans SET monthly_payment = ?, updated_at = datetime('now') WHERE id = ?")
-      .run(correctValue, loanId);
+    await this.pool.query(
+      'UPDATE loans SET monthly_payment = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [correctValue, loanId]
+    );
 
     return this.logResult(
       'monthly_payment_drift',
@@ -127,33 +133,30 @@ export class IntegrityChecker {
     );
   }
 
-  getIntegrityLog(checkType?: string): IntegrityLogEntry[] {
-    const rows = (
-      checkType
-        ? this.db
-            .prepare('SELECT * FROM data_integrity_log WHERE check_type = ? ORDER BY checked_at ASC')
-            .all(checkType)
-        : this.db.prepare('SELECT * FROM data_integrity_log ORDER BY checked_at ASC').all()
-    ) as { id: string; check_type: string; status: string; findings: string; checked_at: string }[];
+  async getIntegrityLog(checkType?: string): Promise<IntegrityLogEntry[]> {
+    const result = checkType
+      ? await this.pool.query('SELECT * FROM data_integrity_log WHERE check_type = $1 ORDER BY checked_at ASC', [checkType])
+      : await this.pool.query('SELECT * FROM data_integrity_log ORDER BY checked_at ASC');
 
-    return rows.map((row) => ({
+    return result.rows.map((row) => ({
       id: row.id,
       checkType: row.check_type,
       status: row.status as IntegrityStatus,
-      findings: JSON.parse(row.findings) as IntegrityFinding[],
+      findings: typeof row.findings === 'string' ? JSON.parse(row.findings) : row.findings,
       checkedAt: row.checked_at
     }));
   }
 
-  private logResult(
+  private async logResult(
     checkType: string,
     findings: IntegrityFinding[],
     forcedStatus?: IntegrityStatus
-  ): IntegrityCheckResult {
+  ): Promise<IntegrityCheckResult> {
     const status: IntegrityStatus = forcedStatus ?? (findings.length === 0 ? 'ok' : 'violation');
-    this.db
-      .prepare('INSERT INTO data_integrity_log (id, check_type, status, findings) VALUES (?, ?, ?, ?)')
-      .run(randomUUID(), checkType, status, JSON.stringify(findings));
+    await this.pool.query(
+      'INSERT INTO data_integrity_log (id, check_type, status, findings) VALUES ($1, $2, $3, $4)',
+      [randomUUID(), checkType, status, JSON.stringify(findings)]
+    );
     return { checkType, status, findings };
   }
 }
