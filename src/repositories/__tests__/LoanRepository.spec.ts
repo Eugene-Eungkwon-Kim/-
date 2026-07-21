@@ -85,19 +85,17 @@ describe('LoanRepository (Day 5 - Task 2: 대출 포트폴리오 관리, δ=1570
       const loan = await loans.registerLoan({ userId, productId: 'prod-1', originalAmount: 10000000, interestRate: 3.2, termMonths: 12, startDate: '2026-01-01' });
 
       // 잔액보다 큰 원금 상환 시도 → 애플리케이션 레벨에서 차단
-      expect(() => loans.recordPayment(loan.id, { paymentDate: '2026-02-01', principal: 20000000, interest: 100000 })).toThrow(OverpaymentError);
+      await expect(loans.recordPayment(loan.id, { paymentDate: '2026-02-01', principal: 20000000, interest: 100000 })).rejects.toThrow(OverpaymentError);
 
       // 완납 처리: 정확히 잔액만큼 상환하면 대출이 종료된다
-      const paidOff = loans.recordPayment(loan.id, { paymentDate: '2026-02-01', principal: 10000000, interest: 50000 });
+      const paidOff = await loans.recordPayment(loan.id, { paymentDate: '2026-02-01', principal: 10000000, interest: 50000 });
       expect(paidOff.currentBalance).toBe(0);
       expect(paidOff.status).toBe('closed');
       expect(paidOff.nextPaymentDate).toBeNull();
       expect(paidOff.closedAt).not.toBeNull();
 
       // DB 제약조건도 최후 방어선으로 잔액 초과를 직접 차단한다
-      expect(() =>
-        db.prepare('UPDATE loans SET current_balance = original_amount + 1 WHERE id = ?').run(loan.id)
-      ).toThrow(/CHECK constraint failed/);
+      await expect(pool.query('UPDATE loans SET current_balance = original_amount + 1 WHERE id = $1', [loan.id])).rejects.toThrow();
     });
 
     it('[T-API-A11] 연체 자동 감지', async () => {
@@ -105,21 +103,21 @@ describe('LoanRepository (Day 5 - Task 2: 대출 포트폴리오 관리, δ=1570
       expect(loan.status).toBe('active');
       expect(loan.nextPaymentDate).toBe('2020-02-01'); // 오래 전에 지난 상환일
 
-      const delinquent = loans.detectDelinquentLoans('2026-07-01');
+      const delinquent = await loans.detectDelinquentLoans('2026-07-01');
       expect(delinquent.length).toBe(1);
       expect(delinquent[0].id).toBe(loan.id);
       expect(delinquent[0].status).toBe('delinquent');
 
       // 재조회 시에도 반영 확인
-      expect(loans.getLoan(loan.id)?.status).toBe('delinquent');
+      expect((await loans.getLoan(loan.id))?.status).toBe('delinquent');
     });
 
     it('[T-API-A12] 포트폴리오 요약', async () => {
       const loan1 = await loans.registerLoan({ userId, productId: 'prod-1', originalAmount: 300000000, interestRate: 3.2, termMonths: 240, startDate: '2026-01-01' });
       await loans.registerLoan({ userId, productId: 'prod-2', originalAmount: 100000000, interestRate: 2.8, termMonths: 120, startDate: '2026-01-01' });
-      loans.recordPayment(loan1.id, { paymentDate: '2026-02-01', principal: 1000000, interest: 800000 });
+      await loans.recordPayment(loan1.id, { paymentDate: '2026-02-01', principal: 1000000, interest: 800000 });
 
-      const summary = loans.getPortfolioSummary(userId);
+      const summary = await loans.getPortfolioSummary(userId);
       expect(summary.loanCount).toBe(2);
       expect(summary.activeLoanCount).toBe(2);
       expect(summary.delinquentLoanCount).toBe(0);
