@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 import { UserRepository } from '../repositories/UserRepository';
 import { FinancialSnapshotRepository } from '../repositories/FinancialSnapshotRepository';
 import { UserNotFoundError } from '../repositories/errors';
@@ -6,19 +6,13 @@ import { simulateCreditScore } from '../services/creditSimulation';
 import { assessRisk } from '../services/riskAssessment';
 import { analyzeFinancials } from '../services/financialAnalysis';
 import { TrendAnalysis, TrendMetric } from '../types/financialSnapshot';
-import { ServiceResult, toServiceResult, toServiceResultAsync } from './errorMapping';
+import { ServiceResult, toServiceResultAsync } from './errorMapping';
 
 export interface CreditSimulationRequest {
   scenario: 'ideal' | 'normal' | 'risky' | 'crisis';
   duration?: number;
 }
 
-/**
- * UserProfile.employment.status(고용 형태)와 assessRisk가 기대하는
- * employmentStability(고용 안정성)는 서로 다른 축의 개념이라 직접 대입하면 안 된다
- * (예: 'employed' 문자열을 그대로 넘기면 assessRisk의 어떤 분기에도 안 걸려
- * 최악 케이스로 취급될 뻔했다). 명시적으로 매핑한다.
- */
 function toEmploymentStability(status: 'employed' | 'self-employed' | 'unemployed' | null): 'stable' | 'moderate' | 'unstable' {
   if (status === 'employed') return 'stable';
   if (status === 'self-employed') return 'moderate';
@@ -26,22 +20,14 @@ function toEmploymentStability(status: 'employed' | 'self-employed' | 'unemploye
   return 'stable';
 }
 
-/**
- * 금융분석 서비스 계층 (Day 6 - Task 5, δ=1350)
- *
- * Day4의 creditSimulation/riskAssessment는 클라이언트가 넘긴 입력값만으로
- * 계산하고 결과를 그대로 버렸다. 여기서는 DB에 저장된 사용자의 실제 신용점수/
- * 소득/부채를 시작점으로 사용하고, 리스크평가 결과는 FinancialSnapshotRepository에
- * 자동 저장해 시계열 추세 조회(getSnapshotTrend)가 가능하게 한다.
- */
-export function runCreditSimulation(
-  db: Database.Database,
+export async function runCreditSimulation(
+  pool: Pool,
   userId: string,
   request: CreditSimulationRequest
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<ServiceResult<any>> {
   return toServiceResultAsync(async () => {
-    const profile = new UserRepository(db).getProfile(userId);
+    const profile = await new UserRepository(pool).getProfile(userId);
     if (!profile) throw new UserNotFoundError(userId);
 
     return simulateCreditScore({
@@ -52,14 +38,14 @@ export function runCreditSimulation(
   });
 }
 
-export function runRiskAssessment(
-  db: Database.Database,
+export async function runRiskAssessment(
+  pool: Pool,
   userId: string,
   snapshotDate: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<ServiceResult<any>> {
   return toServiceResultAsync(async () => {
-    const profile = new UserRepository(db).getProfile(userId);
+    const profile = await new UserRepository(pool).getProfile(userId);
     if (!profile) throw new UserNotFoundError(userId);
 
     const income = profile.financialSnapshot.monthlyIncome ?? 4000000;
@@ -80,7 +66,7 @@ export function runRiskAssessment(
     const assetToDebtRatio = debt > 0 ? assets / debt : 0;
     const financialHealthScore = Math.max(0, Math.min(100, 100 - result.riskScore));
 
-    new FinancialSnapshotRepository(db).recordSnapshot({
+    await new FinancialSnapshotRepository(pool).recordSnapshot({
       userId,
       snapshotDate,
       creditScore,
@@ -98,19 +84,14 @@ export function runRiskAssessment(
   });
 }
 
-/**
- * 재정분석(Day4 Task5)을 DB의 실제 income/expenses/debt/assets로 연결한다 (Day7 Task3).
- * 이 분석은 riskScore/probabilityOfDefault를 계산하지 않으므로, 직전까지 저장된
- * 최신 스냅샷 값을 그대로 이어받아 upsert 시 리스크 필드가 0으로 덮어써지지 않게 한다.
- */
-export function runFinancialAnalysis(
-  db: Database.Database,
+export async function runFinancialAnalysis(
+  pool: Pool,
   userId: string,
   snapshotDate: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<ServiceResult<any>> {
   return toServiceResultAsync(async () => {
-    const profile = new UserRepository(db).getProfile(userId);
+    const profile = await new UserRepository(pool).getProfile(userId);
     if (!profile) throw new UserNotFoundError(userId);
 
     const result = await analyzeFinancials({
@@ -121,11 +102,11 @@ export function runFinancialAnalysis(
       totalAssets: profile.financialSnapshot.totalAssets ?? undefined
     });
 
-    const snapshotRepo = new FinancialSnapshotRepository(db);
-    const history = snapshotRepo.getHistory(userId);
+    const snapshotRepo = new FinancialSnapshotRepository(pool);
+    const history = await snapshotRepo.getHistory(userId);
     const latestExisting = history.length > 0 ? history[history.length - 1] : null;
 
-    snapshotRepo.recordSnapshot({
+    await snapshotRepo.recordSnapshot({
       userId,
       snapshotDate,
       creditScore: profile.creditProfile.score ?? 700,
@@ -143,6 +124,6 @@ export function runFinancialAnalysis(
   });
 }
 
-export function getSnapshotTrend(db: Database.Database, userId: string, metric: TrendMetric): ServiceResult<TrendAnalysis> {
-  return toServiceResult(() => new FinancialSnapshotRepository(db).getTrend(userId, metric));
+export async function getSnapshotTrend(pool: Pool, userId: string, metric: TrendMetric): Promise<ServiceResult<TrendAnalysis>> {
+  return toServiceResultAsync(async () => new FinancialSnapshotRepository(pool).getTrend(userId, metric));
 }

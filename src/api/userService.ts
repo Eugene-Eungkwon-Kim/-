@@ -1,43 +1,36 @@
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 import { UserRepository } from '../repositories/UserRepository';
 import { UserNotFoundError } from '../repositories/errors';
 import { CreditHistoryEntry, RegisterUserInput, UpdateUserInput, UserProfile } from '../types/user';
-import { ServiceResult, toServiceResult } from './errorMapping';
+import { ServiceResult, toServiceResultAsync } from './errorMapping';
 import { validateUserRegistration } from '../validation/requestValidation';
 
 export type { ServiceResult };
 
-/**
- * 사용자 서비스 계층 (Day 6 - Task 1, δ=1615)
- *
- * Day5의 UserRepository는 실패를 예외로 표현하지만, API 경계에서는 예외가
- * 호출자까지 전파되지 않고 값으로 나타나야 한다. 에러 매핑은 errorMapping.ts의
- * 공용 유틸(Task3)에 위임한다.
- */
-export function registerUser(db: Database.Database, input: RegisterUserInput): ServiceResult<UserProfile> {
-  return toServiceResult(() => {
+export async function registerUser(pool: Pool, input: RegisterUserInput): Promise<ServiceResult<UserProfile>> {
+  return toServiceResultAsync(async () => {
     validateUserRegistration(input);
-    return new UserRepository(db).register(input);
+    return new UserRepository(pool).register(input);
   });
 }
 
-export function getUserProfile(db: Database.Database, userId: string): ServiceResult<UserProfile> {
-  return toServiceResult(() => {
-    const profile = new UserRepository(db).getProfile(userId);
+export async function getUserProfile(pool: Pool, userId: string): Promise<ServiceResult<UserProfile>> {
+  return toServiceResultAsync(async () => {
+    const profile = await new UserRepository(pool).getProfile(userId);
     if (!profile) throw new UserNotFoundError(userId);
     return profile;
   });
 }
 
-export function updateUserProfile(
-  db: Database.Database,
+export async function updateUserProfile(
+  pool: Pool,
   userId: string,
   updates: UpdateUserInput,
   expectedVersion: number
-): ServiceResult<UserProfile> {
-  return toServiceResult(() => new UserRepository(db).updateProfile(userId, updates, expectedVersion));
+): Promise<ServiceResult<UserProfile>> {
+  return toServiceResultAsync(async () => new UserRepository(pool).updateProfile(userId, updates, expectedVersion));
 }
 
-export function getCreditHistory(db: Database.Database, userId: string): ServiceResult<CreditHistoryEntry[]> {
-  return toServiceResult(() => new UserRepository(db).getCreditHistory(userId));
+export async function getCreditHistory(pool: Pool, userId: string): Promise<ServiceResult<CreditHistoryEntry[]>> {
+  return toServiceResultAsync(async () => new UserRepository(pool).getCreditHistory(userId));
 }

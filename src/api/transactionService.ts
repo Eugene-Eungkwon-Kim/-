@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+import type { Pool } from 'pg';
 import { TransactionRepository } from '../repositories/TransactionRepository';
 import {
   AuditLogRecord,
@@ -8,41 +8,40 @@ import {
   TransactionRecord,
   TransactionSummary
 } from '../types/transaction';
-import { ServiceResult, toServiceResult } from './errorMapping';
+import { ServiceResult, toServiceResultAsync } from './errorMapping';
 import { validateTransaction } from '../validation/requestValidation';
 
-/** 거래/감사 서비스 계층 (Day 6 - Task 4, δ=1410) */
-export function recordTransaction(db: Database.Database, input: RecordTransactionInput): ServiceResult<TransactionRecord> {
-  return toServiceResult(() => {
+export async function recordTransaction(pool: Pool, input: RecordTransactionInput): Promise<ServiceResult<TransactionRecord>> {
+  return toServiceResultAsync(async () => {
     validateTransaction(input);
-    return new TransactionRepository(db).recordTransaction(input);
+    return new TransactionRepository(pool).recordTransaction(input);
   });
 }
 
-export function getTransactionHistory(
-  db: Database.Database,
+export async function getTransactionHistory(
+  pool: Pool,
   userId: string,
   filter?: TransactionFilter
-): ServiceResult<TransactionRecord[]> {
-  return toServiceResult(() => new TransactionRepository(db).getTransactions(userId, filter));
+): Promise<ServiceResult<TransactionRecord[]>> {
+  return toServiceResultAsync(async () => new TransactionRepository(pool).getTransactions(userId, filter));
 }
 
-export function getTransactionSummary(db: Database.Database, userId: string): ServiceResult<TransactionSummary> {
-  return toServiceResult(() => new TransactionRepository(db).getSummary(userId));
+export async function getTransactionSummary(pool: Pool, userId: string): Promise<ServiceResult<TransactionSummary>> {
+  return toServiceResultAsync(async () => new TransactionRepository(pool).getSummary(userId));
 }
 
-export function rescanAnomalies(db: Database.Database, userId: string): ServiceResult<TransactionRecord[]> {
-  return toServiceResult(() => new TransactionRepository(db).rescanForAnomalies(userId));
+export async function rescanAnomalies(pool: Pool, userId: string): Promise<ServiceResult<TransactionRecord[]>> {
+  return toServiceResultAsync(async () => new TransactionRepository(pool).rescanForAnomalies(userId));
 }
 
-export function getTransactionAuditLog(
-  db: Database.Database,
+export async function getTransactionAuditLog(
+  pool: Pool,
   transactionId?: string,
   options?: { from?: string; to?: string }
-): ServiceResult<AuditLogRecord[]> {
-  return toServiceResult(() => new TransactionRepository(db).getAuditLog(transactionId, options));
+): Promise<ServiceResult<AuditLogRecord[]>> {
+  return toServiceResultAsync(async () => new TransactionRepository(pool).getAuditLog(transactionId, options));
 }
 
-export function getTransactionMonthlyTrend(db: Database.Database, userId: string): ServiceResult<MonthlyTrendPoint[]> {
-  return toServiceResult(() => new TransactionRepository(db).getMonthlyTrend(userId));
+export async function getTransactionMonthlyTrend(pool: Pool, userId: string): Promise<ServiceResult<MonthlyTrendPoint[]>> {
+  return toServiceResultAsync(async () => new TransactionRepository(pool).getMonthlyTrend(userId));
 }
