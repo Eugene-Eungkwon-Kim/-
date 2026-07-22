@@ -14,7 +14,8 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
   let backupDir: string;
 
   beforeEach(async () => {
-    pool = getTestPool();
+    process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
+    pool = await initializeTestDatabase();
     backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maars-app-spec-'));
     app = await buildServer(pool, { jwtSecret: 'test-secret', backupDir });
   });
@@ -22,6 +23,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
   afterEach(async () => {
     fs.rmSync(backupDir, { recursive: true, force: true });
     await cleanupTestDatabase();
+    delete process.env.ENCRYPTION_KEY;
   });
 
   /** 회원가입 + 로그인을 한 번에 수행해 인증된 요청에 쓸 (userId, token, refreshToken)을 반환한다 */
