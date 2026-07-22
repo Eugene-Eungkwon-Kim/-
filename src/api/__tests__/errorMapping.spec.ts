@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { initializeTestDatabase, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import { DuplicateEmailError, OptimisticLockError, UserNotFoundError, ValidationError } from '@repositories/errors';
 import { LoanNotFoundError, OverpaymentError } from '@repositories/LoanRepository';
 import { mapErrorToCode, toServiceResult, toServiceResultAsync } from '@api/errorMapping';
@@ -49,15 +49,16 @@ describe('errorMapping (Day 6 - Task 3: 응답 표준화 & 에러 처리, δ=144
     });
 
     it('[T-SVC-306] 공용 유틸 도입 후에도 Task1/2 서비스 동작에 회귀가 없다', async () => {
-      const db: Database.Database = createDatabase(':memory:');
+      process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
+      const pool: Pool = await initializeTestDatabase();
       try {
-        const dup1 = registerUser(db, { email: 'regress@example.com', name: 'A', password: 'test-password-123' });
+        const dup1 = await registerUser(pool, { email: 'regress@example.com', name: 'A', password: 'test-password-123', contact: { address: {} } });
         expect(dup1.success).toBe(true);
-        const dup2 = registerUser(db, { email: 'regress@example.com', name: 'B', password: 'test-password-123' });
+        const dup2 = await registerUser(pool, { email: 'regress@example.com', name: 'B', password: 'test-password-123', contact: { address: {} } });
         expect(dup2.success).toBe(false);
         if (!dup2.success) expect(dup2.error.code).toBe('DUPLICATE_EMAIL');
 
-        const loanResult = await applyForLoan(db, {
+        const loanResult = await applyForLoan(pool, {
           userId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
           productId: 'p1',
           originalAmount: 1000000,
@@ -68,7 +69,8 @@ describe('errorMapping (Day 6 - Task 3: 응답 표준화 & 에러 처리, δ=144
         expect(loanResult.success).toBe(false);
         if (!loanResult.success) expect(loanResult.error.code).toBe('USER_NOT_FOUND');
       } finally {
-        db.close();
+        await cleanupTestDatabase();
+        delete process.env.ENCRYPTION_KEY;
       }
     });
   });
