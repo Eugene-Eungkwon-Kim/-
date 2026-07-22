@@ -225,7 +225,7 @@ export class LoanRepository {
       }
 
       await client.query('COMMIT');
-      return overdue.map(mapRowToLoan);
+      return overdue.map((row) => ({ ...mapRowToLoan(row), status: 'delinquent' as const }));
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

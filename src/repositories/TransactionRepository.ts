@@ -154,7 +154,7 @@ export class TransactionRepository {
 
       if (candidates.length > 0) this.invalidateUserAggregates(userId);
 
-      return candidates.map((row) => this.getTransactionOrThrow(row.id));
+      return Promise.all(candidates.map((row) => this.getTransactionOrThrow(row.id)));
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -189,18 +189,20 @@ export class TransactionRepository {
   async getMonthlyTrend(userId: string): Promise<MonthlyTrendPoint[]> {
     return this.cache.getOrCompute(`txn:${userId}:trend`, async () => {
       const result = await this.pool.query(
-        `SELECT to_char(occurred_at, 'YYYY-MM') as month, SUM(amount) as total_amount, COUNT(*) as transaction_count
+        `SELECT to_char(occurred_at::timestamp, 'YYYY-MM') as month,
+                CAST(SUM(amount) AS INTEGER) as total_amount,
+                CAST(COUNT(*) AS INTEGER) as transaction_count
          FROM transactions
          WHERE user_id = $1
-         GROUP BY month
+         GROUP BY to_char(occurred_at::timestamp, 'YYYY-MM')
          ORDER BY month ASC`,
         [userId]
       );
 
       return result.rows.map((row) => ({
         month: row.month,
-        totalAmount: row.total_amount,
-        transactionCount: row.transaction_count
+        totalAmount: Number(row.total_amount),
+        transactionCount: Number(row.transaction_count)
       }));
     }) as Promise<MonthlyTrendPoint[]>;
   }
