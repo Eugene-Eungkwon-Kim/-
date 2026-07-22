@@ -14,11 +14,12 @@ describe('TransactionRepository (Day 5 - Task 3: 거래 기록 & 감시 로깅, 
     pool = getTestPool();
     users = new UserRepository(pool);
     transactions = new TransactionRepository(pool);
-    userId = (await users.register({
+    const user = await users.register({
       email: 'txn@example.com',
       name: 'Transaction User',
       financialSnapshot: { monthlyIncome: 5000000 }
-    })).id;
+    });
+    userId = user.id;
   });
 
   afterEach(async () => {
@@ -80,12 +81,15 @@ describe('TransactionRepository (Day 5 - Task 3: 거래 기록 & 감시 로깅, 
       });
       expect(normal.status).toBe('completed');
 
-      const profile = (await users.getProfile(userId))!;
-      await users.updateProfile(userId, { financialSnapshot: { monthlyIncome: 1000000 } }, profile.metadata.version);
+      const profile = await users.getProfile(userId);
+      if (profile) {
+        await users.updateProfile(userId, { financialSnapshot: { monthlyIncome: 1000000 } }, profile.metadata.version);
+      }
 
       const rescanned = await transactions.rescanForAnomalies(userId);
       expect(rescanned.some((t) => t.id === normal.id)).toBe(true);
-      expect((await transactions.getTransaction(normal.id))?.status).toBe('flagged');
+      const updated = await transactions.getTransaction(normal.id);
+      expect(updated?.status).toBe('flagged');
     });
 
     it('[T-API-A16] 감시 로그 조회 & 필터', async () => {

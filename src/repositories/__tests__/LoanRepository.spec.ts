@@ -16,7 +16,8 @@ describe('LoanRepository (Day 5 - Task 2: 대출 포트폴리오 관리, δ=1570
     pool = getTestPool();
     users = new UserRepository(pool);
     loans = new LoanRepository(pool);
-    userId = (await users.register({ email: 'borrower@example.com', name: 'Borrower' })).id;
+    const user = await users.register({ email: 'borrower@example.com', name: 'Borrower' });
+    userId = user.id;
   });
 
   afterEach(async () => {
@@ -109,7 +110,12 @@ describe('LoanRepository (Day 5 - Task 2: 대출 포트폴리오 관리, δ=1570
       expect(delinquent[0].status).toBe('delinquent');
 
       // 재조회 시에도 반영 확인
+<<<<<<< HEAD
       expect((await loans.getLoan(loan.id))?.status).toBe('delinquent');
+=======
+      const refreshed = await loans.getLoan(loan.id);
+      expect(refreshed?.status).toBe('delinquent');
+>>>>>>> defc7bb5 (Tier 1: 핵심 Repository 테스트 3개 파일 async/PostgreSQL 변환)
     });
 
     it('[T-API-A12] 포트폴리오 요약', async () => {
