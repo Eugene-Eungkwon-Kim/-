@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { initializeTestDatabase, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import type { FastifyInstance } from 'fastify';
 
@@ -13,19 +13,21 @@ import type { FastifyInstance } from 'fastify';
  * Swagger UI 접근성 및 기능을 검증한다.
  */
 describe('Swagger UI (Day 14 - Task I)', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let app: FastifyInstance;
   let backupDir: string;
 
   beforeEach(async () => {
-    db = createDatabase(':memory:');
+    process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
+    pool = await initializeTestDatabase();
     backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maars-swagger-'));
-    app = await buildServer(db, { jwtSecret: 'test-secret', backupDir });
+    app = await buildServer(pool, { jwtSecret: 'test-secret', backupDir });
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
     fs.rmSync(backupDir, { recursive: true, force: true });
+    await cleanupTestDatabase();
+    delete process.env.ENCRYPTION_KEY;
   });
 
   it('Swagger UI가 /api/docs에서 접근 가능하다', async () => {

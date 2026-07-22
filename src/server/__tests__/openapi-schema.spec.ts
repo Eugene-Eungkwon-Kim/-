@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { initializeTestDatabase, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import type { FastifyInstance } from 'fastify';
 
@@ -13,19 +13,21 @@ import type { FastifyInstance } from 'fastify';
  * API 문서 생성 및 스키마 유효성을 검증한다.
  */
 describe('OpenAPI Schema (Day 14 - Task H)', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let app: FastifyInstance;
   let backupDir: string;
 
   beforeEach(async () => {
-    db = createDatabase(':memory:');
+    process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
+    pool = await initializeTestDatabase();
     backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maars-openapi-'));
-    app = await buildServer(db, { jwtSecret: 'test-secret', backupDir });
+    app = await buildServer(pool, { jwtSecret: 'test-secret', backupDir });
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
     fs.rmSync(backupDir, { recursive: true, force: true });
+    await cleanupTestDatabase();
+    delete process.env.ENCRYPTION_KEY;
   });
 
   it('OpenAPI 스키마가 유효한 3.0 형식이다', async () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { initializeTestDatabase, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import type { FastifyInstance } from 'fastify';
 
@@ -11,16 +11,18 @@ import type { FastifyInstance } from 'fastify';
  * 검사)을 하나의 연속된 사용자 여정으로 이어붙여, 실제 운영 흐름을 재현한다.
  */
 describe('인증 & 권한 종단 시나리오 (Day 8 - Task 6)', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    db = createDatabase(':memory:');
-    app = await buildServer(db, { jwtSecret: 'test-secret' });
+    process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
+    pool = await initializeTestDatabase();
+    app = await buildServer(pool, { jwtSecret: 'test-secret' });
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
+    await cleanupTestDatabase();
+    delete process.env.ENCRYPTION_KEY;
   });
 
   it('회원가입 → 로그인 → 본인 리소스 접근 → 타인 리소스 차단 → 무효 토큰 차단', async () => {

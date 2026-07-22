@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { initializeTestDatabase, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import type { FastifyInstance } from 'fastify';
 
@@ -13,16 +13,18 @@ import type { FastifyInstance } from 'fastify';
  * 시나리오)의 이미 통과하는 단언들을 건드리지 않도록 별도 파일로 둔다.
  */
 describe('세션 라이프사이클 종단 시나리오 (Day 9 - Task 6)', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let app: FastifyInstance;
 
   beforeEach(async () => {
-    db = createDatabase(':memory:');
-    app = await buildServer(db, { jwtSecret: 'test-secret' });
+    process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
+    pool = await initializeTestDatabase();
+    app = await buildServer(pool, { jwtSecret: 'test-secret' });
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
+    await cleanupTestDatabase();
+    delete process.env.ENCRYPTION_KEY;
   });
 
   it('회원가입 → 로그인 → refresh → 보호된 라우트 접근 → 로그아웃 → 리프레시 토큰 재사용 실패', async () => {

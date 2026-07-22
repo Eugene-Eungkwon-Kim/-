@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { initializeTestDatabase, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import type { FastifyInstance } from 'fastify';
 
@@ -15,19 +15,21 @@ import type { FastifyInstance } from 'fastify';
  * 않도록 별도 파일로 둔다.
  */
 describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let app: FastifyInstance;
   let backupDir: string;
 
   beforeEach(async () => {
-    db = createDatabase(':memory:');
+    process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
+    pool = await initializeTestDatabase();
     backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maars-api-surface-e2e-'));
-    app = await buildServer(db, { jwtSecret: 'test-secret', backupDir });
+    app = await buildServer(pool, { jwtSecret: 'test-secret', backupDir });
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
     fs.rmSync(backupDir, { recursive: true, force: true });
+    await cleanupTestDatabase();
+    delete process.env.ENCRYPTION_KEY;
   });
 
   async function registerAndLogin(email: string, name: string): Promise<{ userId: string; token: string }> {

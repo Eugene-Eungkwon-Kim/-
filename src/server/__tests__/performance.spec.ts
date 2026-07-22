@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { initializeTestDatabase, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import type { FastifyInstance } from 'fastify';
 import {
@@ -20,20 +20,22 @@ import {
  * Tests measure response times under various load conditions.
  */
 describe('Performance Benchmarks (Day 12 - Task E, δ=800)', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let app: FastifyInstance;
   let backupDir: string;
   const results: LoadTestResult[] = [];
 
   beforeEach(async () => {
-    db = createDatabase(':memory:');
+    process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
+    pool = await initializeTestDatabase();
     backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maars-perf-spec-'));
-    app = await buildServer(db, { jwtSecret: 'test-secret', backupDir });
+    app = await buildServer(pool, { jwtSecret: 'test-secret', backupDir });
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
     fs.rmSync(backupDir, { recursive: true, force: true });
+    await cleanupTestDatabase();
+    delete process.env.ENCRYPTION_KEY;
   });
 
   // Helper to register a user and get auth token
