@@ -8,19 +8,19 @@ import { MIGRATIONS_DIR } from '../connection';
  */
 
 let testPool: Pool | null = null;
-let testDbName = '';
 
 /**
  * 테스트용 PostgreSQL 커넥션 풀 생성
  * 환경변수가 없으면 localhost:5432의 기본값 사용
  */
 export function createTestPool(): Pool {
+  const password = process.env.PG_PASSWORD;
   const pool = new Pool({
     host: process.env.PG_HOST || 'localhost',
     port: parseInt(process.env.PG_PORT || '5432'),
     database: process.env.PG_TEST_DATABASE || 'maars_test',
     user: process.env.PG_USER || 'postgres',
-    password: process.env.PG_PASSWORD || '',
+    ...(password ? { password } : {}),
     max: 5,
   });
   return pool;
@@ -47,7 +47,7 @@ export async function initializeTestDatabase(): Promise<Pool> {
 }
 
 /**
- * 테스트 후 데이터베이스 정리
+ * 테스트 데이터베이스 정리
  * 모든 테이블 데이터 삭제 (스키마는 유지)
  */
 export async function cleanupTestDatabase(): Promise<void> {
@@ -74,7 +74,7 @@ export async function cleanupTestDatabase(): Promise<void> {
     ];
 
     for (const table of tables) {
-      await client.query(`TRUNCATE TABLE ${table} CASCADE`);
+      await client.query(`TRUNCATE TABLE ${table} CASCADE`).catch(() => {});
     }
 
     // 외래키 제약 재활성화
