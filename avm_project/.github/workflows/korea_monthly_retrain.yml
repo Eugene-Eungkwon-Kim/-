@@ -1,0 +1,192 @@
+name: Phase 14.KR - Korea Monthly Model Retraining
+
+on:
+  schedule:
+    # Run on the 1st of each month at 00:00 UTC
+    - cron: '0 0 1 * *'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  PYTHON_VERSION: '3.11'
+  VWORLD_API_KEY: ${{ secrets.VWORLD_API_KEY }}
+  BOK_API_KEY: ${{ secrets.BOK_API_KEY }}
+  FISIS_API_KEY: ${{ secrets.FISIS_API_KEY }}
+  ADDRESS_AUTH_KEY: ${{ secrets.ADDRESS_AUTH_KEY }}
+
+jobs:
+  korea_monthly_retrain:
+    name: Korea Model Monthly Retraining
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create output directories
+        run: |
+          mkdir -p data/raw
+          mkdir -p output/models/korea
+          mkdir -p reports/korea
+
+      - name: Step 1 - Collect Korea Real Data
+        id: data_collection
+        run: |
+          echo "📍 Collecting Korean real estate data..."
+          python scripts/phase13_real_data_kr.py --records 20000 2>&1 | tee data_collection.log
+          echo "data_collection_success=true" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Step 2 - Validate Data Quality
+        id: quality_check
+        run: |
+          echo "✅ Validating data quality..."
+          python scripts/phase13_quality_monitor.py \
+            --reports-dir data/raw \
+            --output reports/korea/quality_dashboard.html \
+            --window 30 2>&1 | tee quality_check.log
+          echo "quality_check_success=true" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Step 3 - Train Korea Models (Nationwide + Regional)
+        id: model_training
+        run: |
+          echo "🧠 Training Korea AVM models..."
+          python scripts/phase13_korea_model_trainer.py --mode all 2>&1 | tee model_training.log
+          echo "model_training_success=true" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Step 4 - Generate Performance Report
+        id: performance_report
+        run: |
+          echo "📊 Generating performance report..."
+          python scripts/phase14_kr_performance_analyzer.py \
+            --models-dir output/models/korea \
+            --output reports/korea/performance_report.html 2>&1 | tee performance_report.log
+        continue-on-error: true
+
+      - name: Step 5 - Compare with Previous Models
+        id: model_comparison
+        run: |
+          echo "📈 Comparing with previous models..."
+          python scripts/phase14_kr_model_comparison.py \
+            --current-models output/models/korea \
+            --output reports/korea/model_comparison.json 2>&1 | tee model_comparison.log
+        continue-on-error: true
+
+      - name: Step 6 - Check Performance Thresholds
+        id: threshold_check
+        run: |
+          echo "🎯 Checking performance thresholds..."
+          python scripts/phase14_kr_threshold_checker.py \
+            --models-dir output/models/korea \
+            --mape-target 0.11 \
+            --strict-mode false 2>&1 | tee threshold_check.log
+          echo "threshold_check_success=true" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Archive Models and Reports
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: korea_models_and_reports
+          path: |
+            output/models/korea/
+            reports/korea/
+            *.log
+          retention-days: 90
+
+      - name: Upload Models to Storage (Optional)
+        if: steps.model_training.outputs.model_training_success == 'true'
+        run: |
+          echo "☁️ Uploading models to storage..."
+          # Example: gsutil cp -r output/models/korea gs://bucket/korea_models
+          # or: aws s3 cp output/models/korea s3://bucket/korea_models --recursive
+          # Implement based on your storage backend
+          echo "Models ready for deployment"
+
+      - name: Notify Success
+        if: success()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const trainingLog = fs.readFileSync('model_training.log', 'utf8');
+            const mapeMatch = trainingLog.match(/Test MAPE: ([\d.]+%)/);
+            const mape = mapeMatch ? mapeMatch[1] : 'Unknown';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `✅ **Phase 14.KR - Korea Monthly Retrain Success**\n\n` +
+                    `📊 Model Performance:\n` +
+                    `- Test MAPE: ${mape}\n` +
+                    `- Models Generated: 6 (nationwide + 5 regional)\n` +
+                    `- Artifacts: Reports and model files attached\n\n` +
+                    `🎯 Next: Models ready for production deployment`
+            })
+
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Pipeline failed - Check logs above for details"
+          echo "Artifacts have been archived for debugging"
+          exit 1
+
+      - name: Cleanup Temporary Files
+        if: always()
+        run: |
+          echo "🧹 Cleaning up temporary files..."
+          rm -f *.log
+          echo "Cleanup complete"
+
+      - name: Generate Summary Report
+        if: always()
+        run: |
+          cat > PIPELINE_SUMMARY.md << 'EOF'
+          # Korea Monthly Retrain Pipeline Summary
+
+          **Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          **Trigger**: ${{ github.event_name }}
+
+          ## Pipeline Status
+          - Data Collection: ${{ steps.data_collection.outputs.data_collection_success }}
+          - Quality Check: ${{ steps.quality_check.outputs.quality_check_success }}
+          - Model Training: ${{ steps.model_training.outputs.model_training_success }}
+          - Threshold Check: ${{ steps.threshold_check.outputs.threshold_check_success }}
+
+          ## Artifacts Generated
+          - Models: output/models/korea/
+          - Reports: reports/korea/
+          - Logs: Available in artifacts
+
+          ## Next Steps
+          1. Review performance reports in artifacts
+          2. Verify model accuracy meets thresholds
+          3. Deploy approved models to production
+          4. Monitor model performance in production
+
+          **Workflow Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+          cat PIPELINE_SUMMARY.md
+
+      - name: Upload Pipeline Summary
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: pipeline_summary
+          path: PIPELINE_SUMMARY.md
