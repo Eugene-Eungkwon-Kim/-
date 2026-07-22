@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { Pool } from 'pg';
 import {
   encrypt,
   decrypt,
@@ -7,7 +8,12 @@ import {
   getEncryptionKey,
   verifyEncryptionKeyAgainstDb
 } from '../encryption';
-import { createDatabase } from '../../db/connection';
+import {
+  initializeTestDatabase,
+  cleanupTestDatabase,
+  closeTestDatabase,
+  getTestPool
+} from '../../db/__tests__/testDatabase';
 
 /**
  * Day 13 - Task F (δ=650): 암호화 유틸리티 테스트
@@ -16,12 +22,15 @@ import { createDatabase } from '../../db/connection';
  */
 describe('encryption.ts', () => {
   const testKey = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  let pool: Pool;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.ENCRYPTION_KEY = testKey;
+    pool = await initializeTestDatabase();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await cleanupTestDatabase();
     delete process.env.ENCRYPTION_KEY;
   });
 
@@ -173,37 +182,34 @@ describe('encryption.ts', () => {
   });
 
   describe('verifyEncryptionKeyAgainstDb (부팅 시 키 일치 검증)', () => {
-    function insertUserWithEncryptedEmail(db: ReturnType<typeof createDatabase>): void {
-      db.prepare(
-        'INSERT INTO users (id, email, name, encrypted_email) VALUES (?, ?, ?, ?)'
-      ).run('verify-user', 'verify@example.com', 'Verify User', encrypt('verify@example.com'));
+    async function insertUserWithEncryptedEmail(pool: Pool): Promise<void> {
+      await pool.query(
+        'INSERT INTO users (id, email, name, encrypted_email, encryption_version) VALUES ($1, $2, $3, $4, $5)',
+        ['verify-user', 'verify@example.com', 'Verify User', encrypt('verify@example.com'), 1]
+      );
     }
 
-    it('현재 키로 암호화된 데이터가 있으면 ok를 반환한다', () => {
-      const db = createDatabase(':memory:');
-      insertUserWithEncryptedEmail(db);
-      expect(verifyEncryptionKeyAgainstDb(db)).toBe('ok');
-      db.close();
+    it('현재 키로 암호화된 데이터가 있으면 ok를 반환한다', async () => {
+      await insertUserWithEncryptedEmail(pool);
+      const result = await verifyEncryptionKeyAgainstDb(pool);
+      expect(result).toBe('ok');
     });
 
-    it('암호화된 데이터가 없는 신규 DB는 no-data를 반환한다', () => {
-      const db = createDatabase(':memory:');
-      expect(verifyEncryptionKeyAgainstDb(db)).toBe('no-data');
-      db.close();
+    it('암호화된 데이터가 없는 신규 DB는 no-data를 반환한다', async () => {
+      const result = await verifyEncryptionKeyAgainstDb(pool);
+      expect(result).toBe('no-data');
     });
 
-    it('키가 교체되면 명확한 메시지와 함께 실패한다', () => {
-      const db = createDatabase(':memory:');
-      insertUserWithEncryptedEmail(db);
+    it('키가 교체되면 명확한 메시지와 함께 실패한다', async () => {
+      await insertUserWithEncryptedEmail(pool);
 
       // 다른 키로 교체된 상황 재현
       process.env.ENCRYPTION_KEY =
         'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
 
-      expect(() => verifyEncryptionKeyAgainstDb(db)).toThrow(
+      await expect(verifyEncryptionKeyAgainstDb(pool)).rejects.toThrow(
         /ENCRYPTION_KEY does not match existing encrypted data/
       );
-      db.close();
     });
   });
 });

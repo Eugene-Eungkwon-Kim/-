@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '../../db/connection';
+import type { Pool } from 'pg';
+import {
+  initializeTestDatabase,
+  cleanupTestDatabase,
+  closeTestDatabase,
+  getTestPool
+} from '../../db/__tests__/testDatabase';
 import { UserRepository } from '../UserRepository';
 import { decrypt } from '../../utils/encryption';
 
@@ -11,24 +16,24 @@ import { decrypt } from '../../utils/encryption';
  * 투명하게 암호화/복호화되는지 검증한다.
  */
 describe('UserRepository - Encryption Integration', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let userRepository: UserRepository;
   const testKey = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.ENCRYPTION_KEY = testKey;
-    db = createDatabase(':memory:');
-    userRepository = new UserRepository(db);
+    pool = await initializeTestDatabase();
+    userRepository = new UserRepository(pool);
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
+    await cleanupTestDatabase();
     delete process.env.ENCRYPTION_KEY;
   });
 
   describe('투명한 암호화/복호화', () => {
-    it('사용자 등록 시 이메일이 암호화되어 저장된다', () => {
-      const profile = userRepository.register({
+    it('사용자 등록 시 이메일이 암호화되어 저장된다', async () => {
+      const profile = await userRepository.register({
         email: 'test@example.com',
         name: 'Test User',
         password: 'test-password-123',
@@ -36,9 +41,8 @@ describe('UserRepository - Encryption Integration', () => {
       });
 
       // 데이터베이스에서 직접 암호화된 이메일을 확인
-      const row = db.prepare('SELECT encrypted_email FROM users WHERE id = ?').get(profile.id) as {
-        encrypted_email: string;
-      };
+      const result = await pool.query('SELECT encrypted_email FROM users WHERE id = $1', [profile.id]);
+      const row = result.rows[0] as { encrypted_email: string };
 
       expect(row.encrypted_email).toBeTruthy();
       expect(row.encrypted_email).not.toBe('test@example.com');
@@ -48,8 +52,8 @@ describe('UserRepository - Encryption Integration', () => {
       expect(decrypted).toBe('test@example.com');
     });
 
-    it('사용자 등록 시 전화번호가 암호화되어 저장된다', () => {
-      const profile = userRepository.register({
+    it('사용자 등록 시 전화번호가 암호화되어 저장된다', async () => {
+      const profile = await userRepository.register({
         email: 'test@example.com',
         name: 'Test User',
         password: 'test-password-123',
@@ -60,9 +64,8 @@ describe('UserRepository - Encryption Integration', () => {
       });
 
       // 데이터베이스에서 직접 암호화된 전화번호 확인
-      const row = db.prepare('SELECT encrypted_phone FROM users WHERE id = ?').get(profile.id) as {
-        encrypted_phone: string | null;
-      };
+      const result = await pool.query('SELECT encrypted_phone FROM users WHERE id = $1', [profile.id]);
+      const row = result.rows[0] as { encrypted_phone: string | null };
 
       expect(row.encrypted_phone).toBeTruthy();
       if (row.encrypted_phone) {
@@ -71,21 +74,21 @@ describe('UserRepository - Encryption Integration', () => {
       }
     });
 
-    it('프로필 조회는 투명하게 복호화된 이메일을 반환한다', () => {
-      const registered = userRepository.register({
+    it('프로필 조회는 투명하게 복호화된 이메일을 반환한다', async () => {
+      const registered = await userRepository.register({
         email: 'john@example.com',
         name: 'John Doe',
         password: 'password-123',
         contact: { address: {} }
       });
 
-      const retrieved = userRepository.getProfile(registered.id);
+      const retrieved = await userRepository.getProfile(registered.id);
       expect(retrieved).toBeTruthy();
       expect(retrieved?.email).toBe('john@example.com');
     });
 
-    it('프로필 조회는 투명하게 복호화된 전화번호를 반환한다', () => {
-      const registered = userRepository.register({
+    it('프로필 조회는 투명하게 복호화된 전화번호를 반환한다', async () => {
+      const registered = await userRepository.register({
         email: 'jane@example.com',
         name: 'Jane Doe',
         password: 'password-123',
@@ -95,45 +98,43 @@ describe('UserRepository - Encryption Integration', () => {
         }
       });
 
-      const retrieved = userRepository.getProfile(registered.id);
+      const retrieved = await userRepository.getProfile(registered.id);
       expect(retrieved).toBeTruthy();
       expect(retrieved?.contact.phone).toBe('02-1234-5678');
     });
 
-    it('전화번호가 없으면 암호화되지 않는다', () => {
-      const profile = userRepository.register({
+    it('전화번호가 없으면 암호화되지 않는다', async () => {
+      const profile = await userRepository.register({
         email: 'nophone@example.com',
         name: 'No Phone User',
         password: 'password-123',
         contact: { address: {} }
       });
 
-      const row = db.prepare('SELECT encrypted_phone FROM users WHERE id = ?').get(profile.id) as {
-        encrypted_phone: string | null;
-      };
+      const result = await pool.query('SELECT encrypted_phone FROM users WHERE id = $1', [profile.id]);
+      const row = result.rows[0] as { encrypted_phone: string | null };
 
       expect(row.encrypted_phone).toBeNull();
     });
 
-    it('암호화 버전이 1로 설정된다', () => {
-      const profile = userRepository.register({
+    it('암호화 버전이 1로 설정된다', async () => {
+      const profile = await userRepository.register({
         email: 'version@example.com',
         name: 'Version Test',
         password: 'password-123',
         contact: { address: {} }
       });
 
-      const row = db.prepare('SELECT encryption_version FROM users WHERE id = ?').get(profile.id) as {
-        encryption_version: number;
-      };
+      const result = await pool.query('SELECT encryption_version FROM users WHERE id = $1', [profile.id]);
+      const row = result.rows[0] as { encryption_version: number };
 
       expect(row.encryption_version).toBe(1);
     });
   });
 
   describe('프로필 업데이트 시 암호화', () => {
-    it('전화번호 업데이트 시 새로운 암호화된 값으로 저장된다', () => {
-      const registered = userRepository.register({
+    it('전화번호 업데이트 시 새로운 암호화된 값으로 저장된다', async () => {
+      const registered = await userRepository.register({
         email: 'update@example.com',
         name: 'Update User',
         password: 'password-123',
@@ -143,7 +144,7 @@ describe('UserRepository - Encryption Integration', () => {
         }
       });
 
-      const updated = userRepository.updateProfile(
+      const updated = await userRepository.updateProfile(
         registered.id,
         {
           contact: {
@@ -157,16 +158,15 @@ describe('UserRepository - Encryption Integration', () => {
       expect(updated.contact.phone).toBe('010-2222-2222');
 
       // 데이터베이스에서 암호화된 값 확인
-      const row = db.prepare('SELECT encrypted_phone FROM users WHERE id = ?').get(registered.id) as {
-        encrypted_phone: string;
-      };
+      const result = await pool.query('SELECT encrypted_phone FROM users WHERE id = $1', [registered.id]);
+      const row = result.rows[0] as { encrypted_phone: string };
 
       const decrypted = decrypt(row.encrypted_phone);
       expect(decrypted).toBe('010-2222-2222');
     });
 
-    it('전화번호를 제거하면 암호화된 값도 제거된다', () => {
-      const registered = userRepository.register({
+    it('전화번호를 제거하면 암호화된 값도 제거된다', async () => {
+      const registered = await userRepository.register({
         email: 'remove@example.com',
         name: 'Remove User',
         password: 'password-123',
@@ -176,7 +176,7 @@ describe('UserRepository - Encryption Integration', () => {
         }
       });
 
-      const updated = userRepository.updateProfile(
+      const updated = await userRepository.updateProfile(
         registered.id,
         {
           contact: {
@@ -191,8 +191,8 @@ describe('UserRepository - Encryption Integration', () => {
       expect(updated.contact.phone).toBe('010-1111-1111');
     });
 
-    it('전화번호를 null로 설정할 수 없다 (undefined로만 가능)', () => {
-      const registered = userRepository.register({
+    it('전화번호를 null로 설정할 수 없다 (undefined로만 가능)', async () => {
+      const registered = await userRepository.register({
         email: 'nullphone@example.com',
         name: 'Null Phone User',
         password: 'password-123',
@@ -204,8 +204,8 @@ describe('UserRepository - Encryption Integration', () => {
 
       // updateProfile에 null을 전달하면 검증 에러가 발생할 수 있음
       // 현재 구현에서는 phone: null이 setIfChanged를 통과하지 않음
-      expect(() => {
-        userRepository.updateProfile(
+      expect(async () => {
+        await userRepository.updateProfile(
           registered.id,
           {
             contact: {
@@ -220,15 +220,15 @@ describe('UserRepository - Encryption Integration', () => {
   });
 
   describe('다중 사용자 암호화', () => {
-    it('여러 사용자의 이메일은 각각 독립적으로 암호화된다', () => {
-      const user1 = userRepository.register({
+    it('여러 사용자의 이메일은 각각 독립적으로 암호화된다', async () => {
+      const user1 = await userRepository.register({
         email: 'user1@example.com',
         name: 'User 1',
         password: 'password-123',
         contact: { address: {} }
       });
 
-      const user2 = userRepository.register({
+      const user2 = await userRepository.register({
         email: 'user2@example.com',
         name: 'User 2',
         password: 'password-123',
@@ -236,12 +236,11 @@ describe('UserRepository - Encryption Integration', () => {
       });
 
       // 같은 이메일이라도 다르게 암호화된다 (다른 IV 때문)
-      const row1 = db.prepare('SELECT encrypted_email FROM users WHERE id = ?').get(user1.id) as {
-        encrypted_email: string;
-      };
-      const row2 = db.prepare('SELECT encrypted_email FROM users WHERE id = ?').get(user2.id) as {
-        encrypted_email: string;
-      };
+      const result1 = await pool.query('SELECT encrypted_email FROM users WHERE id = $1', [user1.id]);
+      const row1 = result1.rows[0] as { encrypted_email: string };
+
+      const result2 = await pool.query('SELECT encrypted_email FROM users WHERE id = $1', [user2.id]);
+      const row2 = result2.rows[0] as { encrypted_email: string };
 
       expect(row1.encrypted_email).not.toBe(row2.encrypted_email);
       expect(decrypt(row1.encrypted_email)).toBe('user1@example.com');
@@ -250,8 +249,8 @@ describe('UserRepository - Encryption Integration', () => {
   });
 
   describe('암호화된 데이터 검색', () => {
-    it('이메일로 사용자를 찾을 수 있다 (평문 이메일 열 사용)', () => {
-      userRepository.register({
+    it('이메일로 사용자를 찾을 수 있다 (평문 이메일 열 사용)', async () => {
+      await userRepository.register({
         email: 'findme@example.com',
         name: 'Find Me',
         password: 'password-123',
@@ -259,29 +258,29 @@ describe('UserRepository - Encryption Integration', () => {
       });
 
       // verifyPassword는 평문 email 열을 사용하여 검색
-      const found = userRepository.verifyPassword('findme@example.com', 'password-123');
+      const found = await userRepository.verifyPassword('findme@example.com', 'password-123');
       expect(found).toBeTruthy();
       expect(found?.email).toBe('findme@example.com');
     });
   });
 
   describe('엣지 케이스', () => {
-    it('이메일에 특수문자가 있어도 정상 암호화된다', () => {
+    it('이메일에 특수문자가 있어도 정상 암호화된다', async () => {
       const specialEmail = 'user+tag@example.co.uk';
-      const profile = userRepository.register({
+      const profile = await userRepository.register({
         email: specialEmail,
         name: 'Special Email',
         password: 'password-123',
         contact: { address: {} }
       });
 
-      const retrieved = userRepository.getProfile(profile.id);
+      const retrieved = await userRepository.getProfile(profile.id);
       expect(retrieved?.email).toBe(specialEmail);
     });
 
-    it('매우 긴 전화번호를 암호화할 수 있다', () => {
+    it('매우 긴 전화번호를 암호화할 수 있다', async () => {
       const longPhone = '+1-555-0123-ext-' + 'X'.repeat(100);
-      const profile = userRepository.register({
+      const profile = await userRepository.register({
         email: 'longphone@example.com',
         name: 'Long Phone',
         password: 'password-123',
@@ -291,20 +290,20 @@ describe('UserRepository - Encryption Integration', () => {
         }
       });
 
-      const retrieved = userRepository.getProfile(profile.id);
+      const retrieved = await userRepository.getProfile(profile.id);
       expect(retrieved?.contact.phone).toBe(longPhone);
     });
 
-    it('한글/다국어 이메일을 암호화할 수 있다', () => {
+    it('한글/다국어 이메일을 암호화할 수 있다', async () => {
       const unicodeEmail = 'user@예시.kr';
-      const profile = userRepository.register({
+      const profile = await userRepository.register({
         email: unicodeEmail,
         name: 'Unicode Email',
         password: 'password-123',
         contact: { address: {} }
       });
 
-      const retrieved = userRepository.getProfile(profile.id);
+      const retrieved = await userRepository.getProfile(profile.id);
       expect(retrieved?.email).toBe(unicodeEmail);
     });
   });
