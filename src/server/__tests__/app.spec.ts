@@ -2,26 +2,26 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type Database from 'better-sqlite3';
-import { createDatabase } from '@db/connection';
+import type { Pool } from 'pg';
+import { getTestPool, cleanupTestDatabase, initializeTestDatabase, closeTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import { UserRepository } from '@repositories/UserRepository';
 import type { FastifyInstance } from 'fastify';
 
 describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
-  let db: Database.Database;
+  let pool: Pool;
   let app: FastifyInstance;
   let backupDir: string;
 
   beforeEach(async () => {
-    db = createDatabase(':memory:');
+    pool = getTestPool();
     backupDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maars-app-spec-'));
-    app = await buildServer(db, { jwtSecret: 'test-secret', backupDir });
+    app = await buildServer(pool, { jwtSecret: 'test-secret', backupDir });
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
     fs.rmSync(backupDir, { recursive: true, force: true });
+    await cleanupTestDatabase();
   });
 
   /** 회원가입 + 로그인을 한 번에 수행해 인증된 요청에 쓸 (userId, token, refreshToken)을 반환한다 */
@@ -246,7 +246,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
   describe('관리자 API (Day 10 - Task 4, δ=1065)', () => {
     async function loginAsAdmin(email: string): Promise<string> {
       const alice = await registerAndLogin(email, 'Admin User');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(alice.userId);
+      await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [alice.userId]);
       const loginRes = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'correct-horse' } });
       return loginRes.json().data.token;
     }
@@ -295,7 +295,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
 
     it('DB에서 직접 admin으로 승격한 뒤 재로그인하면 토큰에 role=admin이 실린다', async () => {
       const alice = await registerAndLogin('role-admin@example.com', 'Role Admin');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(alice.userId);
+      await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [alice.userId]);
 
       const loginRes = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'role-admin@example.com', password: 'correct-horse' } });
       const decoded = app.jwt.verify(loginRes.json().data.token) as { role: string };
@@ -304,7 +304,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
 
     it('refresh로 재발급된 토큰도 최신 role을 반영한다', async () => {
       const alice = await registerAndLogin('role-refresh@example.com', 'Role Refresh');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(alice.userId);
+      await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [alice.userId]);
 
       const refreshRes = await app.inject({ method: 'POST', url: '/api/auth/refresh', payload: { refreshToken: alice.refreshToken } });
       const decoded = app.jwt.verify(refreshRes.json().data.token) as { role: string };
@@ -372,7 +372,7 @@ describe('Fastify app (프론트엔드 연동용 최소 HTTP 서버)', () => {
       const profileRes = await app.inject({ method: 'GET', url: `/api/users/${alice.userId}`, headers: authHeader(alice.token) });
       const version = profileRes.json().data.metadata.version;
       // 소득을 낮춰 기존 거래가 새 기준으로는 이상거래가 되도록 만든다 — 리포지토리 계층 직접 사용
-      new UserRepository(db).updateProfile(alice.userId, { financialSnapshot: { monthlyIncome: 1000000 } }, version);
+      await new UserRepository(pool).updateProfile(alice.userId, { financialSnapshot: { monthlyIncome: 1000000 } }, version);
 
       const rescanRes = await app.inject({ method: 'POST', url: `/api/users/${alice.userId}/transactions/rescan`, headers: authHeader(alice.token) });
       expect(rescanRes.statusCode).toBe(200);
