@@ -281,10 +281,10 @@ export class UserRepository {
   async getCreditHistory(userId: string): Promise<CreditHistoryEntry[]> {
     const result = await this.pool.query(
       `SELECT changed_at,
-              (changed_fields->'credit_score'->>'from')::numeric as from_value,
-              (changed_fields->'credit_score'->>'to')::numeric as to_value
+              (changed_fields::jsonb->'credit_score'->>'from')::numeric as from_value,
+              (changed_fields::jsonb->'credit_score'->>'to')::numeric as to_value
        FROM users_audit
-       WHERE user_id = $1 AND action = 'UPDATE' AND changed_fields ? 'credit_score'
+       WHERE user_id = $1 AND action = 'UPDATE' AND changed_fields::jsonb ? 'credit_score'
        ORDER BY changed_at ASC`,
       [userId]
     );

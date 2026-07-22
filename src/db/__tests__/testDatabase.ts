@@ -1,5 +1,5 @@
 import { Pool, PoolClient } from 'pg';
-import { applyMigrations } from '../migrationRunner';
+import { applyMigrationsAsync } from '../migrationRunner';
 import { MIGRATIONS_DIR } from '../connection';
 
 /**
@@ -38,7 +38,7 @@ export async function initializeTestDatabase(): Promise<Pool> {
   const client = await testPool.connect();
   try {
     // 마이그레이션 실행
-    await applyMigrations(client as any, MIGRATIONS_DIR);
+    await applyMigrationsAsync(client, MIGRATIONS_DIR);
   } finally {
     client.release();
   }

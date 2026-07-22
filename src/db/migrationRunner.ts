@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type Database from 'better-sqlite3';
+import type { PoolClient } from 'pg';
 
 const UP_MARKER = '-- UP';
 const DOWN_MARKER = '-- DOWN';
@@ -185,4 +186,70 @@ export function dryRunMigrations(db: Database.Database, migrationsDir: string): 
   }
 
   return { wouldApply, errors };
+}
+
+/**
+ * Translate SQLite DDL to PostgreSQL compatible DDL
+ */
+function translateSqliteToPostgres(sql: string): string {
+  let out = sql;
+  // datetime('now') → to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')
+  out = out.replace(
+    /\(datetime\('now'\)\)/g,
+    "(to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))"
+  );
+  // REAL → DOUBLE PRECISION
+  out = out.replace(/\bREAL\b/g, 'DOUBLE PRECISION');
+  return out;
+}
+
+/**
+ * PostgreSQL async migration runner for PoolClient
+ * Creates schema_migrations table and applies pending migrations
+ */
+export async function ensureMigrationsTableAsync(client: PoolClient): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      filename TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS'))
+    )
+  `);
+}
+
+export async function getAppliedVersionsAsync(client: PoolClient): Promise<Set<string>> {
+  await ensureMigrationsTableAsync(client);
+  const result = await client.query('SELECT version FROM schema_migrations');
+  return new Set(result.rows.map((r: any) => r.version));
+}
+
+export async function applyMigrationsAsync(
+  client: PoolClient,
+  migrationsDir: string
+): Promise<string[]> {
+  await ensureMigrationsTableAsync(client);
+  const migrations = loadMigrations(migrationsDir);
+  const applied = await getAppliedVersionsAsync(client);
+  const newlyApplied: string[] = [];
+
+  for (const migration of migrations) {
+    if (applied.has(migration.version)) continue;
+
+    try {
+      await client.query('BEGIN');
+      const translatedSql = translateSqliteToPostgres(migration.up);
+      await client.query(translatedSql);
+      await client.query(
+        'INSERT INTO schema_migrations (version, filename) VALUES ($1, $2)',
+        [migration.version, migration.filename]
+      );
+      await client.query('COMMIT');
+      newlyApplied.push(migration.version);
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw error;
+    }
+  }
+
+  return newlyApplied;
 }
