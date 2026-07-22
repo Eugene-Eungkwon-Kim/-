@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool, PoolClient } from 'pg';
-import { applyMigrations } from './migrationRunner';
+import { applyMigrationsAsync } from './migrationRunner';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 export const MIGRATIONS_DIR = path.join(currentDir, 'migrations');
@@ -28,7 +28,7 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
   globalPool = pool;
   const client = await pool.connect();
   try {
-    await applyMigrations(client as any, MIGRATIONS_DIR);
+    await applyMigrationsAsync(client, MIGRATIONS_DIR);
   } finally {
     client.release();
   }
