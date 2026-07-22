@@ -1,0 +1,111 @@
+name: Korea Monthly Model Retraining
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'  # 1st of each month at 00:00 UTC
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Step 1 - Data Collection
+        continue-on-error: true
+        env:
+          VWORLD_API_KEY: ${{ secrets.VWORLD_API_KEY }}
+          BOK_API_KEY: ${{ secrets.BOK_API_KEY }}
+          FISIS_API_KEY: ${{ secrets.FISIS_API_KEY }}
+          ADDRESS_AUTH_KEY: ${{ secrets.ADDRESS_AUTH_KEY }}
+        run: |
+          python scripts/phase13_real_data_kr.py \
+            --output-dir output/data/korea \
+            --n-samples 20000
+          echo "✅ Data collection completed"
+
+      - name: Step 2 - Quality Validation
+        continue-on-error: true
+        run: |
+          python scripts/phase13_quality_monitor.py \
+            --data-dir output/data/korea \
+            --output reports/korea/quality_dashboard.html
+          echo "✅ Quality validation completed"
+
+      - name: Step 3 - Model Training
+        continue-on-error: true
+        run: |
+          python scripts/phase13_korea_model_trainer.py \
+            --data-dir output/data/korea \
+            --models-dir output/models/korea \
+            --output-report reports/korea/training_report.html
+          echo "✅ Model training completed"
+
+      - name: Step 4 - Performance Analysis
+        continue-on-error: true
+        run: |
+          python scripts/phase14_kr_performance_analyzer.py \
+            --models-dir output/models/korea \
+            --output reports/korea/performance_report.html
+          echo "✅ Performance analysis completed"
+
+      - name: Step 5 - Model Comparison
+        continue-on-error: true
+        run: |
+          python scripts/phase14_kr_model_comparison.py \
+            --models-dir output/models/korea \
+            --previous-models-dir previous_models/korea \
+            --output reports/korea/model_comparison.json
+          echo "✅ Model comparison completed"
+
+      - name: Step 6 - Threshold Checking
+        continue-on-error: true
+        run: |
+          python scripts/phase14_kr_threshold_checker.py \
+            --models-dir output/models/korea \
+            --mape-target 0.11 \
+            --r2-minimum 0.50 \
+            --output reports/korea/threshold_check.json
+          echo "✅ Threshold checking completed"
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: korea_models_and_reports
+          path: |
+            output/models/korea/
+            reports/korea/
+          retention-days: 90
+
+      - name: Summary Report
+        if: always()
+        run: |
+          echo "## 🎯 Korea Monthly Retraining Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f "reports/korea/threshold_check.json" ]; then
+            echo "### Threshold Check Results" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            cat reports/korea/threshold_check.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifacts**: Available for 90 days" >> $GITHUB_STEP_SUMMARY
