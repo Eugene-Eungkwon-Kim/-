@@ -253,3 +253,93 @@ export async function applyMigrationsAsync(
 
   return newlyApplied;
 }
+
+/**
+ * PostgreSQL 비동기 롤백: 가장 최근에 적용된 마이그레이션의 DOWN을 실행하고
+ * schema_migrations에서 해당 버전을 제거한다. 적용된 마이그레이션이 없으면 null.
+ */
+export async function rollbackLastMigrationAsync(
+  client: PoolClient,
+  migrationsDir: string
+): Promise<string | null> {
+  await ensureMigrationsTableAsync(client);
+  const lastResult = await client.query(
+    'SELECT version, filename FROM schema_migrations ORDER BY version DESC LIMIT 1'
+  );
+  const lastRow = lastResult.rows[0] as { version: string; filename: string } | undefined;
+
+  if (!lastRow) return null;
+
+  const migrations = loadMigrations(migrationsDir);
+  const migration = migrations.find((m) => m.version === lastRow.version);
+  if (!migration) {
+    throw new Error(`Migration file for applied version ${lastRow.version} was not found`);
+  }
+
+  try {
+    await client.query('BEGIN');
+    await client.query(translateSqliteToPostgres(migration.down));
+    await client.query('DELETE FROM schema_migrations WHERE version = $1', [lastRow.version]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  }
+
+  return lastRow.version;
+}
+
+/**
+ * PostgreSQL 비동기 마이그레이션 상태 조회.
+ */
+export async function getMigrationStatusAsync(
+  client: PoolClient,
+  migrationsDir: string
+): Promise<{ version: string; filename: string; applied: boolean }[]> {
+  const applied = await getAppliedVersionsAsync(client);
+  return loadMigrations(migrationsDir).map((m) => ({
+    version: m.version,
+    filename: m.filename,
+    applied: applied.has(m.version)
+  }));
+}
+
+/**
+ * PostgreSQL 비동기 dry-run: 대기 중인 마이그레이션을 트랜잭션 안에서 실제로
+ * 실행해 SQL 오류를 미리 잡아내되, 성공/실패와 무관하게 항상 롤백해 DB에
+ * 아무 흔적도 남기지 않는다.
+ */
+export async function dryRunMigrationsAsync(
+  client: PoolClient,
+  migrationsDir: string
+): Promise<DryRunResult> {
+  const migrations = loadMigrations(migrationsDir);
+  const wouldApply: string[] = [];
+  const errors: { version: string; message: string }[] = [];
+
+  try {
+    await client.query('BEGIN');
+    await ensureMigrationsTableAsync(client);
+    const applied = await getAppliedVersionsAsync(client);
+    const pending = migrations.filter((m) => !applied.has(m.version));
+
+    for (const migration of pending) {
+      try {
+        await client.query(translateSqliteToPostgres(migration.up));
+        wouldApply.push(migration.version);
+      } catch (error) {
+        errors.push({ version: migration.version, message: error instanceof Error ? error.message : String(error) });
+        throw error;
+      }
+    }
+  } catch (error) {
+    if (errors.length === 0) {
+      errors.push({ version: 'unknown', message: error instanceof Error ? error.message : String(error) });
+    }
+  } finally {
+    // dry-run이므로 성공 여부와 무관하게 항상 롤백
+    await client.query('ROLLBACK').catch(() => {});
+  }
+
+  return { wouldApply, errors };
+}

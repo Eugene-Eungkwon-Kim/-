@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import type Database from 'better-sqlite3';
-import { createDatabase, MIGRATIONS_DIR } from '../../connection';
+import type { Pool } from 'pg';
+import { MIGRATIONS_DIR } from '../../connection';
+import { initializeTestDatabase, cleanupTestDatabase } from '@db/__tests__/testDatabase';
 import {
   translateSqliteDdlToPostgres,
   findSqliteArtifacts,
@@ -92,16 +93,17 @@ describe('PostgreSQL 스키마 변환 (pgSchemaGenerator)', () => {
 });
 
 describe('PostgreSQL 데이터 내보내기 (pgDataExporter)', () => {
-  let db: Database.Database;
+  let pool: Pool;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.ENCRYPTION_KEY =
       '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    db = createDatabase(':memory:');
+    pool = await initializeTestDatabase();
   });
 
-  afterEach(() => {
-    db.close();
+  afterEach(async () => {
+    await cleanupTestDatabase();
+    delete process.env.ENCRYPTION_KEY;
   });
 
   describe('escapePgLiteral', () => {
@@ -133,8 +135,8 @@ describe('PostgreSQL 데이터 내보내기 (pgDataExporter)', () => {
   });
 
   describe('sortTablesByForeignKeys', () => {
-    it('참조되는 테이블(users)이 참조하는 테이블(loans 등)보다 먼저 온다', () => {
-      const sorted = sortTablesByForeignKeys(db, listUserTables(db));
+    it('참조되는 테이블(users)이 참조하는 테이블(loans 등)보다 먼저 온다', async () => {
+      const sorted = await sortTablesByForeignKeys(pool, await listUserTables(pool));
       const pos = (t: string) => sorted.indexOf(t);
       expect(pos('users')).toBeGreaterThan(-1);
       expect(pos('users')).toBeLessThan(pos('loans'));
@@ -143,45 +145,45 @@ describe('PostgreSQL 데이터 내보내기 (pgDataExporter)', () => {
       expect(pos('loans')).toBeLessThan(pos('loan_payments'));
     });
 
-    it('모든 사용자 테이블을 누락 없이 포함한다', () => {
-      const tables = listUserTables(db);
-      const sorted = sortTablesByForeignKeys(db, tables);
+    it('모든 사용자 테이블을 누락 없이 포함한다', async () => {
+      const tables = await listUserTables(pool);
+      const sorted = await sortTablesByForeignKeys(pool, tables);
       expect(sorted.length).toBe(tables.length);
       expect(new Set(sorted)).toEqual(new Set(tables));
     });
   });
 
   describe('exportTableInserts / exportDatabaseInserts', () => {
-    it('등록된 사용자가 INSERT 문으로 내보내진다', () => {
-      const repo = new UserRepository(db);
-      repo.register({
+    it('등록된 사용자가 INSERT 문으로 내보내진다', async () => {
+      const repo = new UserRepository(pool);
+      await repo.register({
         email: "o'brien@example.com",
         name: "O'Brien",
         password: 'test-password-123',
         contact: { address: {} }
       });
 
-      const inserts = exportTableInserts(db, 'users');
+      const inserts = await exportTableInserts(pool, 'users');
       expect(inserts.length).toBe(1);
       expect(inserts[0]).toMatch(/^INSERT INTO users \(/);
       // 작은따옴표가 이중화되어야 한다
       expect(inserts[0]).toContain("O''Brien");
     });
 
-    it('빈 테이블은 INSERT 문을 생성하지 않는다', () => {
-      expect(exportTableInserts(db, 'loans')).toEqual([]);
+    it('빈 테이블은 INSERT 문을 생성하지 않는다', async () => {
+      expect(await exportTableInserts(pool, 'loans')).toEqual([]);
     });
 
-    it('전체 내보내기는 트랜잭션으로 감싸고 FK 순서를 지킨다', () => {
-      const repo = new UserRepository(db);
-      repo.register({
+    it('전체 내보내기는 트랜잭션으로 감싸고 FK 순서를 지킨다', async () => {
+      const repo = new UserRepository(pool);
+      await repo.register({
         email: 'export@example.com',
         name: 'Export User',
         password: 'test-password-123',
         contact: { address: {} }
       });
 
-      const script = exportDatabaseInserts(db);
+      const script = await exportDatabaseInserts(pool);
       expect(script.startsWith('BEGIN;')).toBe(true);
       expect(script.trimEnd().endsWith('COMMIT;')).toBe(true);
       // users 섹션이 loans 섹션보다 먼저
