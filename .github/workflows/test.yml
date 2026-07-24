@@ -30,7 +30,7 @@ jobs:
           - 5432:5432
 
     env:
-      PG_HOST: localhost
+      PG_HOST: postgres
       PG_PORT: 5432
       PG_USER: postgres
       PG_PASSWORD: postgres
@@ -49,6 +49,16 @@ jobs:
 
     - name: Install dependencies
       run: npm ci
+
+    - name: Wait for PostgreSQL to be ready
+      run: |
+        for i in {1..30}; do
+          pg_isready -h postgres -p 5432 -U postgres && echo "PostgreSQL is ready" && exit 0
+          echo "Attempt $i: Waiting for PostgreSQL..."
+          sleep 1
+        done
+        echo "PostgreSQL failed to become ready"
+        exit 1
 
     - name: Run full test suite (321 tests, coverage-gated)
       run: npm run test:ci
