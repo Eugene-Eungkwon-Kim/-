@@ -51,54 +51,7 @@ jobs:
       run: npm ci
 
     - name: Wait for PostgreSQL to be ready and create database
-      run: |
-        node -e "
-        const pg = require('pg');
-        let attempts = 0;
-        const maxAttempts = 30;
-
-        const connect = async () => {
-          try {
-            // Connect to default postgres database
-            const adminPool = new pg.Pool({
-              host: 'postgres',
-              port: 5432,
-              user: 'postgres',
-              password: 'postgres',
-              database: 'postgres'
-            });
-
-            const adminClient = await adminPool.connect();
-            console.log('✓ PostgreSQL is ready');
-
-            // Create test database if it doesn't exist
-            try {
-              await adminClient.query('CREATE DATABASE maars_test');
-              console.log('✓ Database maars_test created');
-            } catch (err) {
-              if (err.code === '42P04') {
-                console.log('✓ Database maars_test already exists');
-              } else {
-                throw err;
-              }
-            }
-
-            adminClient.release();
-            await adminPool.end();
-            process.exit(0);
-          } catch (err) {
-            attempts++;
-            if (attempts >= maxAttempts) {
-              console.error('✗ PostgreSQL initialization failed after 30 attempts');
-              console.error(err.message);
-              process.exit(1);
-            }
-            console.log('Attempt ' + attempts + '/30: Waiting for PostgreSQL...');
-            setTimeout(connect, 1000);
-          }
-        };
-        connect();
-        "
+      run: node .github/scripts/wait-for-postgres.js
 
     - name: Run full test suite (321 tests, coverage-gated)
       run: npm run test:ci
