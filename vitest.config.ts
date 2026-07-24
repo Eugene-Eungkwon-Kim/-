@@ -84,9 +84,13 @@ export default defineConfig({
     // 세트업 파일
     setupFiles: ['./test/setup.ts'],
 
-    // 병렬 실행
+    // 통합 테스트는 단일 PostgreSQL 데이터베이스(maars_test)를 공유하며
+    // afterEach에서 모든 테이블을 TRUNCATE 한다. 파일을 병렬로 돌리면 한
+    // 워커의 정리(TRUNCATE)가 다른 워커의 트랜잭션 도중 실행되어 FK 위반·
+    // deadlock·"not found" 오류를 일으킨다(이 truncate 기반 정리 설계는
+    // 직렬 실행을 전제로 한다). 따라서 단일 스레드로 직렬 실행한다.
     threads: true,
-    maxThreads: 4,
+    maxThreads: 1,
     minThreads: 1,
 
     // 타임아웃
