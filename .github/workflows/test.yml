@@ -20,6 +20,7 @@ jobs:
       PG_USER: postgres
       PG_PASSWORD: postgres
       PG_TEST_DATABASE: maars_test
+      PGPASSWORD: postgres
       NODE_ENV: test
       ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'test-encryption-key-for-ci' }}
 
@@ -40,13 +41,23 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Check PostgreSQL status
+      run: |
+        which psql || echo "psql not found"
+        psql --version || echo "psql version failed"
+        pg_isready -h localhost -p 5432 || echo "pg_isready failed"
+        echo "Environment: PG_HOST=$PG_HOST PG_PORT=$PG_PORT PG_USER=$PG_USER"
+
     - name: Create test database
-      run: createdb -U postgres maars_test 2>/dev/null || echo "Database already exists"
+      run: |
+        psql -U postgres -h localhost -c "CREATE DATABASE maars_test;" 2>/dev/null || \
+        psql -U postgres -h localhost -c "SELECT 1;" 2>/dev/null && echo "Database maars_test exists or created" || \
+        echo "Database creation/check failed"
 
     - name: Test PostgreSQL connection
       run: |
-        psql -U postgres -h localhost -c "SELECT version()" || {
-          echo "PostgreSQL connection failed"
+        psql -U postgres -h localhost -d postgres -c "SELECT version();" || {
+          echo "PostgreSQL connection test failed"
           exit 1
         }
 
