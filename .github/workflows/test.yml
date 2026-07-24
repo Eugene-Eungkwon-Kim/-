@@ -14,6 +14,26 @@ jobs:
       matrix:
         node-version: [18.x, 20.x]
 
+    # PostgreSQL as a Docker service. The container is initialized with a known
+    # password (POSTGRES_PASSWORD), so password authentication for the `postgres`
+    # role works — unlike a host install where the postgres role has no password.
+    # The job runs directly on the runner (not inside a container), so the service
+    # is reached at localhost via the mapped port, NOT via the service hostname.
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_DB: maars_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       PG_HOST: localhost
       PG_PORT: 5432
@@ -27,11 +47,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Set up PostgreSQL
-      uses: ankane/setup-postgres@v1
-      with:
-        postgres-version: 14
-
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v3
       with:
@@ -41,28 +56,13 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Check PostgreSQL status
-      run: |
-        which psql || echo "psql not found"
-        psql --version || echo "psql version failed"
-        pg_isready -h localhost -p 5432 || echo "pg_isready failed"
-        echo "Environment: PG_HOST=$PG_HOST PG_PORT=$PG_PORT PG_USER=$PG_USER"
-
-    - name: Create test database
-      run: |
-        psql -U postgres -h localhost -c "CREATE DATABASE maars_test;" 2>/dev/null || \
-        psql -U postgres -h localhost -c "SELECT 1;" 2>/dev/null && echo "Database maars_test exists or created" || \
-        echo "Database creation/check failed"
-
-    - name: Test PostgreSQL connection
-      run: |
-        psql -U postgres -h localhost -d postgres -c "SELECT version();" || {
-          echo "PostgreSQL connection test failed"
-          exit 1
-        }
+    # Sanity check: verify the service accepts an authenticated connection before
+    # running the suite. If this fails, the DB — not the tests — is the problem.
+    - name: Verify PostgreSQL connection
+      run: psql -h localhost -U postgres -d maars_test -c "SELECT version();"
 
     - name: Run full test suite (321 tests, coverage-gated)
-      run: npm run test:ci 2>&1 | tee test-output.log
+      run: npm run test:ci
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
