@@ -50,15 +50,55 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    - name: Wait for PostgreSQL to be ready
+    - name: Wait for PostgreSQL to be ready and create database
       run: |
-        for i in {1..30}; do
-          pg_isready -h postgres -p 5432 -U postgres && echo "PostgreSQL is ready" && exit 0
-          echo "Attempt $i: Waiting for PostgreSQL..."
-          sleep 1
-        done
-        echo "PostgreSQL failed to become ready"
-        exit 1
+        node -e "
+        const pg = require('pg');
+        let attempts = 0;
+        const maxAttempts = 30;
+
+        const connect = async () => {
+          try {
+            // Connect to default postgres database
+            const adminPool = new pg.Pool({
+              host: 'postgres',
+              port: 5432,
+              user: 'postgres',
+              password: 'postgres',
+              database: 'postgres'
+            });
+
+            const adminClient = await adminPool.connect();
+            console.log('✓ PostgreSQL is ready');
+
+            // Create test database if it doesn't exist
+            try {
+              await adminClient.query('CREATE DATABASE maars_test');
+              console.log('✓ Database maars_test created');
+            } catch (err) {
+              if (err.code === '42P04') {
+                console.log('✓ Database maars_test already exists');
+              } else {
+                throw err;
+              }
+            }
+
+            adminClient.release();
+            await adminPool.end();
+            process.exit(0);
+          } catch (err) {
+            attempts++;
+            if (attempts >= maxAttempts) {
+              console.error('✗ PostgreSQL initialization failed after 30 attempts');
+              console.error(err.message);
+              process.exit(1);
+            }
+            console.log('Attempt ' + attempts + '/30: Waiting for PostgreSQL...');
+            setTimeout(connect, 1000);
+          }
+        };
+        connect();
+        "
 
     - name: Run full test suite (321 tests, coverage-gated)
       run: npm run test:ci
