@@ -43,8 +43,15 @@ jobs:
     - name: Create test database
       run: createdb -U postgres maars_test 2>/dev/null || echo "Database already exists"
 
+    - name: Test PostgreSQL connection
+      run: |
+        psql -U postgres -h localhost -c "SELECT version()" || {
+          echo "PostgreSQL connection failed"
+          exit 1
+        }
+
     - name: Run full test suite (321 tests, coverage-gated)
-      run: npm run test:ci
+      run: npm run test:ci 2>&1 | tee test-output.log
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
