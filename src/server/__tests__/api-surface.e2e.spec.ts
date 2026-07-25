@@ -89,7 +89,7 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
     const beforeRes = await app.inject({ method: 'GET', url: '/api/admin/backups', headers: authHeader(userToken) });
     expect(beforeRes.statusCode).toBe(403);
 
-    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+    await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
     const reloginRes = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
@@ -164,7 +164,7 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
     expect(userRes.statusCode).toBe(403);
 
     // 관리자로 승격
-    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(adminId);
+    await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', adminId]);
     const reloginRes = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
@@ -204,7 +204,7 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
     expect(userPruneRes.statusCode).toBe(403);
 
     // 관리자로 승격
-    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(adminId);
+    await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', adminId]);
     const reloginRes = await app.inject({
       method: 'POST',
       url: '/api/auth/login',
@@ -267,7 +267,7 @@ describe('API 서프리스 종단 시나리오 (Day 10 - Task 5)', () => {
     expect(paymentRes.json().data.currentBalance).toBeLessThan(5000000);
 
     // 5. 관리자 승격 및 배치 작업 실행
-    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+    await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
     const adminLoginRes = await app.inject({
       method: 'POST',
       url: '/api/auth/login',

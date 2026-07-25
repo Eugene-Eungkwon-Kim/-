@@ -59,7 +59,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
 
     it('관리자는 감사 로그를 조회할 수 있다', async () => {
       const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+      await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
 
       // 관리자로 재로그인
       const loginRes = await app.inject({
@@ -87,10 +87,9 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
       const testUserId = 'test-user-id';
 
       // 사용자가 없으므로 먼저 users 테이블에 삽입
-      db.prepare("INSERT OR IGNORE INTO users (id, email, name) VALUES (?, ?, ?)").run(
-        testUserId,
-        'test@example.com',
-        'Test User'
+      await pool.query(
+        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        [testUserId, 'test@example.com', 'Test User']
       );
 
       auditLogger.log({
@@ -132,7 +131,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
 
     it('모든 감사 로그를 조회할 수 있다', async () => {
       const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+      await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
 
       const loginRes = await app.inject({
         method: 'POST',
@@ -154,7 +153,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
 
     it('페이지네이션을 지원한다', async () => {
       const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+      await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
 
       const loginRes = await app.inject({
         method: 'POST',
@@ -184,7 +183,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
 
     it('액션으로 필터링할 수 있다', async () => {
       const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+      await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
 
       const loginRes = await app.inject({
         method: 'POST',
@@ -206,7 +205,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
 
     it('리소스 타입으로 필터링할 수 있다', async () => {
       const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+      await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
 
       const loginRes = await app.inject({
         method: 'POST',
@@ -230,10 +229,9 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
   describe('사용자별 감사 로그', () => {
     beforeEach(async () => {
       const testUserId = 'test-user-id';
-      db.prepare("INSERT OR IGNORE INTO users (id, email, name) VALUES (?, ?, ?)").run(
-        testUserId,
-        'test@example.com',
-        'Test User'
+      await pool.query(
+        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        [testUserId, 'test@example.com', 'Test User']
       );
 
       for (let i = 0; i < 3; i++) {
@@ -253,7 +251,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
 
     it('특정 사용자의 감사 로그를 조회할 수 있다', async () => {
       const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+      await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
 
       const loginRes = await app.inject({
         method: 'POST',
@@ -278,10 +276,9 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
   describe('리소스 변경 이력', () => {
     beforeEach(async () => {
       const testUserId = 'test-user-id';
-      db.prepare("INSERT OR IGNORE INTO users (id, email, name) VALUES (?, ?, ?)").run(
-        testUserId,
-        'test@example.com',
-        'Test User'
+      await pool.query(
+        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        [testUserId, 'test@example.com', 'Test User']
       );
 
       auditLogger.log({
@@ -311,7 +308,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
 
     it('특정 리소스의 모든 변경 이력을 조회할 수 있다', async () => {
       const { userId } = await registerAndLogin('admin@example.com', 'Admin User');
-      db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+      await pool.query("UPDATE users SET role = $1 WHERE id = $2", ['admin', userId]);
 
       const loginRes = await app.inject({
         method: 'POST',
