@@ -110,7 +110,7 @@ export class BackupManager {
 
   async pruneExpiredBackups(retentionDays: number, now: string): Promise<PruneResult> {
     const expiredResult = await this.pool.query(
-      `SELECT id, backup_path FROM backup_history WHERE CAST(created_at AS TIMESTAMP) < (CAST($2 AS TIMESTAMP) - INTERVAL '1 day' * $1)`,
+      `SELECT id, backup_path FROM backup_history WHERE CAST(created_at AS TIMESTAMP) < (CAST($2 AS TIMESTAMP) - ($1 || ' days')::INTERVAL)`,
       [retentionDays, now]
     );
     const expired = expiredResult.rows as { id: string; backup_path: string }[];
