@@ -88,7 +88,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
 
       // 사용자가 없으므로 먼저 users 테이블에 삽입
       await pool.query(
-        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
         [testUserId, 'test@example.com', 'Test User']
       );
 
@@ -230,7 +230,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     beforeEach(async () => {
       const testUserId = 'test-user-id';
       await pool.query(
-        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
         [testUserId, 'test@example.com', 'Test User']
       );
 
@@ -277,7 +277,7 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
     beforeEach(async () => {
       const testUserId = 'test-user-id';
       await pool.query(
-        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
         [testUserId, 'test@example.com', 'Test User']
       );
 
