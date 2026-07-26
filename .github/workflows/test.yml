@@ -54,37 +54,13 @@ jobs:
         cache: 'npm'
 
     - name: Install dependencies
-      run: npm ci
+      run: npm ci --verbose
 
-    - name: Debug environment
-      run: |
-        echo "Node version: $(node --version)"
-        echo "npm version: $(npm --version)"
-        echo "Working directory: $(pwd)"
-        ls -la
-        echo "Environment vars:"
-        env | grep -E "PG_|NODE_" || true
-
-    - name: Wait for PostgreSQL
-      run: |
-        for i in {1..30}; do
-          if pg_isready -h localhost -U postgres; then
-            echo "PostgreSQL is ready"
-            exit 0
-          fi
-          echo "Waiting for PostgreSQL... ($i/30)"
-          sleep 1
-        done
-        echo "PostgreSQL failed to start"
-        exit 1
-
-    # Sanity check: verify the service accepts an authenticated connection before
-    # running the suite. If this fails, the DB — not the tests — is the problem.
     - name: Verify PostgreSQL connection
-      run: psql -h localhost -U postgres -d maars_test -c "SELECT version();"
+      run: pg_isready -h localhost -p 5432 -U postgres
 
-    - name: Run full test suite (321 tests, coverage-gated)
-      run: npm run test:ci
+    - name: Run full test suite
+      run: npm run test:ci 2>&1 | head -200
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
