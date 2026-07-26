@@ -61,15 +61,16 @@ export async function cleanupTestDatabase(): Promise<void> {
     // 모든 사용자 테이블 TRUNCATE (마이그레이션 테이블 제외)
     const tables = [
       'audit_logs',
-      'credit_history',
-      'transaction_anomalies',
+      'audit_log',
       'transactions',
       'data_integrity_log',
       'financial_snapshots',
       'refresh_tokens',
       'loan_payments',
+      'loan_history',
       'loans',
-      'backup_records',
+      'backup_history',
+      'users_audit',
       'users',
     ];
 
