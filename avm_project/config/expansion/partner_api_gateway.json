@@ -1,8 +1,0 @@
-{
-  "bulk_predict_endpoint": "/api/v1/partners/{partner_id}/bulk-predict",
-  "max_requests_per_call": 1000,
-  "batch_processing": true,
-  "response_format": "JSON",
-  "authentication": "API Key based",
-  "rate_limiting": "Partner tier based"
-}

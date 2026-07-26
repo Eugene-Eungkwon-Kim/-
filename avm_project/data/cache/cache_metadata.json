@@ -1,9 +1,0 @@
-{
-  "timestamp": "2026-06-24T08:49:56.101313",
-  "total_rows": 13500,
-  "columns": 37,
-  "tier1_api_rows": 13500,
-  "tier2_regional_computed": true,
-  "tier3_global_computed": true,
-  "status": "READY"
-}
