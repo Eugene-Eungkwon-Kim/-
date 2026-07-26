@@ -87,10 +87,15 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
       const testUserId = 'test-user-id';
 
       // 사용자가 없으므로 먼저 users 테이블에 삽입
-      await pool.query(
-        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
-        [testUserId, 'test@example.com', 'Test User']
-      );
+      try {
+        await pool.query(
+          "INSERT INTO users (id, email, name) VALUES ($1, $2, $3)",
+          [testUserId, 'test@example.com', 'Test User']
+        );
+      } catch (err) {
+        // Ignore duplicate key errors - user may already exist
+        if (!(err instanceof Error) || !err.message.includes('duplicate')) throw err;
+      }
 
       auditLogger.log({
         userId: testUserId,
@@ -229,10 +234,14 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
   describe('사용자별 감사 로그', () => {
     beforeEach(async () => {
       const testUserId = 'test-user-id';
-      await pool.query(
-        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
-        [testUserId, 'test@example.com', 'Test User']
-      );
+      try {
+        await pool.query(
+          "INSERT INTO users (id, email, name) VALUES ($1, $2, $3)",
+          [testUserId, 'test@example.com', 'Test User']
+        );
+      } catch (err) {
+        if (!(err instanceof Error) || !err.message.includes('duplicate')) throw err;
+      }
 
       for (let i = 0; i < 3; i++) {
         auditLogger.log({
@@ -276,10 +285,14 @@ describe('Audit Logs API (Day 13 - Task G)', () => {
   describe('리소스 변경 이력', () => {
     beforeEach(async () => {
       const testUserId = 'test-user-id';
-      await pool.query(
-        "INSERT INTO users (id, email, name) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING",
-        [testUserId, 'test@example.com', 'Test User']
-      );
+      try {
+        await pool.query(
+          "INSERT INTO users (id, email, name) VALUES ($1, $2, $3)",
+          [testUserId, 'test@example.com', 'Test User']
+        );
+      } catch (err) {
+        if (!(err instanceof Error) || !err.message.includes('duplicate')) throw err;
+      }
 
       auditLogger.log({
         userId: testUserId,
