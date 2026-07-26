@@ -2,9 +2,9 @@ name: Test Suite & Coverage
 
 on:
   push:
-    branches: [ main, claude/code-session-connection-ml8t7v ]
+    branches: [ main, claude/code-session-connection-ml8t7v, claude/eloquent-meitner-lqxu9r ]
   pull_request:
-    branches: [ main, claude/code-session-connection-ml8t7v ]
+    branches: [ main, claude/code-session-connection-ml8t7v, claude/eloquent-meitner-lqxu9r ]
 
 jobs:
   test:
