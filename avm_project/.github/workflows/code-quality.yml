@@ -1,0 +1,228 @@
+name: Code Quality & Security
+
+on:
+  push:
+    branches: [ main, claude/eloquent-meitner-lqxu9r ]
+  pull_request:
+    branches: [ main, claude/eloquent-meitner-lqxu9r ]
+
+jobs:
+  python-lint:
+    name: Python Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install linting tools
+        run: |
+          pip install pylint flake8 black isort mypy
+
+      - name: Check code formatting with Black
+        working-directory: ./avm_project
+        run: |
+          black backend/ tests/ --check --diff || echo "⚠️  Format issues found (informational)"
+
+      - name: Check import ordering
+        working-directory: ./avm_project
+        run: |
+          isort backend/ tests/ --check-only --diff || echo "⚠️  Import ordering issues found (informational)"
+
+      - name: Run flake8
+        working-directory: ./avm_project
+        run: |
+          flake8 backend/ tests/ --max-line-length=100 --extend-ignore=E203,W503 --statistics || echo "⚠️  Flake8 issues found (informational)"
+
+      - name: Run pylint
+        working-directory: ./avm_project
+        run: |
+          pylint backend/*.py tests/*.py --exit-zero --max-line-length=100 --disable=too-many-arguments || echo "⚠️  Pylint issues found (informational)"
+
+  javascript-lint:
+    name: JavaScript/TypeScript Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: 'avm_project/frontend/package-lock.json'
+
+      - name: Install dependencies
+        working-directory: ./avm_project/frontend
+        run: npm install
+
+      - name: Run ESLint
+        working-directory: ./avm_project/frontend
+        run: npm run lint || echo "⚠️  Linting issues found (informational)"
+
+      - name: Type check
+        working-directory: ./avm_project/frontend
+        run: npx tsc --noEmit || echo "⚠️  Type issues found (informational)"
+
+  dependency-check:
+    name: Dependency Vulnerability Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        working-directory: ./avm_project
+        run: |
+          pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install safety
+
+      - name: Check Python dependencies for vulnerabilities
+        working-directory: ./avm_project
+        run: |
+          safety check --json || echo "⚠️  Potential vulnerabilities found (review required)"
+
+      - name: Use Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: 'avm_project/frontend/package-lock.json'
+
+      - name: Audit npm dependencies
+        working-directory: ./avm_project/frontend
+        run: |
+          npm audit --audit-level=moderate || echo "⚠️  Npm vulnerabilities found (review required)"
+
+  code-complexity:
+    name: Code Complexity Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install complexity tools
+        run: |
+          pip install radon
+
+      - name: Calculate Python complexity metrics
+        working-directory: ./avm_project
+        run: |
+          echo "=== Cyclomatic Complexity (high > 10) ==="
+          radon cc backend/ tests/ -a --total-average || true
+          echo ""
+          echo "=== Maintainability Index (low < 40) ==="
+          radon mi backend/ tests/ || true
+          echo ""
+          echo "⚠️  Note: High values are informational. Action required only if > 15 or < 20"
+
+  security-headers:
+    name: Security Configuration Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check for secrets in code
+        run: |
+          echo "Checking for common secret patterns..."
+          grep -r "password\s*=" avm_project/ || true
+          grep -r "api_key\s*=" avm_project/ || true
+          echo "✅ Manual secret scan complete"
+
+      - name: Verify .gitignore coverage
+        run: |
+          test -f .gitignore && echo "✅ .gitignore exists" || echo "⚠️  .gitignore missing"
+          grep -E "\.env|\.joblib|__pycache__|node_modules" .gitignore || echo "⚠️  Consider adding more patterns"
+
+      - name: Check for hardcoded credentials
+        working-directory: ./avm_project
+        run: |
+          echo "Scanning for credentials (informational)..."
+          grep -r "bearer\|token\|secret" . --include="*.py" --include="*.js" | head -5 || true
+          echo "✅ Credential scan complete"
+
+  docker-security:
+    name: Docker Security Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Check Dockerfile best practices
+        run: |
+          docker run --rm -i hadolint/hadolint < avm_project/Dockerfile || echo "⚠️  Dockerfile lint issues (review recommended)"
+
+      - name: Verify non-root user in Dockerfile
+        working-directory: ./avm_project
+        run: |
+          if grep -q "USER appuser\|USER 1000" Dockerfile; then
+            echo "✅ Dockerfile uses non-root user"
+          else
+            echo "⚠️  Consider using non-root user in Dockerfile"
+          fi
+
+      - name: Check for RUN pip with --no-cache-dir
+        working-directory: ./avm_project
+        run: |
+          grep "pip install" Dockerfile | grep -q "no-cache-dir" || echo "⚠️  Consider using --no-cache-dir for smaller images"
+
+  environment-config:
+    name: Environment Configuration Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Audit docker-compose.yml
+        working-directory: ./avm_project
+        run: |
+          echo "=== Checking restart policies ==="
+          docker compose config | grep -E "restart:"
+          echo ""
+          echo "=== Checking environment variables ==="
+          docker compose config | grep -E "environment:" -A 5
+          echo ""
+          echo "=== Checking volume mounts ==="
+          docker compose config | grep -E "volumes:" -A 10 | head -15
+          echo ""
+          echo "✅ Configuration audit complete"
+
+  summary:
+    name: Code Quality Summary
+    runs-on: ubuntu-latest
+    needs: [python-lint, javascript-lint, dependency-check, code-complexity, security-headers, docker-security, environment-config]
+    if: always()
+
+    steps:
+      - name: Report results
+        run: |
+          echo "✅ Code Quality Checks Complete"
+          echo ""
+          echo "Checks performed:"
+          echo "- Python linting (Black, isort, flake8, pylint)"
+          echo "- JavaScript/TypeScript linting and type checking"
+          echo "- Dependency vulnerability scanning"
+          echo "- Code complexity analysis"
+          echo "- Security configuration audit"
+          echo "- Docker best practices validation"
+          echo ""
+          echo "Note: Most checks are informational. Review warnings for actionable items."

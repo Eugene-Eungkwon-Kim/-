@@ -1,0 +1,22 @@
+{
+  "api_servers": {
+    "current": 2,
+    "target": 5,
+    "scaling": 2.5
+  },
+  "redis_capacity": {
+    "current": 2,
+    "target": 5,
+    "unit": "GB"
+  },
+  "database_storage": {
+    "current": 100,
+    "target": 300,
+    "unit": "GB"
+  },
+  "concurrent_users": {
+    "current": 500,
+    "target": 2000,
+    "scaling": 4
+  }
+}

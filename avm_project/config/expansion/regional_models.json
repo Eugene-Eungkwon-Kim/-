@@ -1,0 +1,26 @@
+{
+  "Busan": {
+    "r2_score": 0.85,
+    "model_status": "READY",
+    "data_samples": 2888,
+    "accuracy_percentage": 90
+  },
+  "Daegu": {
+    "r2_score": 0.85,
+    "model_status": "READY",
+    "data_samples": 3122,
+    "accuracy_percentage": 85
+  },
+  "Daejeon": {
+    "r2_score": 0.85,
+    "model_status": "READY",
+    "data_samples": 2953,
+    "accuracy_percentage": 87
+  },
+  "Gwangju": {
+    "r2_score": 0.85,
+    "model_status": "READY",
+    "data_samples": 3991,
+    "accuracy_percentage": 90
+  }
+}

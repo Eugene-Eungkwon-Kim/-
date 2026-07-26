@@ -1,0 +1,48 @@
+{
+  "brokers": [
+    {
+      "name": "Real Estate Network 1",
+      "monthly_transactions": 500,
+      "revenue": 1000
+    },
+    {
+      "name": "Real Estate Network 2",
+      "monthly_transactions": 400,
+      "revenue": 800
+    },
+    {
+      "name": "Regional Broker Chain A",
+      "monthly_transactions": 300,
+      "revenue": 600
+    },
+    {
+      "name": "Regional Broker Chain B",
+      "monthly_transactions": 250,
+      "revenue": 500
+    },
+    {
+      "name": "Regional Broker Chain C",
+      "monthly_transactions": 200,
+      "revenue": 400
+    }
+  ],
+  "trust_services": [
+    {
+      "name": "Real Estate Trust 1",
+      "monthly_volume": 5000,
+      "revenue": 1500
+    },
+    {
+      "name": "Real Estate Trust 2",
+      "monthly_volume": 3000,
+      "revenue": 1000
+    }
+  ],
+  "portals": [
+    {
+      "name": "Real Estate Portal",
+      "monthly_users": 1000000,
+      "revenue": 1000
+    }
+  ]
+}

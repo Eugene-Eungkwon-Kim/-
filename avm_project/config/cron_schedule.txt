@@ -1,0 +1,10 @@
+
+# Loan4U QC v1.1 - 자동화 스케줄
+# 매월 1일 02:00 UTC에 자동 데이터 수집
+0 2 1 * * /usr/bin/python3 /home/user/-/avm_project/scripts/auto_collect.py
+
+# 매월 5일 03:00 UTC에 자동 모델 재학습
+0 3 5 * * /usr/bin/python3 /home/user/-/avm_project/scripts/auto_retrain.py
+
+# 매일 10:00 UTC에 자동화 상태 확인
+0 10 * * * /usr/bin/python3 /home/user/-/avm_project/scripts/check_automation_status.py

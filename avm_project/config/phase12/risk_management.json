@@ -1,0 +1,49 @@
+{
+  "high_risk": [
+    {
+      "risk": "Regulatory Compliance (GDPR, APPI, CCPA)",
+      "impact": "Fines, service shutdown",
+      "mitigation": [
+        "Legal team hire",
+        "DPA (Data Processing Agreement) with cloud providers",
+        "Regular compliance audits",
+        "Data localization where required"
+      ]
+    },
+    {
+      "risk": "Data Access Disruption (API changes, policy shifts)",
+      "impact": "Revenue loss, model degradation",
+      "mitigation": [
+        "Multi-source data strategy",
+        "Long-term contracts with data providers",
+        "Fallback data sources identified"
+      ]
+    },
+    {
+      "risk": "Currency Volatility (SGD, JPY, AUD fluctuations)",
+      "impact": "Revenue uncertainty",
+      "mitigation": [
+        "USD-based pricing where possible",
+        "Quarterly revaluation",
+        "Hedging strategies"
+      ]
+    }
+  ],
+  "medium_risk": [
+    {
+      "risk": "Market Recession",
+      "impact": "Reduced transaction volumes",
+      "mitigation": "Diversified geographic exposure"
+    },
+    {
+      "risk": "Competitive Pressure",
+      "impact": "Price pressure on API transactions",
+      "mitigation": "Superior model accuracy, local partnerships"
+    },
+    {
+      "risk": "Technical Integration Complexity",
+      "impact": "Delayed launches",
+      "mitigation": "Experienced team, modular architecture"
+    }
+  ]
+}

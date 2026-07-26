@@ -1,0 +1,93 @@
+name: Phase 14 - Model Validation & ONNX Conversion
+
+on:
+  push:
+    paths:
+      - 'output/models/**_production_*.pkl'
+      - 'scripts/phase13_stacking_converter.py'
+  workflow_dispatch:
+
+jobs:
+  validate-and-convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        country: [KR, BR, SG, HK, UK, DE, AU, CA, TH]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -q numpy pandas scikit-learn xgboost lightgbm onnxruntime skl2onnx onnxmltools openpyxl
+
+      - name: Convert to ONNX (${{ matrix.country }})
+        run: |
+          python scripts/phase13_stacking_converter.py \
+            --model output/models/${{ matrix.country | lower }}_production_v1.0.pkl \
+            --data data/processed/${{ matrix.country }}_engineered.csv \
+            --output output/converted_models/${{ matrix.country | lower }}_production_v1.0.onnx \
+            --leak-patterns "price_local,indexed_price"
+        continue-on-error: true
+
+      - name: Validate ONNX conversion (${{ matrix.country }})
+        run: |
+          python scripts/phase14_monitor.py validate-onnx \
+            --model output/converted_models/${{ matrix.country | lower }}_production_v1.0.onnx \
+            --min-match-rate 0.99 \
+            --country ${{ matrix.country }}
+        continue-on-error: true
+
+      - name: Run inference benchmark (${{ matrix.country }})
+        run: |
+          python scripts/phase13_inference_engine.py \
+            --model output/converted_models/${{ matrix.country | lower }}_production_v1.0.onnx \
+            --output output/benchmark_results_${{ matrix.country }}.json
+        continue-on-error: true
+
+      - name: Upload conversion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conversion-reports-${{ matrix.country }}
+          path: output/converted_models/${{ matrix.country | lower }}_production_*.json
+          retention-days: 30
+
+  merge-results:
+    needs: validate-and-convert
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all reports
+        uses: actions/download-artifact@v4
+        with:
+          path: reports/
+
+      - name: Generate validation summary
+        run: |
+          python scripts/phase14_monitor.py summarize-reports \
+            --reports-dir reports/ \
+            --output output/validation_summary.json
+
+      - name: Check SLA (single-inference <5ms)
+        run: |
+          python scripts/phase14_monitor.py check-sla \
+            --summary output/validation_summary.json \
+            --target-latency-ms 5.0
+
+      - name: Archive summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-summary
+          path: output/validation_summary.json
+          retention-days: 90

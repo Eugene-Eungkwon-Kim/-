@@ -1,0 +1,8 @@
+{
+  "timestamp": "2026-06-24T08:50:38+00:00",
+  "excel_file": "output/Loan4U_QC_v1.1_FINAL.xlsx",
+  "models_dir": "models",
+  "backup_dir": "./backups",
+  "retention_days": 7,
+  "status": "OK"
+}

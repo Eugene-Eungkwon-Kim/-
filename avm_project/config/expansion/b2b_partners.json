@@ -1,0 +1,31 @@
+{
+  "financial_institutions": [
+    {
+      "name": "KB Bank",
+      "api_calls_monthly": 2000,
+      "monthly_revenue_million": 1000
+    },
+    {
+      "name": "Shinhan Capital",
+      "api_calls_monthly": 1000,
+      "monthly_revenue_million": 500
+    },
+    {
+      "name": "SC Finance",
+      "api_calls_monthly": 1500,
+      "monthly_revenue_million": 750
+    }
+  ],
+  "real_estate_services": [
+    {
+      "name": "Real Estate Network 1",
+      "api_calls_monthly": 2500,
+      "monthly_revenue_million": 1000
+    },
+    {
+      "name": "Real Estate Network 2",
+      "api_calls_monthly": 1500,
+      "monthly_revenue_million": 750
+    }
+  ]
+}
