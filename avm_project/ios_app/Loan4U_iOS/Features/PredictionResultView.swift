@@ -1,88 +1,66 @@
 import SwiftUI
 
 struct PredictionResultView: View {
-    @Binding var showInput: Bool
-    @State var result: PredictionResult?
-    @EnvironmentObject var cacheService: CacheService
+    let result: PredictionResult?
+    let onNewValuation: () -> Void
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                if let result = result {
-                    VStack(spacing: 16) {
-                        Text("Estimated Price")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        Text("₩\(result.predictedPrice.formatted())")
-                            .font(.system(size: 48, weight: .bold, design: .rounded))
-                            .foregroundStyle(.primary)
-
-                        VStack(spacing: 8) {
-                            HStack {
-                                Text("Confidence")
-                                    .font(.subheading)
-                                Spacer()
-                                Text(String(format: "%.1f%%", result.confidenceScore * 100))
-                                    .font(.subheading)
-                                    .fontWeight(.semibold)
-                            }
-
-                            ProgressView(value: result.confidenceScore)
-                                .tint(confidenceColor(result.confidenceScore))
-                        }
-
-                        Divider()
-
-                        HStack(spacing: 12) {
-                            Label("Region", systemImage: "map.fill")
-                            Spacer()
-                            Text(result.region)
-                                .fontWeight(.semibold)
-                        }
-                        .font(.callout)
-
-                        HStack(spacing: 12) {
-                            Label("Predicted", systemImage: "clock.fill")
-                            Spacer()
-                            Text(result.timestamp.formatted(date: .abbreviated, time: .shortened))
-                                .font(.callout)
-                        }
-                    }
-                    .padding(20)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-
-                    Spacer()
-
-                    Button(action: { showInput = true }) {
-                        Text("New Valuation")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                } else {
-                    Text("No prediction available")
+        VStack(spacing: 24) {
+            if let result {
+                VStack(spacing: 16) {
+                    Text("Estimated Price")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    Button(action: { showInput = true }) {
-                        Text("Go Back")
-                            .frame(maxWidth: .infinity)
+
+                    Text("₩\(result.predictedPrice.formatted())")
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
+
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("Confidence").font(.subheadline)
+                            Spacer()
+                            Text(String(format: "%.0f%%", result.confidenceScore * 100))
+                                .font(.subheadline).fontWeight(.semibold)
+                        }
+                        ProgressView(value: result.confidenceScore)
+                            .tint(confidenceColor(result.confidenceScore))
                     }
-                    .buttonStyle(.bordered)
+
+                    Divider()
+
+                    row("Region", result.region)
+                    row("Predicted", result.timestamp.formatted(date: .abbreviated, time: .shortened))
                 }
+                .padding(20)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(12)
+
+                Spacer()
+
+                Button(action: onNewValuation) {
+                    Text("New Valuation").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Text("No prediction available").foregroundStyle(.secondary)
+                Spacer()
+                Button("Go Back", action: onNewValuation).buttonStyle(.bordered)
             }
-            .padding()
-            .navigationTitle("Valuation Result")
         }
+        .padding()
+        .navigationTitle("Valuation Result")
+    }
+
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).fontWeight(.semibold)
+        }
+        .font(.callout)
     }
 
     private func confidenceColor(_ score: Double) -> Color {
-        if score >= 0.8 {
-            return .green
-        } else if score >= 0.6 {
-            return .yellow
-        } else {
-            return .orange
-        }
+        score >= 0.8 ? .green : (score >= 0.5 ? .yellow : .orange)
     }
 }

@@ -1,102 +1,43 @@
 package com.loan4u.features
 
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class FeatureEngineeringTest {
-    @Test
-    fun buildFeaturesReturnsCorrectCount() {
-        val property = PropertyInput()
-        val features = FeatureEngineering.buildFeatures(property)
-        assertEquals("Should have exactly 22 features", 22, features.size)
+    @Test fun contractHas22Features() {
+        assertEquals(22, FeatureEngineering.featureOrder.size)
     }
 
-    @Test
-    fun buildFeaturesContainsExpectedKeys() {
-        val property = PropertyInput()
-        val features = FeatureEngineering.buildFeatures(property)
-
-        val expectedKeys = setOf(
-            "area_sqm", "year_built", "floor_level", "floors_total",
-            "bedrooms", "bathrooms", "distance_subway_m", "distance_school_m",
-            "distance_hospital_m", "distance_park_m", "crime_rate",
-            "nightlight_intensity", "population_density", "has_elevator",
-            "has_parking", "has_garden", "house_type_apt",
-            "house_type_townhouse", "house_type_villa",
-            "transaction_month_log", "transaction_year",
-        )
-
-        expectedKeys.forEach { key ->
-            assertTrue("Missing key: $key", features.containsKey(key))
-        }
+    @Test fun vectorMatchesContractLength() {
+        assertEquals(22, FeatureEngineering.buildVector(PropertyInput()).size)
     }
 
-    @Test
-    fun buildFeaturesWithCustomProperty() {
-        val property = PropertyInput(
-            areaSqm = 150,
-            yearBuilt = 2020,
-            bedrooms = 4,
-        )
-
-        val features = FeatureEngineering.buildFeatures(property)
-
-        assertEquals(150f, features["area_sqm"])
-        assertEquals(2020f, features["year_built"])
-        assertEquals(4f, features["bedrooms"])
+    @Test fun featureOrderMatchesTrainedColumns() {
+        assertEquals("area_m2", FeatureEngineering.featureOrder.first())
+        assertEquals("price_per_pyeong", FeatureEngineering.featureOrder.last())
+        assertEquals("building_age", FeatureEngineering.featureOrder[4])
     }
 
-    @Test
-    fun amenityFeaturesCorrectlyEncoded() {
-        val property = PropertyInput(
-            hasElevator = true,
-            hasParking = false,
-            hasGarden = true,
-        )
-
-        val features = FeatureEngineering.buildFeatures(property)
-
-        assertEquals(1f, features["has_elevator"])
-        assertEquals(0f, features["has_parking"])
-        assertEquals(1f, features["has_garden"])
+    @Test fun pricePerPyeongDerivation() {
+        val feats = FeatureEngineering.buildFeatures(PropertyInput("Seoul", 84.0, 2015))
+        assertEquals(84.0 / 3.3, feats["price_per_pyeong"]!!, 1e-6)
     }
 
-    @Test
-    fun houseTypeEncodingApartment() {
-        val property = PropertyInput(houseType = HouseType.APARTMENT)
-
-        val features = FeatureEngineering.buildFeatures(property)
-
-        assertEquals(1f, features["house_type_apt"])
-        assertEquals(0f, features["house_type_townhouse"])
-        assertEquals(0f, features["house_type_villa"])
+    @Test fun ageDepreciationBuckets() {
+        assertEquals(1.0, FeatureEngineering.ageDepreciation(3.0), 1e-9)
+        assertEquals(0.88, FeatureEngineering.ageDepreciation(11.0), 1e-9) // 2026-2015
+        assertEquals(0.65, FeatureEngineering.ageDepreciation(25.0), 1e-9)
     }
 
-    @Test
-    fun houseTypeEncodingTownhouse() {
-        val property = PropertyInput(houseType = HouseType.TOWNHOUSE)
-
-        val features = FeatureEngineering.buildFeatures(property)
-
-        assertEquals(0f, features["house_type_apt"])
-        assertEquals(1f, features["house_type_townhouse"])
-        assertEquals(0f, features["house_type_villa"])
+    @Test fun regionMetaApplied() {
+        val feats = FeatureEngineering.buildFeatures(PropertyInput("Busan", 84.0, 2015))
+        assertEquals(1.04, feats["brand_premium"]!!, 1e-6)
+        assertEquals(37.301888, feats["latitude"]!!, 1e-6)
     }
 
-    @Test
-    fun distanceValuesEncoded() {
-        val property = PropertyInput(
-            distanceSubwayM = 500,
-            distanceSchoolM = 800,
-            distanceHospitalM = 1200,
-            distanceParkM = 300,
-        )
-
-        val features = FeatureEngineering.buildFeatures(property)
-
-        assertEquals(500f, features["distance_subway_m"])
-        assertEquals(800f, features["distance_school_m"])
-        assertEquals(1200f, features["distance_hospital_m"])
-        assertEquals(300f, features["distance_park_m"])
+    @Test fun vectorOrderPlacesAreaFirst() {
+        val v = FeatureEngineering.buildVector(PropertyInput("Seoul", 84.0, 2015))
+        assertEquals(84.0f, v[0], 1e-4f)          // area_m2
+        assertEquals((84.0 / 3.3).toFloat(), v[21], 1e-4f) // price_per_pyeong
     }
 }

@@ -1,106 +1,94 @@
 package com.loan4u.services
 
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
 import android.content.Context
-import androidx.lifecycle.ViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import org.tensorflow.lite.Interpreter
-import java.io.FileInputStream
-import java.nio.MappedByteBuffer
-import java.nio.channels.FileChannel
+import com.loan4u.features.FeatureEngineering
+import com.loan4u.features.PropertyInput
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.nio.FloatBuffer
 import javax.inject.Inject
 import javax.inject.Singleton
-
-@Singleton
-class MLModelService @Inject constructor(private val context: Context) : ViewModel() {
-    private val _isLoaded = MutableStateFlow(false)
-    val isLoaded: StateFlow<Boolean> = _isLoaded
-
-    private val _loadingError = MutableStateFlow<String?>(null)
-    val loadingError: StateFlow<String?> = _loadingError
-
-    private var nationalwideInterpreter: Interpreter? = null
-    private val regionalInterpreters = mutableMapOf<String, Interpreter>()
-    private val regionNames = listOf("Seoul", "Busan", "Gyeonggi", "Daegu", "Incheon")
-
-    init {
-        loadModels()
-    }
-
-    private fun loadModels() {
-        try {
-            loadNationwideModel()
-            loadRegionalModels()
-            _isLoaded.value = true
-        } catch (e: Exception) {
-            _loadingError.value = "Failed to load models: ${e.message}"
-        }
-    }
-
-    private fun loadNationwideModel() {
-        val buffer = loadModelFile("KR_nationwide_lite_int8.tflite")
-        nationalwideInterpreter = Interpreter(buffer)
-    }
-
-    private fun loadRegionalModels() {
-        for (region in regionNames) {
-            val filename = "KR_${region.lowercase()}_lite_int8.tflite"
-            runCatching {
-                val buffer = loadModelFile(filename)
-                regionalInterpreters[region] = Interpreter(buffer)
-            }
-        }
-    }
-
-    private fun loadModelFile(filename: String): MappedByteBuffer {
-        val assetFileDescriptor = context.assets.openFd(filename)
-        val inputStream = FileInputStream(assetFileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = assetFileDescriptor.startOffset
-        val declaredLength = assetFileDescriptor.declaredLength
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-    }
-
-    fun predict(features: Map<String, Float>, region: String? = null): PredictionResult? {
-        val interpreter = region?.let { regionalInterpreters[it] } ?: nationalwideInterpreter
-        interpreter ?: return null
-
-        return try {
-            val inputArray = Array(1) { FloatArray(22) }
-            val sortedFeatures = features.toSortedMap()
-            sortedFeatures.values.forEachIndexed { idx, value ->
-                inputArray[0][idx] = value
-            }
-
-            val outputArray = Array(1) { FloatArray(1) }
-            interpreter.run(inputArray, outputArray)
-
-            val predictedPrice = (outputArray[0][0] * 1_000_000).toLong().toInt()
-            val confidenceScore = (1.0 - (Math.abs(predictedPrice - 500_000_000) / 1_000_000_000.0)).coerceIn(0.0, 1.0)
-
-            PredictionResult(
-                predictedPrice = predictedPrice,
-                confidenceScore = confidenceScore,
-                region = region ?: "Nationwide",
-                timestamp = System.currentTimeMillis()
-            )
-        } catch (e: Exception) {
-            _loadingError.value = "Prediction failed: ${e.message}"
-            null
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        nationalwideInterpreter?.close()
-        regionalInterpreters.values.forEach { it.close() }
-    }
-}
 
 data class PredictionResult(
     val predictedPrice: Int,
     val confidenceScore: Double,
     val region: String,
-    val timestamp: Long
+    val timestamp: Long,
 )
+
+/**
+ * Loads the shipped ONNX models with ONNX Runtime for Android. Both platforms
+ * load the identical `.onnx` files verified by the Python contract test — no
+ * TFLite/CoreML conversion step.
+ */
+@Singleton
+class MLModelService @Inject constructor(
+    @ApplicationContext private val context: Context,
+) {
+    @Volatile var isLoaded: Boolean = false
+        private set
+    @Volatile var loadingError: String? = null
+        private set
+
+    private var env: OrtEnvironment? = null
+    private val sessions = mutableMapOf<String, OrtSession>()
+    private val modelKeys = listOf("nationwide", "seoul", "busan", "gyeonggi", "daegu", "incheon")
+
+    private val regionMape = mapOf(
+        "seoul" to 0.0947, "busan" to 0.0948, "gyeonggi" to 0.0994,
+        "daegu" to 0.1094, "incheon" to 0.0950, "nationwide" to 0.8148,
+    )
+
+    /** Loads all models off the main thread. Safe to call once at startup. */
+    suspend fun load() = withContext(Dispatchers.IO) {
+        try {
+            val environment = OrtEnvironment.getEnvironment()
+            env = environment
+            modelKeys.forEach { key ->
+                context.assets.open("models/KR_${key}_lite.onnx").use { stream ->
+                    val bytes = stream.readBytes()
+                    sessions[key] = environment.createSession(bytes, OrtSession.SessionOptions())
+                }
+            }
+            check(sessions.containsKey("nationwide")) { "nationwide model missing" }
+            isLoaded = true
+        } catch (e: Exception) {
+            loadingError = "Model load failed: ${e.message}"
+        }
+    }
+
+    fun predict(input: PropertyInput, region: String?): PredictionResult? {
+        val key = region?.lowercase() ?: "nationwide"
+        val session = sessions[key] ?: sessions["nationwide"] ?: return null
+        val environment = env ?: return null
+
+        return try {
+            val vector = FeatureEngineering.buildVector(input)
+            val tensor = OnnxTensor.createTensor(
+                environment,
+                FloatBuffer.wrap(vector),
+                longArrayOf(1, vector.size.toLong()),
+            )
+            tensor.use { t ->
+                session.run(mapOf("float_input" to t)).use { output ->
+                    @Suppress("UNCHECKED_CAST")
+                    val raw = (output[0].value as Array<FloatArray>)[0][0]
+                    if (raw <= 0f) return null
+                    PredictionResult(
+                        predictedPrice = raw.toInt(),
+                        confidenceScore = (1.0 - (regionMape[key] ?: 0.5)).coerceIn(0.0, 1.0),
+                        region = region ?: "Nationwide",
+                        timestamp = System.currentTimeMillis(),
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            loadingError = "Inference failed: ${e.message}"
+            null
+        }
+    }
+}

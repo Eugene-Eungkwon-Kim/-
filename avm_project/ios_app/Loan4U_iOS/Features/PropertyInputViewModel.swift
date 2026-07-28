@@ -1,15 +1,14 @@
-import Combine
 import Foundation
 
 @MainActor
 final class PropertyInputViewModel: ObservableObject {
     @Published var property = PropertyInput()
-    @Published var selectedRegion: String?
+    @Published var selectedRegion: String? = "Seoul"
     @Published var isLoading = false
     @Published var predictionResult: PredictionResult?
 
-    @ObservedObject var modelService: MLModelService
-    @ObservedObject var cacheService: CacheService
+    private let modelService: MLModelService
+    private let cacheService: CacheService
 
     init(modelService: MLModelService, cacheService: CacheService) {
         self.modelService = modelService
@@ -17,40 +16,30 @@ final class PropertyInputViewModel: ObservableObject {
     }
 
     func predict() {
-        guard modelService.isLoaded else { return }
+        guard modelService.isLoaded, !isLoading else { return }
         isLoading = true
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
+        let input = property
+        let region = selectedRegion
 
-            let features = FeatureEngineering.buildFeatures(property: self.property)
+        if let hit = cacheService.cached(input, region: region) {
+            predictionResult = hit
+            isLoading = false
+            return
+        }
 
-            if let cached = self.cacheService.getCachedPrediction(for: features) {
-                await MainActor.run {
-                    self.predictionResult = cached.result
-                    self.isLoading = false
-                }
-                return
-            }
-
-            let result = self.modelService.predict(
-                features: features,
-                region: self.selectedRegion
-            )
-
-            await MainActor.run {
-                if let result = result {
-                    self.cacheService.cachePrediction(result, for: features)
-                    self.predictionResult = result
-                }
-                self.isLoading = false
-            }
+        Task { [weak self] in
+            guard let self else { return }
+            let result = self.modelService.predict(input, region: region)
+            if let result { self.cacheService.store(result, for: input, region: region) }
+            self.predictionResult = result
+            self.isLoading = false
         }
     }
 
-    func resetForm() {
+    func reset() {
         property = PropertyInput()
-        selectedRegion = nil
+        selectedRegion = "Seoul"
         predictionResult = nil
     }
 }

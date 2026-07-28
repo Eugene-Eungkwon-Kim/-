@@ -5,14 +5,15 @@ import androidx.lifecycle.viewModelScope
 import com.loan4u.data.PredictionDao
 import com.loan4u.data.PredictionEntity
 import com.loan4u.features.FeatureEngineering
-import com.loan4u.features.HouseType
 import com.loan4u.features.PropertyInput
 import com.loan4u.services.MLModelService
 import com.loan4u.services.PredictionResult
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 import javax.inject.Inject
 
@@ -24,7 +25,7 @@ class PropertyInputViewModel @Inject constructor(
     private val _property = MutableStateFlow(PropertyInput())
     val property: StateFlow<PropertyInput> = _property
 
-    private val _selectedRegion = MutableStateFlow<String?>(null)
+    private val _selectedRegion = MutableStateFlow<String?>("Seoul")
     val selectedRegion: StateFlow<String?> = _selectedRegion
 
     private val _isLoading = MutableStateFlow(false)
@@ -33,48 +34,29 @@ class PropertyInputViewModel @Inject constructor(
     private val _predictionResult = MutableStateFlow<PredictionResult?>(null)
     val predictionResult: StateFlow<PredictionResult?> = _predictionResult
 
-    fun updateProperty(property: PropertyInput) {
-        _property.value = property
-    }
-
-    fun setRegion(region: String?) {
-        _selectedRegion.value = region
-    }
+    fun updateProperty(property: PropertyInput) { _property.value = property }
+    fun setRegion(region: String?) { _selectedRegion.value = region }
 
     fun predict() {
+        if (!modelService.isLoaded || _isLoading.value) return
         _isLoading.value = true
+        val input = _property.value
+        val region = _selectedRegion.value
+
         viewModelScope.launch {
             try {
-                val features = FeatureEngineering.buildFeatures(_property.value)
-                val hash = hashFeatures(features)
-
-                val cached = predictionDao.getPredictionByHash(hash)
-                if (cached != null) {
-                    _predictionResult.value = PredictionResult(
-                        predictedPrice = cached.predictedPrice,
-                        confidenceScore = cached.confidenceScore,
-                        region = cached.region,
-                        timestamp = cached.timestamp,
-                    )
-                    _isLoading.value = false
+                val hash = cacheKey(input, region)
+                predictionDao.getPredictionByHash(hash)?.let { cached ->
+                    _predictionResult.value = cached.toResult()
                     return@launch
                 }
-
-                val result = modelService.predict(features, _selectedRegion.value)
+                val result = withContext(Dispatchers.Default) {
+                    modelService.predict(input, region)
+                }
                 if (result != null) {
                     _predictionResult.value = result
-                    predictionDao.insertPrediction(
-                        PredictionEntity(
-                            predictedPrice = result.predictedPrice,
-                            confidenceScore = result.confidenceScore,
-                            region = result.region,
-                            timestamp = result.timestamp,
-                            featuresHash = hash,
-                        )
-                    )
-
-                    val ttlMs = 86400000L
-                    predictionDao.deletePredictionsBefore(System.currentTimeMillis() - ttlMs)
+                    predictionDao.insertPrediction(result.toEntity(hash))
+                    predictionDao.deletePredictionsBefore(System.currentTimeMillis() - TTL_MS)
                 }
             } finally {
                 _isLoading.value = false
@@ -82,15 +64,31 @@ class PropertyInputViewModel @Inject constructor(
         }
     }
 
-    fun resetForm() {
+    fun reset() {
         _property.value = PropertyInput()
-        _selectedRegion.value = null
+        _selectedRegion.value = "Seoul"
         _predictionResult.value = null
     }
 
-    private fun hashFeatures(features: Map<String, Float>): String {
-        val str = features.toSortedMap().entries.joinToString(",") { "${it.key}:${it.value}" }
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(str.toByteArray()).joinToString("") { "%02x".format(it) }
+    private fun cacheKey(input: PropertyInput, region: String?): String {
+        val raw = "${region ?: "nationwide"}|${input.region}|${input.areaM2}|${input.yearBuilt}"
+        val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun PredictionEntity.toResult() =
+        PredictionResult(predictedPrice, confidenceScore, region, timestamp)
+
+    private fun PredictionResult.toEntity(hash: String) =
+        PredictionEntity(
+            predictedPrice = predictedPrice,
+            confidenceScore = confidenceScore,
+            region = region,
+            timestamp = timestamp,
+            featuresHash = hash,
+        )
+
+    private companion object {
+        const val TTL_MS = 86_400_000L
     }
 }
