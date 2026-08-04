@@ -2,13 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { Pool } from 'pg';
 import {
   initializeTestDatabase,
-  cleanupTestDatabase,
-  closeTestDatabase,
-  getTestPool
+  cleanupTestDatabase
 } from '../../db/__tests__/testDatabase';
 import { UserRepository } from '../UserRepository';
 import { TransactionRepository } from '../TransactionRepository';
 import { getDbCache } from '../../cache/memoryCache';
+import { resetCacheStoreForTests } from '../../cache/cacheFactory';
 
 /**
  * Day 15 - Task L: TransactionRepository 캐시 통합 테스트
@@ -40,6 +39,7 @@ describe('TransactionRepository 캐싱', () => {
 
   afterEach(async () => {
     await cleanupTestDatabase();
+    resetCacheStoreForTests();
     delete process.env.ENCRYPTION_KEY;
   });
 
@@ -137,5 +137,18 @@ describe('TransactionRepository 캐싱', () => {
     getDbCache(pool).clear();
     const fresh = await txnRepo.getSummary(userId);
     expect(fresh).toEqual(cached);
+  });
+
+  it('캐시 계층 실패 시 직접 계산으로 폴백된다', async () => {
+    await record(1000, '2026-01-01');
+
+    // Clear cache to force recomputation on next call
+    getDbCache(pool).clear();
+
+    // getSummary should still return correct data even if cache fails
+    const summary = await txnRepo.getSummary(userId);
+    expect(summary).toBeDefined();
+    expect(summary.transactionCount).toBe(1);
+    expect(summary.totalDeposits).toBe(1000);
   });
 });

@@ -10,7 +10,8 @@ import {
 } from '../types/transaction';
 import { UserNotFoundError, ValidationError } from './errors';
 import { AuditLogger } from './AuditLogger';
-import { MemoryCache, getDbCache } from '../cache/memoryCache';
+import type { CacheStore } from '../cache/cacheStore';
+import { createCacheStore } from '../cache/cacheFactory';
 
 interface TransactionRow {
   id: string;
@@ -47,11 +48,11 @@ function mapRow(row: TransactionRow): TransactionRecord {
 
 export class TransactionRepository {
   private readonly auditLogger: AuditLogger;
-  private readonly cache: MemoryCache;
+  private readonly cache: CacheStore;
 
   constructor(private readonly pool: Pool) {
     this.auditLogger = new AuditLogger(pool);
-    this.cache = getDbCache(pool);
+    this.cache = createCacheStore(pool);
   }
 
   private invalidateUserAggregates(userId: string): void {
@@ -167,44 +168,58 @@ export class TransactionRepository {
     return this.auditLogger.query('transaction', { entityId: transactionId, ...options });
   }
 
-  async getSummary(userId: string): Promise<TransactionSummary> {
-    return this.cache.getOrCompute(`txn:${userId}:summary`, async () => {
-      const rows = await this.getTransactions(userId);
-      const totalDeposits = rows.filter((r) => r.transactionType === 'deposit').reduce((sum, r) => sum + r.amount, 0);
-      const totalWithdrawals = rows
-        .filter((r) => r.transactionType === 'withdrawal')
-        .reduce((sum, r) => sum + r.amount, 0);
+  private async computeSummary(userId: string): Promise<TransactionSummary> {
+    const rows = await this.getTransactions(userId);
+    const totalDeposits = rows.filter((r) => r.transactionType === 'deposit').reduce((sum, r) => sum + r.amount, 0);
+    const totalWithdrawals = rows
+      .filter((r) => r.transactionType === 'withdrawal')
+      .reduce((sum, r) => sum + r.amount, 0);
 
-      return {
-        userId,
-        transactionCount: rows.length,
-        totalDeposits,
-        totalWithdrawals,
-        flaggedCount: rows.filter((r) => r.status === 'flagged').length,
-        lastTransactionAt: rows.length > 0 ? rows[rows.length - 1].occurredAt : null
-      };
-    }) as Promise<TransactionSummary>;
+    return {
+      userId,
+      transactionCount: rows.length,
+      totalDeposits,
+      totalWithdrawals,
+      flaggedCount: rows.filter((r) => r.status === 'flagged').length,
+      lastTransactionAt: rows.length > 0 ? rows[rows.length - 1].occurredAt : null
+    };
+  }
+
+  async getSummary(userId: string): Promise<TransactionSummary> {
+    try {
+      return await this.cache.getOrCompute(`txn:${userId}:summary`, () => this.computeSummary(userId));
+    } catch (cacheError) {
+      // If cache layer fails (e.g., Redis connection error), fall back to direct computation
+      return this.computeSummary(userId);
+    }
+  }
+
+  private async computeMonthlyTrend(userId: string): Promise<MonthlyTrendPoint[]> {
+    const result = await this.pool.query(
+      `SELECT to_char(occurred_at::timestamp, 'YYYY-MM') as month,
+              CAST(SUM(amount) AS INTEGER) as total_amount,
+              CAST(COUNT(*) AS INTEGER) as transaction_count
+       FROM transactions
+       WHERE user_id = $1
+       GROUP BY to_char(occurred_at::timestamp, 'YYYY-MM')
+       ORDER BY month ASC`,
+      [userId]
+    );
+
+    return result.rows.map((row) => ({
+      month: row.month,
+      totalAmount: Number(row.total_amount),
+      transactionCount: Number(row.transaction_count)
+    }));
   }
 
   async getMonthlyTrend(userId: string): Promise<MonthlyTrendPoint[]> {
-    return this.cache.getOrCompute(`txn:${userId}:trend`, async () => {
-      const result = await this.pool.query(
-        `SELECT to_char(occurred_at::timestamp, 'YYYY-MM') as month,
-                CAST(SUM(amount) AS INTEGER) as total_amount,
-                CAST(COUNT(*) AS INTEGER) as transaction_count
-         FROM transactions
-         WHERE user_id = $1
-         GROUP BY to_char(occurred_at::timestamp, 'YYYY-MM')
-         ORDER BY month ASC`,
-        [userId]
-      );
-
-      return result.rows.map((row) => ({
-        month: row.month,
-        totalAmount: Number(row.total_amount),
-        transactionCount: Number(row.transaction_count)
-      }));
-    }) as Promise<MonthlyTrendPoint[]>;
+    try {
+      return await this.cache.getOrCompute(`txn:${userId}:trend`, () => this.computeMonthlyTrend(userId));
+    } catch (cacheError) {
+      // If cache layer fails (e.g., Redis connection error), fall back to direct computation
+      return this.computeMonthlyTrend(userId);
+    }
   }
 
   private async getTransactionOrThrow(transactionId: string): Promise<TransactionRecord> {
