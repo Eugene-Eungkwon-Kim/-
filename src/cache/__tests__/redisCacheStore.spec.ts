@@ -4,9 +4,11 @@ import { RedisCacheStore } from '../redisCacheStore';
 describe('RedisCacheStore', () => {
   let store: RedisCacheStore;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
     store = new RedisCacheStore(redisUrl);
+    // Flush Redis to ensure test isolation - previous test data persists in Redis across instances
+    await store.flushdb();
   });
 
   afterEach(async () => {

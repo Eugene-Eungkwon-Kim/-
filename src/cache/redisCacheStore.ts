@@ -56,4 +56,8 @@ export class RedisCacheStore implements CacheStore {
   async disconnect(): Promise<void> {
     await this.client.quit();
   }
+
+  async flushdb(): Promise<void> {
+    await this.client.flushdb();
+  }
 }
