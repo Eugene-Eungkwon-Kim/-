@@ -71,7 +71,14 @@ jobs:
       run: pg_isready -h localhost -p 5432 -U postgres
 
     - name: Run full test suite
-      run: npm run test:ci 2>&1 | head -200
+      run: npm run test:ci
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-${{ matrix.node-version }}
+        path: test-results.xml
 
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3

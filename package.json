@@ -16,7 +16,7 @@
     "test:watch": "vitest watch",
     "test:debug": "vitest --inspect-brk --inspect --single-thread",
     "test:d09": "vitest run src/services/loan-service.spec.ts src/services/interest-calculator.spec.ts src/services/credit-assessment.spec.ts src/services/document-validator.spec.ts --coverage",
-    "test:ci": "vitest run --coverage --reporter=junit --outputFile=test-results.xml",
+    "test:ci": "vitest run --coverage --reporter=default --reporter=junit --outputFile=test-results.xml",
     "lint": "biome lint .",
     "format": "biome format .",
     "type-check": "tsc --noEmit",
