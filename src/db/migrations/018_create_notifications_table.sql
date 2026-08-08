@@ -6,8 +6,9 @@
 -- 애플리케이션 락이 필요 없다. 부작용으로 같은 날 warning → ok → warning 왕복 시
 -- 두 번째 warning은 삽입되지 않는데, 이는 경계값 근처 플래핑을 흡수하는 의도된 동작이다.
 --
--- 방언 주의: migrationRunner의 translateSqliteToPostgres()는 datetime('now')와
--- REAL 두 가지만 치환한다. 나머지는 SQLite/PostgreSQL 양쪽에서 그대로 유효해야 한다.
+-- 방언 주의: 마이그레이션 변환기는 타임스탬프 기본값과 부동소수 타입 두 가지만
+-- 치환한다. 나머지 구문은 SQLite/PostgreSQL 양쪽에서 그대로 유효해야 한다.
+-- (주석에도 SQLite 전용 토큰을 적지 않는다 — 스키마 검사기가 실제 구문으로 오인한다.)
 CREATE TABLE notifications (
   id            TEXT PRIMARY KEY,
   user_id       TEXT NOT NULL REFERENCES users(id),

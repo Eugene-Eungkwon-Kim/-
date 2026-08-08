@@ -195,12 +195,33 @@ describe('Query Optimization & Indexing (Day 5 - Task 6: 쿼리 최적화 & 인�
 
     it('[T-API-A36] 연체 감지 쿼리가 복합 인덱스(status, next_payment_date)를 사용한다', async () => {
       const userId = (await users.register({ email: 'delinquent-index@example.com', name: 'Delinquent Index User' })).id;
-      await loans.registerLoan({ userId, productId: 'p1', originalAmount: 50000000, interestRate: 3.2, termMonths: 60, startDate: '2020-01-01' });
+
+      // 통계 없이 행이 몇 개뿐이면 플래너는 기본 추정값으로 판단해 엉뚱한 인덱스
+      // (예: (user_id, status))를 고른다. 어떤 인덱스가 이 쿼리를 실제로 잘 서빙하는지
+      // 검증하려면 선택도를 판단할 만한 데이터와 통계가 있어야 한다.
+      const values: string[] = [];
+      const params: unknown[] = [userId];
+      for (let i = 0; i < 400; i++) {
+        const status = i % 2 === 0 ? 'active' : 'closed';
+        const nextPayment = `20${20 + (i % 10)}-0${(i % 9) + 1}-01`;
+        const base = params.length;
+        params.push(`loan-idx-${i}`, status, nextPayment);
+        values.push(
+          `($${base + 1}, $1, 'p1', $${base + 2}, 50000000, 50000000, 3.2, 60, '2020-01-01', '2025-01-01', 900000, $${base + 3}, 0, 0, '2020-01-01 00:00:00', '2020-01-01 00:00:00')`
+        );
+      }
+      await pool.query(
+        `INSERT INTO loans (id, user_id, product_id, status, original_amount, current_balance, interest_rate,
+           term_months, start_date, maturity_date, monthly_payment, next_payment_date, total_paid,
+           total_interest_paid, created_at, updated_at) VALUES ${values.join(', ')}`,
+        params
+      );
+      await pool.query('ANALYZE loans');
 
       const plan = await queryPlanText(
         pool,
         "SELECT * FROM loans WHERE status = 'active' AND next_payment_date < $1",
-        ['2026-07-01']
+        ['2021-01-01']
       );
 
       expect(plan).toContain('idx_loans_status_next_payment');
