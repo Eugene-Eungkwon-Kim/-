@@ -2,7 +2,9 @@ import {
   DuplicateEmailError,
   InvalidCredentialsError,
   InvalidRefreshTokenError,
+  NotificationNotFoundError,
   OptimisticLockError,
+  SnapshotNotFoundError,
   UserNotFoundError,
   ValidationError
 } from '../repositories/errors';
@@ -32,7 +34,9 @@ const ERROR_CODE_MAP: [ErrorConstructor, string][] = [
   [TransactionNotFoundError, 'TRANSACTION_NOT_FOUND'],
   [BackupNotFoundError, 'BACKUP_NOT_FOUND'],
   [InvalidCredentialsError, 'INVALID_CREDENTIALS'],
-  [InvalidRefreshTokenError, 'INVALID_REFRESH_TOKEN']
+  [InvalidRefreshTokenError, 'INVALID_REFRESH_TOKEN'],
+  [SnapshotNotFoundError, 'SNAPSHOT_NOT_FOUND'],
+  [NotificationNotFoundError, 'NOTIFICATION_NOT_FOUND']
 ];
 
 export function mapErrorToCode(error: unknown): { code: string; message: string } {

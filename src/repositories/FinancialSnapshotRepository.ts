@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool } from 'pg';
+import { SnapshotNotFoundError } from './errors';
 import {
   FinancialSnapshotRecord,
+  MetricEvaluation,
   PerformanceComparison,
   RecordSnapshotInput,
   ThresholdAlert,
@@ -11,7 +13,7 @@ import {
   TrendPoint
 } from '../types/financialSnapshot';
 
-interface SnapshotRow {
+export interface SnapshotRow {
   id: string;
   user_id: string;
   snapshot_date: string;
@@ -102,6 +104,29 @@ const THRESHOLD_RULES: ThresholdRule[] = [
     isCritical: (v) => v > 0.8
   }
 ];
+
+/**
+ * THRESHOLD_RULES 전체를 평가한다 — 위반하지 않은 지표도 severity:'ok'로 포함한다
+ * (Phase 15 - Section 2, B-2).
+ *
+ * checkThresholds()는 위반 항목만 돌려주므로, "경고가 해소됐다"는 전이를 감지할 수
+ * 없다. 해소를 알리려면 정상으로 돌아온 지표의 현재 값도 필요하기 때문에 규칙 평가를
+ * 순수 함수로 분리한다. checkThresholds()는 이 함수의 결과를 필터링하는 래퍼가 되며,
+ * 기존 호출자의 동작은 바뀌지 않는다.
+ */
+export function evaluateSnapshotThresholds(row: SnapshotRow): MetricEvaluation[] {
+  return THRESHOLD_RULES.map((rule) => {
+    const value = row[rule.column] as number;
+    if (rule.isCritical(value)) {
+      return { metric: rule.metric, value, threshold: rule.criticalThreshold, severity: 'critical' as const, date: row.snapshot_date };
+    }
+    if (rule.isWarning(value)) {
+      return { metric: rule.metric, value, threshold: rule.warningThreshold, severity: 'warning' as const, date: row.snapshot_date };
+    }
+    // 정상 지표는 "여기를 넘으면 경고"인 값을 임계값으로 함께 보고한다.
+    return { metric: rule.metric, value, threshold: rule.warningThreshold, severity: 'ok' as const, date: row.snapshot_date };
+  });
+}
 
 export class FinancialSnapshotRepository {
   constructor(private readonly pool: Pool) {}
@@ -206,31 +231,36 @@ export class FinancialSnapshotRepository {
     return { metric, points, direction, changeFromFirst };
   }
 
-  async checkThresholds(userId: string): Promise<ThresholdAlert[]> {
+  /** 최신 스냅샷 원본 1행. 알림 판정이 스냅샷을 한 번만 읽도록 노출한다 (B-4). */
+  async getLatestSnapshotRow(userId: string): Promise<SnapshotRow | null> {
     const result = await this.pool.query(
       'SELECT * FROM financial_snapshots WHERE user_id = $1 ORDER BY snapshot_date DESC LIMIT 1',
       [userId]
     );
-    const latest = result.rows[0] as SnapshotRow | undefined;
+    return (result.rows[0] as SnapshotRow | undefined) ?? null;
+  }
+
+  async checkThresholds(userId: string): Promise<ThresholdAlert[]> {
+    const latest = await this.getLatestSnapshotRow(userId);
     if (!latest) return [];
 
-    const alerts: ThresholdAlert[] = [];
-    for (const rule of THRESHOLD_RULES) {
-      const value = latest[rule.column] as number;
-      if (rule.isCritical(value)) {
-        alerts.push({ metric: rule.metric, date: latest.snapshot_date, value, threshold: rule.criticalThreshold, severity: 'critical' });
-      } else if (rule.isWarning(value)) {
-        alerts.push({ metric: rule.metric, date: latest.snapshot_date, value, threshold: rule.warningThreshold, severity: 'warning' });
-      }
-    }
-    return alerts;
+    return evaluateSnapshotThresholds(latest)
+      .filter((e) => e.severity !== 'ok')
+      .map((e) => ({
+        metric: e.metric,
+        date: e.date,
+        value: e.value,
+        threshold: e.threshold,
+        severity: e.severity as 'warning' | 'critical'
+      }));
   }
 
   async comparePerformance(userId: string, fromDate: string, toDate: string): Promise<PerformanceComparison[]> {
     const from = await this.getSnapshotByDate(userId, fromDate);
     const to = await this.getSnapshotByDate(userId, toDate);
     if (!from || !to) {
-      throw new Error(`Snapshot not found for comparison (from=${fromDate}, to=${toDate})`);
+      // 어느 쪽이 없는지 알려준다 — 둘 다 없으면 fromDate를 먼저 보고한다.
+      throw new SnapshotNotFoundError(userId, !from ? fromDate : toDate);
     }
 
     const metrics: TrendMetric[] = ['creditScore', 'financialHealthScore', 'riskScore', 'monthlySurplus'];

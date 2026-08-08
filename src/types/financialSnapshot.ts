@@ -56,3 +56,19 @@ export interface PerformanceComparison {
   change: number;
   changePercent: number;
 }
+
+/**
+ * 임계값 평가 결과 (Phase 15 - Section 2, B-2).
+ * ThresholdAlert와 달리 위반하지 않은 지표도 severity:'ok'로 포함해,
+ * 알림 상태 전이(특히 "해소")를 판정할 수 있게 한다.
+ */
+export type MetricSeverity = 'ok' | 'warning' | 'critical';
+
+export interface MetricEvaluation {
+  metric: string;
+  value: number;
+  /** 현재 등급에 해당하는 임계값. 'ok'면 경고 임계값을 보고한다. */
+  threshold: number;
+  severity: MetricSeverity;
+  date: string;
+}

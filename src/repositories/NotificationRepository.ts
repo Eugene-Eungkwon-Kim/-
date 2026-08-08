@@ -1,0 +1,125 @@
+import { randomUUID } from 'node:crypto';
+import type { Pool } from 'pg';
+import { NotificationNotFoundError } from './errors';
+import {
+  CreateNotificationInput,
+  ListNotificationsOptions,
+  NotificationRecord,
+  NotificationSeverity,
+  buildDedupeKey
+} from '../types/notification';
+
+interface NotificationRow {
+  id: string;
+  user_id: string;
+  metric: string;
+  severity: NotificationSeverity;
+  value: number;
+  threshold: number;
+  snapshot_date: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+function mapRow(row: NotificationRow): NotificationRecord {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    metric: row.metric,
+    severity: row.severity,
+    // PostgreSQL DOUBLE PRECISION은 pg 드라이버가 number로 주지만, NUMERIC 계열로
+    // 바뀌더라도 문자열이 넘어오지 않도록 방어한다.
+    value: Number(row.value),
+    threshold: Number(row.threshold),
+    snapshotDate: row.snapshot_date,
+    readAt: row.read_at,
+    createdAt: row.created_at
+  };
+}
+
+export class NotificationRepository {
+  constructor(private readonly pool: Pool) {}
+
+  /**
+   * 이미 같은 (user, metric, severity, date) 알림이 있으면 삽입하지 않고 null을 돌려준다.
+   * 호출자는 null일 때 발행(publish)하지 않는다 — 이 한 가지 규칙으로 다중 인스턴스
+   * 중복 발송이 DB 층에서 막힌다.
+   */
+  async insertIfNew(input: CreateNotificationInput): Promise<NotificationRecord | null> {
+    const id = randomUUID();
+    const result = await this.pool.query(
+      `INSERT INTO notifications (id, user_id, metric, severity, value, threshold, snapshot_date, dedupe_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (dedupe_key) DO NOTHING
+       RETURNING *`,
+      [id, input.userId, input.metric, input.severity, input.value, input.threshold, input.snapshotDate, buildDedupeKey(input)]
+    );
+
+    const row = result.rows[0] as NotificationRow | undefined;
+    return row ? mapRow(row) : null;
+  }
+
+  /**
+   * 지표별 가장 최근 알림의 등급. 상태 전이 판정의 좌변이 된다.
+   *
+   * 지표는 THRESHOLD_RULES 기준 4개로 상한이 있으므로, 윈도 함수를 쓰지 않고
+   * 정렬된 목록을 훑으며 지표별 첫 항목만 취한다 — idx_notifications_user_metric와
+   * 맞물려 단순하고 충분히 빠르다.
+   */
+  async getLatestStateByMetric(userId: string): Promise<Map<string, NotificationSeverity>> {
+    const result = await this.pool.query(
+      `SELECT metric, severity FROM notifications
+       WHERE user_id = $1
+       ORDER BY created_at DESC, id DESC`,
+      [userId]
+    );
+
+    const latest = new Map<string, NotificationSeverity>();
+    for (const row of result.rows as { metric: string; severity: NotificationSeverity }[]) {
+      if (!latest.has(row.metric)) latest.set(row.metric, row.severity);
+    }
+    return latest;
+  }
+
+  async list(userId: string, options: ListNotificationsOptions = {}): Promise<NotificationRecord[]> {
+    const conditions = ['user_id = $1'];
+    const params: unknown[] = [userId];
+
+    if (options.unreadOnly) conditions.push('read_at IS NULL');
+
+    let sql = `SELECT * FROM notifications WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC, id DESC`;
+    if (options.limit !== undefined) {
+      params.push(options.limit);
+      sql += ` LIMIT $${params.length}`;
+    }
+
+    const result = await this.pool.query(sql, params);
+    return (result.rows as NotificationRow[]).map(mapRow);
+  }
+
+  async countUnread(userId: string): Promise<number> {
+    const result = await this.pool.query(
+      'SELECT COUNT(*) as count FROM notifications WHERE user_id = $1 AND read_at IS NULL',
+      [userId]
+    );
+    return Number((result.rows[0] as { count: string }).count);
+  }
+
+  /**
+   * user_id를 WHERE에 포함해, 타인의 알림 id를 넘겨도 "없음"으로 처리한다 —
+   * 존재 여부로 남의 알림 id를 탐지할 수 없게 한다.
+   */
+  async markRead(userId: string, notificationId: string): Promise<NotificationRecord> {
+    const result = await this.pool.query(
+      `UPDATE notifications
+       SET read_at = to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS')
+       WHERE id = $1 AND user_id = $2
+       RETURNING *`,
+      [notificationId, userId]
+    );
+
+    const row = result.rows[0] as NotificationRow | undefined;
+    if (!row) throw new NotificationNotFoundError(notificationId);
+    return mapRow(row);
+  }
+}

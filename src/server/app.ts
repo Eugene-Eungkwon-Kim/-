@@ -13,17 +13,24 @@ import { applyForLoan, detectDelinquentLoans, getLoanPortfolio, getLoanPortfolio
 import { issueRefreshToken, revokeRefreshToken, verifyCredentials, verifyRefreshToken } from '../api/authService';
 import {
   CreditSimulationRequest,
+  compareSnapshotPerformance,
   getSnapshotTrend,
   runCreditSimulation,
   runFinancialAnalysis,
   runRiskAssessment
 } from '../api/financialAnalyticsService';
 import {
+  getTransactionAuditLog,
   getTransactionHistory,
+  getTransactionMonthlyTrend,
   getTransactionSummary,
   recordTransaction,
   rescanAnomalies
 } from '../api/transactionService';
+import { getDashboard } from '../api/dashboardService';
+import { createNotificationHub, type NotificationHub } from '../notifications/notificationHub';
+import { registerNotificationRoutes } from './notificationRoutes';
+import { createCacheStore } from '../cache/cacheFactory';
 import { checkBackupDue, createBackup, listBackups, pruneOldBackups, runIntegrityCheck, verifyBackup } from '../api/adminService';
 import { ServiceResult } from '../api/errorMapping';
 import { TrendMetric } from '../types/financialSnapshot';
@@ -36,6 +43,8 @@ import { openAPISchemas, routeSchemas } from './openapi-schemas';
 export interface BuildServerOptions {
   jwtSecret?: string;
   backupDir?: string;
+  /** 미지정 시 REDIS_URL 유무로 결정된다. 테스트는 메모리 허브를 주입해 격리한다. */
+  notificationHub?: NotificationHub;
 }
 
 const DEFAULT_BACKUP_DIR = path.join(process.cwd(), 'data', 'backups');
@@ -50,7 +59,11 @@ const PUBLIC_ROUTES: Array<[string, string]> = [
   ['POST', '/api/auth/login'],
   ['POST', '/api/auth/refresh'],
   ['POST', '/api/auth/logout'],
-  ['POST', '/api/users']
+  ['POST', '/api/users'],
+  // SSE 스트림은 EventSource가 Authorization 헤더를 못 붙이므로 JWT 대신
+  // 1회용 티켓으로 인증한다. 인증 훅이 쿼리스트링을 제거한 뒤 비교하므로
+  // ?ticket=... 이 붙어도 이 항목과 정확히 매칭된다.
+  ['GET', '/api/notifications/stream']
 ];
 
 /**
@@ -68,6 +81,8 @@ const STATUS_BY_ERROR_CODE: Record<string, number> = {
   LOAN_NOT_FOUND: 404,
   TRANSACTION_NOT_FOUND: 404,
   BACKUP_NOT_FOUND: 404,
+  SNAPSHOT_NOT_FOUND: 404,
+  NOTIFICATION_NOT_FOUND: 404,
   OVERPAYMENT: 400,
   INVALID_CREDENTIALS: 401,
   INVALID_REFRESH_TOKEN: 401,
@@ -114,6 +129,12 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   // buildServer() 호출(테스트 등)을 위한 안전망일 뿐이다.
   const jwtSecret = options.jwtSecret ?? resolveServerEnv().jwtSecret;
   const backupDir = options.backupDir ?? DEFAULT_BACKUP_DIR;
+
+  // Phase 15 - Section 2: 알림 팬아웃 허브와 SSE 티켓 저장소.
+  // 티켓을 프로세스 메모리에 두면 발급 인스턴스와 스트림 인스턴스가 달라질 때
+  // 실패하므로, 0b에서 안정화한 CacheStore(프로덕션=Redis)를 그대로 쓴다.
+  const notificationHub = options.notificationHub ?? createNotificationHub();
+  const cache = createCacheStore(pool);
 
   // Day 11 - Task 3 (δ=915): 구조화된 로깅 활성화 (pino 기반)
   // Fastify의 내장 pino 통합: true면 기본 pino, 객체면 pino 옵션으로 간주
@@ -440,14 +461,14 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   app.post('/api/analytics/risk-assessment', async (request, reply) => {
     const body = request.body as { userId: string; snapshotDate: string };
     if (!isOwner(request, body.userId)) return forbidden(reply);
-    const result = await runRiskAssessment(pool, body.userId, body.snapshotDate);
+    const result = await runRiskAssessment(pool, body.userId, body.snapshotDate, notificationHub);
     respond(reply, result);
   });
 
   app.post('/api/analytics/financial-analysis', async (request, reply) => {
     const body = request.body as { userId: string; snapshotDate: string };
     if (!isOwner(request, body.userId)) return forbidden(reply);
-    const result = await runFinancialAnalysis(pool, body.userId, body.snapshotDate);
+    const result = await runFinancialAnalysis(pool, body.userId, body.snapshotDate, notificationHub);
     respond(reply, result);
   });
 
@@ -482,6 +503,45 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, await rescanAnomalies(pool, userId));
+  });
+
+  // Phase 15 - Section 3 (A-3): 이미 구현·테스트됐지만 라우트가 없어 외부에서
+  // 호출할 수 없던 서비스 3종을 노출한다. 신규 비즈니스 로직은 없다.
+  app.get('/api/users/:userId/transactions/trend', async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
+    respond(reply, await getTransactionMonthlyTrend(pool, userId));
+  });
+
+  app.post('/api/users/:userId/snapshots/compare', async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
+    const { fromDate, toDate } = request.body as { fromDate: string; toDate: string };
+    respond(reply, await compareSnapshotPerformance(pool, userId, fromDate, toDate));
+  });
+
+  // 감사 로그는 transactionId가 선택 인자라 생략하면 전체 거래가 반환된다.
+  // 소유권 개념이 성립하지 않으므로 기존 /api/admin/audit-logs 계열과 같이 isAdmin.
+  app.get('/api/admin/transactions/audit-log', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const { transactionId, from, to } = request.query as { transactionId?: string; from?: string; to?: string };
+    respond(reply, await getTransactionAuditLog(pool, transactionId, { from, to }));
+  });
+
+  // Phase 15 - Section 3 (A-4): 대시보드 초기 로드를 1회 요청으로 묶는다.
+  app.get('/api/users/:userId/dashboard', async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
+    respond(reply, await getDashboard(pool, userId));
+  });
+
+  // Phase 15 - Section 2 (B-6): 알림 조회 + SSE 스트림
+  registerNotificationRoutes(app, { pool, cache, hub: notificationHub, isOwner, forbidden, respond });
+
+  // 허브가 Redis 연결을 들고 있으므로 서버 종료 시 반드시 닫는다 —
+  // 닫지 않으면 열린 핸들이 남아 vitest가 종료되지 않는다.
+  app.addHook('onClose', async () => {
+    await notificationHub.close();
   });
 
   // Day 10 - Task 4 (δ=1065): adminService.ts도 HTTP로 노출한다. isOwner가 아니라
