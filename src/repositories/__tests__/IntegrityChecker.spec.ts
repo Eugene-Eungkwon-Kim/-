@@ -49,10 +49,12 @@ describe('IntegrityChecker (Day 5 - Task 5: 데이터 검증 & 무결성, δ=160
     });
 
     it('[T-API-A26] 입력 검증 (타입, 범위)', async () => {
-      expect(() => users.register({ email: 'not-an-email', name: 'Bad Email' })).toThrow(ValidationError);
-      expect(() =>
+      // register는 async이므로 expect(fn).toThrow()로는 잡히지 않는다 —
+      // 거부된 프로미스가 미처리로 남아 다른 테스트까지 오염시킨다.
+      await expect(users.register({ email: 'not-an-email', name: 'Bad Email' })).rejects.toThrow(ValidationError);
+      await expect(
         users.register({ email: 'ok@example.com', name: 'X', financialSnapshot: { monthlyIncome: -1 } })
-      ).toThrow(ValidationError);
+      ).rejects.toThrow(ValidationError);
 
       await expect(
         loans.registerLoan({

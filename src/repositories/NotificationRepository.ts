@@ -47,9 +47,14 @@ export class NotificationRepository {
    */
   async insertIfNew(input: CreateNotificationInput): Promise<NotificationRecord | null> {
     const id = randomUUID();
+    // created_at의 컬럼 기본값은 초 단위라, 같은 초에 기록된 두 알림의 선후를
+    // 구분할 수 없다. getLatestStateByMetric이 그 순서에 의존하므로(전이 판정의
+    // 좌변) 초 단위로는 등급이 뒤바뀌어 알림이 잘못 억제되거나 중복될 수 있다.
+    // now()는 트랜잭션 시작 시각으로 고정되므로 매 호출마다 진행하는
+    // clock_timestamp()를 마이크로초까지 기록한다.
     const result = await this.pool.query(
-      `INSERT INTO notifications (id, user_id, metric, severity, value, threshold, snapshot_date, dedupe_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO notifications (id, user_id, metric, severity, value, threshold, snapshot_date, dedupe_key, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, to_char(clock_timestamp() AT TIME ZONE 'utc', 'YYYY-MM-DD HH24:MI:SS.US'))
        ON CONFLICT (dedupe_key) DO NOTHING
        RETURNING *`,
       [id, input.userId, input.metric, input.severity, input.value, input.threshold, input.snapshotDate, buildDedupeKey(input)]
