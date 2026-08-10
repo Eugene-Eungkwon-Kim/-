@@ -15,6 +15,7 @@
     --chip-fix: #fee2e2;  --chip-fix-text: #b91c1c;
     --chip-feat: #dcfce7; --chip-feat-text: #15803d;
     --chip-docs: #e0e7ff; --chip-docs-text: #4338ca;
+    --chip-chore: #f1f5f9; --chip-chore-text: #475569;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -27,6 +28,7 @@
       --chip-fix: #3b1d1d;  --chip-fix-text: #f87171;
       --chip-feat: #16301f; --chip-feat-text: #4ade80;
       --chip-docs: #20244a; --chip-docs-text: #a5b4fc;
+      --chip-chore: #262b36; --chip-chore-text: #94a3b8;
     }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -65,6 +67,7 @@
   .chip.fix  { background: var(--chip-fix);  color: var(--chip-fix-text); }
   .chip.feat { background: var(--chip-feat); color: var(--chip-feat-text); }
   .chip.docs { background: var(--chip-docs); color: var(--chip-docs-text); }
+  .chip.chore { background: var(--chip-chore); color: var(--chip-chore-text); }
   .card h2 { font-size: 1rem; flex: 1; min-width: 0; }
   .commit {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -94,6 +97,46 @@
   <h1>📱 코드 업데이트 이력</h1>
   <p>모바일 기기 데이터 마이그레이션 &amp; 정리 도구 — 수정 작업 최신순 리스팅</p>
 </header>
+
+<section class="date-group">
+  <div class="date-label">2026-08-10</div>
+
+  <article class="card">
+    <div class="card-head">
+      <span class="chip feat">기능 추가</span>
+      <h2>통합 실행 스크립트</h2>
+      <span class="commit">d6acea2</span>
+    </div>
+    <ul>
+      <li><code>run.py</code> 신규 추가 — 네 스크립트를 서브명령 하나로 실행</li>
+      <li><code>organize</code> / <code>migrate</code> / <code>iphone</code> / <code>realestate</code> 서브명령 제공</li>
+      <li>각 스크립트의 옵션(<code>--dry-run</code>, <code>--android</code> 등)을 그대로 전달</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <span class="chip feat">기능 추가</span>
+      <h2>부동산 실거래가 수집 스크립트</h2>
+      <span class="commit">7d2d88d</span>
+    </div>
+    <ul>
+      <li><code>fetch_realestate.py</code> 신규 추가 (Loan4u / AVM 용)</li>
+      <li>국토교통부 아파트 매매 실거래가 API(data.go.kr) 연동</li>
+      <li>지역코드 + 기간 범위를 월별로 순회 조회</li>
+      <li>한글 컬럼 CSV(<code>utf-8-sig</code>) 저장, 거래금액 정규화</li>
+      <li>인증키는 <code>--key</code> 또는 환경변수 <code>DATA_GO_KR_KEY</code></li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <span class="chip chore">정리</span>
+      <h2>scratchpad 임시 디렉토리 gitignore 추가</h2>
+      <span class="commit">4256316</span>
+    </div>
+  </article>
+</section>
 
 <section class="date-group">
   <div class="date-label">2026-06-18</div>
@@ -177,7 +220,7 @@
 </section>
 
 <footer>
-  전체 상세 이력: <a href="CHANGELOG.md">CHANGELOG.md</a> · 최종 갱신 2026-07-06
+  전체 상세 이력: <a href="CHANGELOG.md">CHANGELOG.md</a> · 최종 갱신 2026-08-10
 </footer>
 </body>
 </html>

@@ -4,13 +4,23 @@
 
 ---
 
-## 📋 세 가지 스크립트
+## 📋 스크립트 구성
 
 | 스크립트 | 용도 | 대상 |
 |----------|------|------|
+| `run.py` | **통합 실행기** (아래 스크립트를 서브명령으로 실행) | 전체 |
 | `organize.py` | 기본 파일 정리 | 모든 기기 (일반) |
 | `migrate.py` | 모바일 마이그레이션 | Android (ADB) 또는 로컬 폴더 |
 | `iphone_migrate.py` | iPhone 전용 | iPhone 13 Pro (HEIC, Live Photo 지원) |
+| `fetch_realestate.py` | 부동산 실거래가 수집 | data.go.kr API (Loan4u / AVM) |
+
+### 통합 실행기 사용 (`run.py`)
+```bash
+python run.py iphone     ~/Desktop/iPhone_내보내기 ~/Desktop/정리결과
+python run.py migrate    --android ./정리결과
+python run.py organize   ~/Downloads/phone_files ./정리결과
+python run.py realestate --lawd 11680 --start 202401 --end 202406
+```
 
 ---
 

@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-08-10
+
+### 🎛️ 통합 실행 스크립트 추가 (`d6acea2`)
+- `run.py` 신규 추가 — 네 개 스크립트를 서브명령 하나로 실행
+- `organize` / `migrate` / `iphone` / `realestate` 서브명령 제공
+- 각 스크립트의 옵션(`--dry-run`, `--android`, `--source` 등)을 그대로 전달
+
+### 🏢 부동산 실거래가 수집 스크립트 추가 (`7d2d88d`)
+- `fetch_realestate.py` 신규 추가 (Loan4u / AVM 용)
+- 국토교통부 아파트 매매 실거래가 API(data.go.kr) 연동
+- 지역코드(`--lawd`) + 기간(`--start`~`--end`) 범위 월별 순회 조회
+- 결과를 한글 컬럼 CSV(`utf-8-sig`)로 저장, 거래금액 콤마 제거 정규화
+- 인증키는 `--key` 또는 환경변수 `DATA_GO_KR_KEY`로 지정
+- 월별 요청 간 대기(`--delay`, 기본 0.3초) 및 네트워크·응답 오류 개별 처리
+
+### 🧹 scratchpad 임시 디렉토리 gitignore 추가 (`4256316`)
+
 ## 2026-06-18
 
 ### 📖 종합 README 작성 (`ae5f9c1`)
@@ -41,3 +58,7 @@
 - 파일명 `YYYYMMDD_HHMMSS_원본이름` 형식 통일, MD5 해시 기반 중복 제거
 - EXIF 촬영일 기준 정렬 (Pillow 설치 시)
 - 테스트 결과물 gitignore 추가
+
+---
+
+*최종 갱신: 2026-08-10*
