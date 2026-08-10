@@ -6,8 +6,7 @@ import {
 } from '../../db/__tests__/testDatabase';
 import { UserRepository } from '../UserRepository';
 import { TransactionRepository } from '../TransactionRepository';
-import { getDbCache } from '../../cache/memoryCache';
-import { resetCacheStoreForTests } from '../../cache/cacheFactory';
+import { createCacheStore, resetCacheStoreForTests } from '../../cache/cacheFactory';
 
 /**
  * Day 15 - Task L: TransactionRepository 캐시 통합 테스트
@@ -49,11 +48,14 @@ describe('TransactionRepository 캐싱', () => {
 
   it('getSummary 반복 호출은 캐시 히트로 처리된다', async () => {
     await record(1000);
-    const statsBefore = getDbCache(pool).stats();
+    // 리포지토리가 실제로 쓰는 스토어를 통해 확인한다. 메모리 캐시를 직접 들여다보면
+    // REDIS_URL이 설정된 환경(CI)에서는 리포지토리가 Redis를 쓰므로 항상 0으로 보인다.
+    const store = createCacheStore(pool);
+    const statsBefore = await store.stats();
     await txnRepo.getSummary(userId); // miss → 계산 후 캐시
     await txnRepo.getSummary(userId); // hit
     await txnRepo.getSummary(userId); // hit
-    const statsAfter = getDbCache(pool).stats();
+    const statsAfter = await store.stats();
     expect(statsAfter.hits - statsBefore.hits).toBeGreaterThanOrEqual(2);
   });
 
@@ -114,9 +116,9 @@ describe('TransactionRepository 캐싱', () => {
 
     // userId에만 쓰기 → other의 캐시는 유지되어야 한다
     await record(2000);
-    const cache = getDbCache(pool);
-    expect(cache.get(`txn:${userId}:summary`)).toBeUndefined();
-    expect(cache.get(`txn:${otherId}:summary`)).toBeDefined();
+    const cache = createCacheStore(pool);
+    expect(await cache.get(`txn:${userId}:summary`)).toBeUndefined();
+    expect(await cache.get(`txn:${otherId}:summary`)).toBeDefined();
   });
 
   it('같은 DB를 쓰는 새 리포지토리 인스턴스도 캐시를 공유한다', async () => {
@@ -124,9 +126,10 @@ describe('TransactionRepository 캐싱', () => {
     await txnRepo.getSummary(userId); // 캐시 적재
 
     const anotherRepo = new TransactionRepository(pool);
-    const statsBefore = getDbCache(pool).stats();
+    const store = createCacheStore(pool);
+    const statsBefore = await store.stats();
     await anotherRepo.getSummary(userId);
-    expect(getDbCache(pool).stats().hits).toBe(statsBefore.hits + 1);
+    expect((await store.stats()).hits).toBe(statsBefore.hits + 1);
   });
 
   it('캐시된 요약과 비캐시 재계산 결과가 일치한다', async () => {
@@ -134,7 +137,7 @@ describe('TransactionRepository 캐싱', () => {
     await record(3000, '2026-02-01');
     const cached = await txnRepo.getSummary(userId);
 
-    getDbCache(pool).clear();
+    await createCacheStore(pool).deleteByPrefix('txn:');
     const fresh = await txnRepo.getSummary(userId);
     expect(fresh).toEqual(cached);
   });
@@ -143,7 +146,7 @@ describe('TransactionRepository 캐싱', () => {
     await record(1000, '2026-01-01');
 
     // Clear cache to force recomputation on next call
-    getDbCache(pool).clear();
+    await createCacheStore(pool).deleteByPrefix('txn:');
 
     // getSummary should still return correct data even if cache fails
     const summary = await txnRepo.getSummary(userId);
