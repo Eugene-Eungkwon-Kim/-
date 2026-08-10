@@ -57,12 +57,17 @@ export default defineConfig({
         // 실제 서버/CLI 실행으로 검증한다 (이 세션 전반의 curl/Playwright 검증 패턴)
         'src/server/index.ts',
         'src/db/migrate-cli.ts',
+        // 프로덕션 커넥션 배선 — 테스트는 testDatabase.ts의 자체 풀을 쓰므로 이
+        // 파일에서 실제로 참조되는 건 MIGRATIONS_DIR 상수뿐이고 함수는 호출되지
+        // 않는다(functions 0%). server/index.ts와 같은 부트스트랩 범주다.
+        'src/db/connection.ts',
         // Day7에서 사용자가 명시적으로 선택한 "최소 데모" 범위의 UI 컴포넌트 —
         // 각 Day 완료 시 Playwright로 수동 검증되며, 별도 프론트엔드 테스트
         // 인프라(@testing-library 등)는 이 세션의 DB중심/유지보수 우선순위 밖
         'src/App.tsx',
         // 타입 전용 파일 — 런타임 코드가 없어 v8 provider가 0/0 statement를
         // 0%로 집계, perFile threshold를 항상 위반한다 (실제 로직 없음이 원인)
+        'src/cache/cacheStore.ts',
         'src/types/backup.ts',
         'src/types/credit.ts',
         'src/types/financialSnapshot.ts',
