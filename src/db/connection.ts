@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
 import { applyMigrationsAsync } from './migrationRunner';
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));

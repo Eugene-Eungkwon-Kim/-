@@ -5,6 +5,7 @@ import type { CacheStore } from '../cache/cacheStore';
 import type { NotificationHub } from '../notifications/notificationHub';
 import { NotificationRepository } from '../repositories/NotificationRepository';
 import { ServiceResult, toServiceResultAsync } from '../api/errorMapping';
+import { routeSchemas } from './openapi-schemas';
 import type { NotificationRecord } from '../types/notification';
 
 /**
@@ -55,7 +56,7 @@ export interface NotificationRouteDeps {
 export function registerNotificationRoutes(app: FastifyInstance, deps: NotificationRouteDeps): void {
   const { pool, cache, hub, isOwner, forbidden, respond } = deps;
 
-  app.get('/api/users/:userId/notifications', async (request, reply) => {
+  app.get('/api/users/:userId/notifications', { schema: routeSchemas.getNotifications }, async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
 
@@ -71,14 +72,14 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
     );
   });
 
-  app.post('/api/users/:userId/notifications/:id/read', async (request, reply) => {
+  app.post('/api/users/:userId/notifications/:id/read', { schema: routeSchemas.postNotificationRead }, async (request, reply) => {
     const { userId, id } = request.params as { userId: string; id: string };
     if (!isOwner(request, userId)) return forbidden(reply);
 
     respond(reply, await toServiceResultAsync(async () => new NotificationRepository(pool).markRead(userId, id)));
   });
 
-  app.post('/api/notifications/ticket', async (request, reply) => {
+  app.post('/api/notifications/ticket', { schema: routeSchemas.postNotificationTicket }, async (request, reply) => {
     const authUser = request.user as { userId: string };
     const ticket = await issueTicket(cache, authUser.userId);
     reply.send({ success: true, data: { ticket, expiresInMs: TICKET_TTL_MS } });
@@ -87,7 +88,7 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
   /**
    * SSE 스트림. PUBLIC_ROUTES에 등록되어 JWT 훅을 거치지 않으며, 티켓으로 인증한다.
    */
-  app.get('/api/notifications/stream', async (request, reply) => {
+  app.get('/api/notifications/stream', { schema: routeSchemas.getNotificationStream }, async (request, reply) => {
     const { ticket } = request.query as { ticket?: string };
     const userId = await consumeTicket(cache, ticket);
     if (!userId) {

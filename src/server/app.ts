@@ -246,6 +246,7 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
         { name: 'Loans', description: '대출 신청 및 관리' },
         { name: 'Transactions', description: '거래 기록 및 조회' },
         { name: 'Analytics', description: '금융 분석 및 시뮬레이션' },
+        { name: 'Notifications', description: '임계값 알림 조회 및 SSE 실시간 스트림' },
         { name: 'Admin', description: '관리자 전용 기능' },
         { name: 'Audit', description: '감사 로그 조회' }
       ]
@@ -507,13 +508,13 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
 
   // Phase 15 - Section 3 (A-3): 이미 구현·테스트됐지만 라우트가 없어 외부에서
   // 호출할 수 없던 서비스 3종을 노출한다. 신규 비즈니스 로직은 없다.
-  app.get('/api/users/:userId/transactions/trend', async (request, reply) => {
+  app.get('/api/users/:userId/transactions/trend', { schema: routeSchemas.getTransactionTrend }, async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, await getTransactionMonthlyTrend(pool, userId));
   });
 
-  app.post('/api/users/:userId/snapshots/compare', async (request, reply) => {
+  app.post('/api/users/:userId/snapshots/compare', { schema: routeSchemas.postSnapshotCompare }, async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
     const { fromDate, toDate } = request.body as { fromDate: string; toDate: string };
@@ -522,14 +523,14 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
 
   // 감사 로그는 transactionId가 선택 인자라 생략하면 전체 거래가 반환된다.
   // 소유권 개념이 성립하지 않으므로 기존 /api/admin/audit-logs 계열과 같이 isAdmin.
-  app.get('/api/admin/transactions/audit-log', async (request, reply) => {
+  app.get('/api/admin/transactions/audit-log', { schema: routeSchemas.getTransactionAuditLog }, async (request, reply) => {
     if (!isAdmin(request)) return forbidden(reply);
     const { transactionId, from, to } = request.query as { transactionId?: string; from?: string; to?: string };
     respond(reply, await getTransactionAuditLog(pool, transactionId, { from, to }));
   });
 
   // Phase 15 - Section 3 (A-4): 대시보드 초기 로드를 1회 요청으로 묶는다.
-  app.get('/api/users/:userId/dashboard', async (request, reply) => {
+  app.get('/api/users/:userId/dashboard', { schema: routeSchemas.getDashboard }, async (request, reply) => {
     const { userId } = request.params as { userId: string };
     if (!isOwner(request, userId)) return forbidden(reply);
     respond(reply, await getDashboard(pool, userId));
