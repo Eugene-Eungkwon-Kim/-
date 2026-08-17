@@ -48,6 +48,24 @@ def run_realestate(args):
     subprocess.run(cmd)
 
 
+def run_cleanup(args):
+    """cleanup.py 실행"""
+    cmd = ["python", "cleanup.py"]
+    if args.path:
+        cmd.append(args.path)
+    if args.android:
+        cmd.append("--android")
+    if args.apply:
+        cmd.append("--apply")
+    if args.top:
+        cmd.extend(["--top", str(args.top)])
+    if args.min_size:
+        cmd.extend(["--min-size", args.min_size])
+    if args.report:
+        cmd.extend(["--report", args.report])
+    subprocess.run(cmd)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="모바일 파일 정리 & 데이터 수집 통합 도구",
@@ -64,7 +82,12 @@ def main():
 3. 로컬 폴더 정리:
    python run.py organize ~/Downloads/phone_files ./정리결과
 
-4. 부동산 데이터 수집:
+4. 저장공간 정리:
+   python run.py cleanup ~/Desktop/정리결과                 # 분석만
+   python run.py cleanup ~/Desktop/정리결과 --apply         # 중복·캐시 삭제
+   python run.py cleanup --android                          # 기기 용량 리포트
+
+5. 부동산 데이터 수집:
    python run.py realestate --lawd 11680 --start 202401 --end 202406
    또는 환경변수 사용:
    export DATA_GO_KR_KEY=발급키
@@ -105,6 +128,16 @@ def main():
     realestate_parser.add_argument("--out", help="저장할 CSV 파일명 (기본: apt_지역_시작_종료.csv)")
     realestate_parser.add_argument("--delay", type=float, help="월별 요청 간 대기 시간(초, 기본: 0.3)")
     realestate_parser.set_defaults(func=run_realestate)
+
+    # cleanup 서브명령
+    cleanup_parser = subparsers.add_parser("cleanup", help="저장공간 분석 및 중복·캐시 정리")
+    cleanup_parser.add_argument("path", nargs="?", help="분석할 폴더 경로")
+    cleanup_parser.add_argument("--android", action="store_true", help="기기 용량 리포트만 출력 (읽기 전용)")
+    cleanup_parser.add_argument("--apply", action="store_true", help="중복·캐시·빈폴더 실제 삭제 (기본은 분석만)")
+    cleanup_parser.add_argument("--top", type=int, help="상위 목록 개수 (기본: 15)")
+    cleanup_parser.add_argument("--min-size", help="대용량 파일 기준 (기본: 50MB)")
+    cleanup_parser.add_argument("--report", help="JSON 보고서 저장 경로")
+    cleanup_parser.set_defaults(func=run_cleanup)
 
     args = parser.parse_args()
 
