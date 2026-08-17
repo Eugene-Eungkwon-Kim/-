@@ -11,6 +11,15 @@ export interface NotificationHub {
   publish(notification: NotificationRecord): Promise<void>;
   /** 구독 해제 함수를 돌려준다. 호출자는 연결 종료 시 반드시 호출해야 한다. */
   subscribe(userId: string, listener: (n: NotificationRecord) => void): () => void;
+  /**
+   * 이 인스턴스가 들고 있는 해당 사용자의 구독 수. SSE 연결 상한 판정에 쓴다.
+   *
+   * 인스턴스 로컬 값이다 — 다중 인스턴스 배포에서 사용자는 인스턴스 수만큼 곱한
+   * 만큼 열 수 있다. 전역 상한은 Redis 카운터가 필요한데 연결이 비정상 종료될 때
+   * 카운터가 새는 문제를 함께 풀어야 해서 별도 작업으로 둔다. 로컬 상한만으로도
+   * 한 클라이언트의 재연결 루프가 인스턴스를 고갈시키는 주된 시나리오는 막힌다.
+   */
+  subscriberCount(userId: string): number;
   close(): Promise<void>;
 }
 
@@ -38,6 +47,10 @@ class ListenerRegistry {
       // 빈 Set을 남겨두면 접속이 많았던 사용자만큼 Map이 계속 커진다.
       if (current.size === 0) this.listeners.delete(userId);
     };
+  }
+
+  count(userId: string): number {
+    return this.listeners.get(userId)?.size ?? 0;
   }
 
   dispatch(notification: NotificationRecord): void {
@@ -69,6 +82,10 @@ export class MemoryNotificationHub implements NotificationHub {
 
   subscribe(userId: string, listener: (n: NotificationRecord) => void): () => void {
     return this.registry.add(userId, listener);
+  }
+
+  subscriberCount(userId: string): number {
+    return this.registry.count(userId);
   }
 
   async close(): Promise<void> {
@@ -115,6 +132,10 @@ export class RedisNotificationHub implements NotificationHub {
 
   subscribe(userId: string, listener: (n: NotificationRecord) => void): () => void {
     return this.registry.add(userId, listener);
+  }
+
+  subscriberCount(userId: string): number {
+    return this.registry.count(userId);
   }
 
   /** SUBSCRIBE 완료를 기다린다 — 구독 직후 발행하는 테스트의 경합을 막는다. */

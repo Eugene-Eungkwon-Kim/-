@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { Pool } from 'pg';
-import { getTestPool, cleanupTestDatabase, initializeTestDatabase } from '@db/__tests__/testDatabase';
+import { cleanupTestDatabase, initializeTestDatabase } from '@db/__tests__/testDatabase';
 import { UserRepository } from '@repositories/UserRepository';
 import { FinancialSnapshotRepository } from '@repositories/FinancialSnapshotRepository';
 import { NotificationRepository } from '@repositories/NotificationRepository';

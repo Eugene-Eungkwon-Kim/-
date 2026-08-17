@@ -8,12 +8,7 @@ import {
   getEncryptionKey,
   verifyEncryptionKeyAgainstDb
 } from '../encryption';
-import {
-  initializeTestDatabase,
-  cleanupTestDatabase,
-  closeTestDatabase,
-  getTestPool
-} from '../../db/__tests__/testDatabase';
+import { initializeTestDatabase, cleanupTestDatabase } from '../../db/__tests__/testDatabase';
 
 /**
  * Day 13 - Task F (δ=650): 암호화 유틸리티 테스트

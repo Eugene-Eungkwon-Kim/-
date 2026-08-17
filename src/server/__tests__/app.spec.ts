@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Pool } from 'pg';
-import { getTestPool, cleanupTestDatabase, initializeTestDatabase, closeTestDatabase } from '@db/__tests__/testDatabase';
+import { cleanupTestDatabase, initializeTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import { UserRepository } from '@repositories/UserRepository';
 import type { FastifyInstance } from 'fastify';

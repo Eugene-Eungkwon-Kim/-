@@ -148,7 +148,7 @@ describe('BackupManager (Day 5 - Task 7: 백업 & 복구 시스템, δ=1005)', (
       expect(backups1.length).toBe(0);
 
       await users.register({ email: 'list-user-1@example.com', name: 'List User 1' });
-      const backup1 = await backups.createFullBackup();
+      await backups.createFullBackup();
 
       await users.register({ email: 'list-user-2@example.com', name: 'List User 2' });
       const backup2 = await backups.createFullBackup();

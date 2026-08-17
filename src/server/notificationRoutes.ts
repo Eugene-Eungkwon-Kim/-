@@ -20,6 +20,18 @@ const TICKET_PREFIX = 'sse:ticket:';
 const HEARTBEAT_MS = 25_000;
 
 /**
+ * 티켓 발급 한도 (분당). 재연결마다 티켓이 1장 필요하므로 로그인(5회)보다는
+ * 넉넉해야 하지만, 백오프 없는 재연결 루프는 이 선에서 막힌다.
+ */
+const TICKET_RATE_LIMIT = 20;
+
+/**
+ * 사용자당 동시 SSE 연결 상한. 정상 사용은 탭 몇 개 수준이라 5면 충분하다.
+ * 인스턴스 로컬 판정이라는 한계는 NotificationHub.subscriberCount 주석 참고.
+ */
+const MAX_STREAMS_PER_USER = 5;
+
+/**
  * 브라우저 EventSource는 Authorization 헤더를 설정할 수 없다. JWT를 쿼리에 실으면
  * 1시간짜리 액세스 토큰이 프록시·액세스 로그에 남으므로, 60초 1회용 티켓을 대신 쓴다.
  *
@@ -79,11 +91,31 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
     respond(reply, await toServiceResultAsync(async () => new NotificationRepository(pool).markRead(userId, id)));
   });
 
-  app.post('/api/notifications/ticket', { schema: routeSchemas.postNotificationTicket }, async (request, reply) => {
-    const authUser = request.user as { userId: string };
-    const ticket = await issueTicket(cache, authUser.userId);
-    reply.send({ success: true, data: { ticket, expiresInMs: TICKET_TTL_MS } });
-  });
+  app.post(
+    '/api/notifications/ticket',
+    {
+      schema: routeSchemas.postNotificationTicket,
+      config: {
+        rateLimit: {
+          max: TICKET_RATE_LIMIT,
+          timeWindow: '1 minute',
+          // 기본 키는 IP다. 이 라우트는 JWT 검증을 이미 통과했으므로 사용자별로
+          // 센다 — NAT 뒤의 여러 사용자가 서로의 한도를 잡아먹지 않게 한다.
+          keyGenerator: (request: FastifyRequest) => (request.user as { userId?: string })?.userId ?? request.ip,
+          errorResponseBuilder: (_request: FastifyRequest, context: { after: string }) => ({
+            statusCode: 429,
+            success: false,
+            error: { code: 'RATE_LIMITED', message: `Too many ticket requests, retry in ${context.after}` }
+          })
+        }
+      }
+    },
+    async (request, reply) => {
+      const authUser = request.user as { userId: string };
+      const ticket = await issueTicket(cache, authUser.userId);
+      reply.send({ success: true, data: { ticket, expiresInMs: TICKET_TTL_MS } });
+    }
+  );
 
   /**
    * SSE 스트림. PUBLIC_ROUTES에 등록되어 JWT 훅을 거치지 않으며, 티켓으로 인증한다.
@@ -95,6 +127,18 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
       return reply
         .code(401)
         .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing, expired, or already used ticket' } });
+    }
+
+    // 상한 검사는 헤더를 쓰기 전에 해야 한다 — writeHead 이후에는 상태 코드를
+    // 바꿀 수 없어 429를 돌려줄 방법이 없다.
+    if (hub.subscriberCount(userId) >= MAX_STREAMS_PER_USER) {
+      return reply.code(429).send({
+        success: false,
+        error: {
+          code: 'TOO_MANY_STREAMS',
+          message: `At most ${MAX_STREAMS_PER_USER} concurrent notification streams are allowed`
+        }
+      });
     }
 
     reply.raw.writeHead(200, {

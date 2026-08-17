@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { Pool } from 'pg';
-import {
-  initializeTestDatabase,
-  cleanupTestDatabase,
-  closeTestDatabase,
-  getTestPool
-} from '../../db/__tests__/testDatabase';
+import { initializeTestDatabase, cleanupTestDatabase } from '../../db/__tests__/testDatabase';
 import { UserRepository } from '../UserRepository';
 import { decrypt } from '../../utils/encryption';
 
