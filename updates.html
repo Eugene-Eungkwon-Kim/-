@@ -377,17 +377,17 @@
     <p class="eyebrow">MOBILE MIGRATION TOOLKIT</p>
     <h1>코드 업데이트 이력</h1>
     <p class="lede">
-      휴대폰 파일 정리 · 저장공간 회수 · 데이터 수집 스크립트의 현재 기능과 수정 이력입니다.
+      휴대폰 파일 정리 · 저장공간 회수 · 배터리 진단 · 데이터 수집 스크립트의 현재 기능과 수정 이력입니다.
     </p>
 
     <dl class="stats">
       <div class="stat">
         <dt>스크립트</dt>
-        <dd>6</dd>
+        <dd>7</dd>
       </div>
       <div class="stat">
         <dt>커밋</dt>
-        <dd>14</dd>
+        <dd>16</dd>
       </div>
       <div class="stat">
         <dt>최종 갱신</dt>
@@ -448,6 +448,35 @@
           <div class="spec">
             <dt>출력</dt>
             <dd><code>cleanup_report.json</code></dd>
+          </div>
+        </dl>
+      </li>
+
+      <li class="tool">
+        <div class="tool-head">
+          <h3>battery.py</h3>
+          <span class="role">배터리 효율 진단</span>
+        </div>
+        <p>배터리를 무엇이 소모하는지 기기에서 직접 읽어 진단하고 조치를 우선순위로 제시합니다. 읽기 전용 — 기기 설정을 변경하지 않습니다.</p>
+        <pre><span class="prompt">$ </span>python battery.py --iphone     <span class="prompt"># 배터리 성능 최대치·사이클</span>
+<span class="prompt">$ </span>python battery.py --android    <span class="prompt"># 항목별 소모·wakelock</span>
+<span class="prompt">$ </span>python battery.py --advice     <span class="prompt"># 기기 없이 체크리스트</span></pre>
+        <dl class="specs">
+          <div class="spec">
+            <dt>Android</dt>
+            <dd>잔량·건강·온도·전압, 항목별 추정 소모(mAh), wakelock, Doze 예외 앱, 화면 밝기·자동 꺼짐</dd>
+          </div>
+          <div class="spec">
+            <dt>iPhone</dt>
+            <dd>충전 사이클, 설계 대비 용량으로 <strong>배터리 성능 최대치(%)</strong> 산출</dd>
+          </div>
+          <div class="spec">
+            <dt>조치</dt>
+            <dd>측정값 근거로 우선순위 부여 — 성능 80% 미만 교체 권고, 40°C 발열 경고, 최대 소모원 지목</dd>
+          </div>
+          <div class="spec">
+            <dt>검증</dt>
+            <dd><code>test_battery.py</code> — 기기 없이 파서·조치 로직 34개 항목 확인</dd>
           </div>
         </dl>
       </li>
@@ -577,6 +606,23 @@
       <li class="day">
         <h3 class="daylabel">2026 · 08 · 17</h3>
         <ul class="entries">
+
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag feat">기능</span>
+              <h3>배터리 효율 진단 스크립트</h3>
+              <span class="sha">c017c94</span>
+            </div>
+            <ul>
+              <li><code>battery.py</code> 추가 — 소모 원인 측정 및 조치 제시 (읽기 전용)</li>
+              <li>Android: 잔량·건강·온도, 항목별 추정 소모(mAh), wakelock, Doze 예외 앱</li>
+              <li>iPhone: 충전 사이클과 설계 대비 용량으로 배터리 성능 최대치(%) 산출</li>
+              <li>측정값 근거 조치 엔진 — 우선순위(높음/보통) 부여</li>
+              <li><code>--advice</code>로 기기 없이 최적화 체크리스트 출력</li>
+              <li><code>test_battery.py</code> 추가 — 실제 출력 형식 픽스처로 34개 항목 검증</li>
+              <li>한글 출력 품질: 표시 폭 기준 정렬, 받침에 따른 조사 이/가 선택</li>
+            </ul>
+          </li>
 
           <li class="entry">
             <div class="entry-head">

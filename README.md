@@ -13,6 +13,7 @@
 | `migrate.py` | 모바일 마이그레이션 | Android (ADB) 또는 로컬 폴더 |
 | `iphone_migrate.py` | iPhone 전용 | iPhone 13 Pro (HEIC, Live Photo 지원) |
 | `cleanup.py` | **저장공간 정리** (용량 분석, 중복·캐시 회수) | 모든 기기 |
+| `battery.py` | **배터리 효율 진단** (소모 원인 측정, 조치 제시) | iPhone · Android |
 | `fetch_realestate.py` | 부동산 실거래가 수집 | data.go.kr API (Loan4u / AVM) |
 
 ### 통합 실행기 사용 (`run.py`)
@@ -21,7 +22,60 @@ python run.py iphone     ~/Desktop/iPhone_내보내기 ~/Desktop/정리결과
 python run.py migrate    --android ./정리결과
 python run.py organize   ~/Downloads/phone_files ./정리결과
 python run.py cleanup    ~/Desktop/정리결과
+python run.py battery    --iphone
 python run.py realestate --lawd 11680 --start 202401 --end 202406
+```
+
+---
+
+## 🔋 배터리 효율 진단 (`battery.py`)
+
+배터리를 무엇이 소모하는지 기기에서 직접 읽어 진단하고, 조치를 우선순위로 제시합니다.
+**읽기 전용입니다 — 기기 설정을 변경하지 않습니다.**
+
+```bash
+# iPhone (libimobiledevice 필요)
+brew install libimobiledevice        # macOS
+python battery.py --iphone
+
+# Android (ADB 필요)
+python battery.py --android
+
+# 기기 연결 없이 체크리스트만
+python battery.py --advice
+
+# JSON 보고서로 저장
+python battery.py --android --report battery.json
+```
+
+**측정 항목**
+
+| 플랫폼 | 읽는 값 |
+|--------|---------|
+| Android | 잔량·상태·건강·온도·전압, 항목별 추정 소모(mAh), partial wakelock, Doze 예외 앱, 화면 밝기·자동 꺼짐 |
+| iPhone | 충전 사이클, 설계 대비 실제 용량 → **배터리 성능 최대치(%)**, 온도 |
+
+**조치 예시** (측정값에 근거해 우선순위 부여)
+- 성능 최대치 80% 미만 → 교체 권고
+- 40°C 이상 → 발열 즉시 조치 (고온은 수명을 영구 손상)
+- 화면이 전체 소모의 다수 → 밝기·자동 꺼짐·주사율 조정
+- 셀룰러 대기 비중 높음 → 신호 약한 환경, Wi-Fi 또는 LTE 고정
+- Doze 예외 앱·wakelock 보유 앱 → 배터리 최적화 복구
+
+**iPhone 13 Pro에서 체감 효과가 큰 항목**
+1. 프레임 속도 제한(120Hz → 60Hz): 설정 → 손쉬운 사용 → 동작
+2. 다크 모드 (OLED라 실제로 전력을 덜 씁니다)
+3. 백그라운드 앱 새로 고침 정리: 설정 → 일반
+4. 위치 권한을 '앱 사용 중에만'으로
+5. 최적화된 배터리 충전 켜기: 설정 → 배터리 → 배터리 건강 및 충전
+
+> iOS는 앱별 소모 통계를 외부에서 읽을 수 없습니다. 설정 → 배터리에서 지난 24시간·10일
+> 상위 앱을 확인하고 상위 항목부터 조치하세요.
+
+### 검증
+
+```bash
+python test_battery.py   # 기기 없이 파서·조치 로직 검증
 ```
 
 ---
