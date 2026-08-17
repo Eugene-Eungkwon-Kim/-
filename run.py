@@ -66,6 +66,22 @@ def run_cleanup(args):
     subprocess.run(cmd)
 
 
+def run_battery(args):
+    """battery.py 실행"""
+    cmd = ["python", "battery.py"]
+    if args.android:
+        cmd.append("--android")
+    elif args.iphone:
+        cmd.append("--iphone")
+    else:
+        cmd.append("--advice")
+    if args.report:
+        cmd.extend(["--report", args.report])
+    if args.no_checklist:
+        cmd.append("--no-checklist")
+    subprocess.run(cmd)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="모바일 파일 정리 & 데이터 수집 통합 도구",
@@ -87,7 +103,12 @@ def main():
    python run.py cleanup ~/Desktop/정리결과 --apply         # 중복·캐시 삭제
    python run.py cleanup --android                          # 기기 용량 리포트
 
-5. 부동산 데이터 수집:
+5. 배터리 효율 진단:
+   python run.py battery --iphone                           # iPhone 배터리 상태
+   python run.py battery --android                          # Android 소모 진단
+   python run.py battery                                    # 체크리스트만
+
+6. 부동산 데이터 수집:
    python run.py realestate --lawd 11680 --start 202401 --end 202406
    또는 환경변수 사용:
    export DATA_GO_KR_KEY=발급키
@@ -138,6 +159,15 @@ def main():
     cleanup_parser.add_argument("--min-size", help="대용량 파일 기준 (기본: 50MB)")
     cleanup_parser.add_argument("--report", help="JSON 보고서 저장 경로")
     cleanup_parser.set_defaults(func=run_cleanup)
+
+    # battery 서브명령
+    battery_parser = subparsers.add_parser("battery", help="배터리 효율 진단 및 최적화 조치")
+    battery_group = battery_parser.add_mutually_exclusive_group()
+    battery_group.add_argument("--android", action="store_true", help="Android 진단 (ADB)")
+    battery_group.add_argument("--iphone", action="store_true", help="iPhone 배터리 상태 (libimobiledevice)")
+    battery_parser.add_argument("--report", help="JSON 보고서 저장 경로")
+    battery_parser.add_argument("--no-checklist", action="store_true", help="체크리스트 생략")
+    battery_parser.set_defaults(func=run_battery)
 
     args = parser.parse_args()
 
