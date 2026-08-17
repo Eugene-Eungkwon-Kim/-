@@ -12,6 +12,7 @@
 | `organize.py` | 기본 파일 정리 | 모든 기기 (일반) |
 | `migrate.py` | 모바일 마이그레이션 | Android (ADB) 또는 로컬 폴더 |
 | `iphone_migrate.py` | iPhone 전용 | iPhone 13 Pro (HEIC, Live Photo 지원) |
+| `cleanup.py` | **저장공간 정리** (용량 분석, 중복·캐시 회수) | 모든 기기 |
 | `fetch_realestate.py` | 부동산 실거래가 수집 | data.go.kr API (Loan4u / AVM) |
 
 ### 통합 실행기 사용 (`run.py`)
@@ -19,8 +20,51 @@
 python run.py iphone     ~/Desktop/iPhone_내보내기 ~/Desktop/정리결과
 python run.py migrate    --android ./정리결과
 python run.py organize   ~/Downloads/phone_files ./정리결과
+python run.py cleanup    ~/Desktop/정리결과
 python run.py realestate --lawd 11680 --start 202401 --end 202406
 ```
+
+---
+
+## 🧽 저장공간 정리 (`cleanup.py`)
+
+용량을 어디서 잡아먹는지 분석하고, 중복·캐시를 지워 공간을 회수합니다.
+
+```bash
+# 1. 분석만 (파일 변경 없음)
+python cleanup.py ~/Desktop/정리결과
+
+# 2. 기준을 바꿔서 더 자세히
+python cleanup.py ~/Desktop/정리결과 --min-size 100MB --top 30
+
+# 3. 중복·캐시·빈폴더 실제 삭제
+python cleanup.py ~/Desktop/정리결과 --apply
+
+# 4. Android 기기 용량 리포트 (읽기 전용)
+python cleanup.py --android
+```
+
+**분석 항목**
+- 카테고리별 용량 비중 (사진/동영상/음악/문서/…)
+- 용량 상위 폴더, 대용량 파일 목록
+- 중복 파일 그룹 및 회수 가능 용량
+- 캐시·썸네일(`.thumbnails`, `cache`, `thumbdata`, `.trashed`), 빈 폴더
+
+**안전 장치**
+- 기본은 **읽기 전용 분석**. 삭제는 `--apply`를 명시해야 실행됩니다.
+- 대용량 파일은 **목록만 제시하고 자동 삭제하지 않습니다.**
+- 중복 그룹에서는 카메라 폴더(DCIM 등)의 오래된 파일을 **원본으로 유지**하고,
+  `(1)` · `_copy` · `사본` 같은 사본 패턴을 삭제 후보로 돌립니다.
+- 대상 폴더 밖의 경로는 삭제하지 않습니다.
+- `--android`는 읽기 전용이며 `--apply`와 함께 쓸 수 없습니다.
+
+| 옵션 | 설명 |
+|------|------|
+| `--apply` | 중복·캐시·빈폴더 실제 삭제 (기본은 분석만) |
+| `--top N` | 상위 목록 개수 (기본: 15) |
+| `--min-size` | 대용량 파일 기준 (기본: `50MB`) |
+| `--report` | JSON 보고서 경로 (기본: `대상폴더/cleanup_report.json`) |
+| `--android` | ADB로 기기 용량 리포트만 출력 |
 
 ---
 

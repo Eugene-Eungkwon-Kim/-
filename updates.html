@@ -4,223 +4,741 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>코드 업데이트 이력 — 모바일 마이그레이션 도구</title>
-<style>
-  :root {
-    --bg: #f6f7f9;
-    --card: #ffffff;
-    --text: #1c1e21;
-    --muted: #6b7280;
-    --accent: #2563eb;
-    --line: #e5e7eb;
-    --chip-fix: #fee2e2;  --chip-fix-text: #b91c1c;
-    --chip-feat: #dcfce7; --chip-feat-text: #15803d;
-    --chip-docs: #e0e7ff; --chip-docs-text: #4338ca;
-    --chip-chore: #f1f5f9; --chip-chore-text: #475569;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #111318;
-      --card: #1b1e26;
-      --text: #e7e9ee;
-      --muted: #9aa1ad;
-      --accent: #7aa2ff;
-      --line: #2a2e39;
-      --chip-fix: #3b1d1d;  --chip-fix-text: #f87171;
-      --chip-feat: #16301f; --chip-feat-text: #4ade80;
-      --chip-docs: #20244a; --chip-docs-text: #a5b4fc;
-      --chip-chore: #262b36; --chip-chore-text: #94a3b8;
-    }
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
-                 "Noto Sans KR", "Malgun Gothic", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.6;
-    padding: 16px;
-    max-width: 640px;
-    margin: 0 auto;
-    -webkit-text-size-adjust: 100%;
-  }
-  header { margin: 8px 0 20px; }
-  header h1 { font-size: 1.35rem; }
-  header p  { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
-
-  .date-group { margin-bottom: 24px; }
-  .date-label {
-    font-size: 0.85rem; font-weight: 700; color: var(--accent);
-    letter-spacing: 0.02em; margin-bottom: 8px;
-  }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 14px 16px;
-    margin-bottom: 10px;
-  }
-  .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .chip {
-    font-size: 0.72rem; font-weight: 700;
-    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
-  }
-  .chip.fix  { background: var(--chip-fix);  color: var(--chip-fix-text); }
-  .chip.feat { background: var(--chip-feat); color: var(--chip-feat-text); }
-  .chip.docs { background: var(--chip-docs); color: var(--chip-docs-text); }
-  .chip.chore { background: var(--chip-chore); color: var(--chip-chore-text); }
-  .card h2 { font-size: 1rem; flex: 1; min-width: 0; }
-  .commit {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.72rem; color: var(--muted);
-  }
-  .card ul { margin: 8px 0 0 18px; font-size: 0.88rem; }
-  .card li { margin-bottom: 4px; }
-  .card li:last-child { margin-bottom: 0; }
-  code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.82em;
-    background: var(--bg);
-    border: 1px solid var(--line);
-    border-radius: 4px;
-    padding: 1px 4px;
-    word-break: break-all;
-  }
-  footer {
-    color: var(--muted); font-size: 0.8rem;
-    text-align: center; margin: 28px 0 12px;
-  }
-  footer a { color: var(--accent); }
-</style>
 </head>
 <body>
-<header>
-  <h1>📱 코드 업데이트 이력</h1>
-  <p>모바일 기기 데이터 마이그레이션 &amp; 정리 도구 — 수정 작업 최신순 리스팅</p>
-</header>
+<style>
+  :root {
+    --ground:  #eceff3;
+    --surface: #ffffff;
+    --sunken:  #f4f6f8;
+    --ink:     #16202b;
+    --muted:   #5d6b7a;
+    --faint:   #8494a3;
+    --accent:  #0b6e63;
+    --rule:    #d6dde4;
+    --spine:   #c3ced8;
 
-<section class="date-group">
-  <div class="date-label">2026-08-10</div>
+    --feat-bg: #e2f1e9; --feat-fg: #1c6b46;
+    --fix-bg:  #fae9e8; --fix-fg:  #9c3f3d;
+    --docs-bg: #e6eaf7; --docs-fg: #3d4f91;
+    --chore-bg:#e5eaef; --chore-fg:#566573;
 
-  <article class="card">
-    <div class="card-head">
-      <span class="chip feat">기능 추가</span>
-      <h2>통합 실행 스크립트</h2>
-      <span class="commit">d6acea2</span>
-    </div>
-    <ul>
-      <li><code>run.py</code> 신규 추가 — 네 스크립트를 서브명령 하나로 실행</li>
-      <li><code>organize</code> / <code>migrate</code> / <code>iphone</code> / <code>realestate</code> 서브명령 제공</li>
-      <li>각 스크립트의 옵션(<code>--dry-run</code>, <code>--android</code> 등)을 그대로 전달</li>
+    --sans: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR",
+            "Malgun Gothic", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono",
+            "D2Coding", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:  #0d1317;
+      --surface: #161e25;
+      --sunken:  #111a20;
+      --ink:     #e2e9ee;
+      --muted:   #93a2b0;
+      --faint:   #6f8090;
+      --accent:  #4ecdbc;
+      --rule:    #253039;
+      --spine:   #2c3a45;
+
+      --feat-bg: #16291f; --feat-fg: #74d3a0;
+      --fix-bg:  #2b1b1b; --fix-fg:  #e0918e;
+      --docs-bg: #1c2136; --docs-fg: #99a9e6;
+      --chore-bg:#1e2830; --chore-fg:#8b9aa8;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:  #0d1317;
+    --surface: #161e25;
+    --sunken:  #111a20;
+    --ink:     #e2e9ee;
+    --muted:   #93a2b0;
+    --faint:   #6f8090;
+    --accent:  #4ecdbc;
+    --rule:    #253039;
+    --spine:   #2c3a45;
+
+    --feat-bg: #16291f; --feat-fg: #74d3a0;
+    --fix-bg:  #2b1b1b; --fix-fg:  #e0918e;
+    --docs-bg: #1c2136; --docs-fg: #99a9e6;
+    --chore-bg:#1e2830; --chore-fg:#8b9aa8;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .page {
+    max-width: 40rem;
+    margin: 0 auto;
+    padding: 2rem 1.125rem 3rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2.25rem;
+  }
+
+  /* ── 헤더 ─────────────────────────────── */
+  .masthead { display: flex; flex-direction: column; gap: 0.5rem; }
+
+  .eyebrow {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+  }
+
+  .masthead h1 {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+
+  .lede { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    margin: 0.75rem 0 0;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 0.7rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .stat dt { font-size: 0.68rem; color: var(--faint); letter-spacing: 0.04em; }
+
+  .stat dd {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 1.05rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── 섹션 공통 ────────────────────────── */
+  .band { display: flex; flex-direction: column; gap: 0.9rem; }
+
+  .band-label {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+  }
+
+  .band-label::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  /* ── 스크립트 현황 ────────────────────── */
+  .tools { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+
+  .tool {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .tool.primary { border-color: var(--accent); }
+
+  .tool-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.35rem 0.55rem; }
+
+  .tool-head h3 {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .role {
+    font-size: 0.75rem;
+    color: var(--muted);
+    flex: 1 1 auto;
+  }
+
+  .tool > p { margin: 0; font-size: 0.865rem; color: var(--muted); }
+
+  .specs { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+
+  .spec { display: flex; gap: 0.55rem; font-size: 0.8rem; }
+
+  .spec dt {
+    flex: 0 0 3.6rem;
+    color: var(--faint);
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    padding-top: 0.12rem;
+  }
+
+  .spec dd { margin: 0; flex: 1 1 auto; min-width: 0; color: var(--muted); }
+
+  pre {
+    margin: 0;
+    background: var(--sunken);
+    border: 1px solid var(--rule);
+    border-radius: 7px;
+    padding: 0.6rem 0.7rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.775rem;
+    line-height: 1.75;
+    color: var(--ink);
+  }
+
+  pre .prompt { color: var(--faint); user-select: none; }
+
+  /* ── 타임라인 ─────────────────────────── */
+  .timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.75rem; }
+
+  .day {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding-left: 1.1rem;
+    border-left: 1px solid var(--spine);
+    position: relative;
+  }
+
+  .day::before {
+    content: "";
+    position: absolute;
+    left: -4.5px;
+    top: 0.55rem;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .daylabel {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+
+  .entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+
+  .entry {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .entry-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.4rem 0.55rem; }
+
+  .entry-head h3 {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.98rem;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+  }
+
+  .tag {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .tag.feat  { background: var(--feat-bg);  color: var(--feat-fg); }
+  .tag.fix   { background: var(--fix-bg);   color: var(--fix-fg); }
+  .tag.docs  { background: var(--docs-bg);  color: var(--docs-fg); }
+  .tag.chore { background: var(--chore-bg); color: var(--chore-fg); }
+
+  .sha {
+    flex: 0 0 auto;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .entry ul {
+    margin: 0;
+    padding-left: 1.05rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+    font-size: 0.865rem;
+    color: var(--muted);
+  }
+
+  .entry li::marker { color: var(--spine); }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    color: var(--ink);
+    background: var(--ground);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 0.05em 0.3em;
+    overflow-wrap: anywhere;
+  }
+
+  pre code, .tool-head code { background: none; border: none; padding: 0; }
+
+  /* ── 주의사항 ─────────────────────────── */
+  .caution {
+    background: var(--fix-bg);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .caution h2 {
+    margin: 0;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--fix-fg);
+  }
+
+  .caution ul {
+    margin: 0;
+    padding-left: 1.05rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.83rem;
+    color: var(--fix-fg);
+  }
+
+  /* ── 푸터 ─────────────────────────────── */
+  .colophon {
+    border-top: 1px solid var(--rule);
+    padding-top: 1rem;
+    font-size: 0.78rem;
+    color: var(--faint);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .colophon span { font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+  @media (min-width: 34rem) {
+    .page { padding-top: 3rem; }
+    .masthead h1 { font-size: 1.9rem; }
+    .spec dt { flex-basis: 4.2rem; }
+  }
+</style>
+
+<main class="page">
+  <header class="masthead">
+    <p class="eyebrow">MOBILE MIGRATION TOOLKIT</p>
+    <h1>코드 업데이트 이력</h1>
+    <p class="lede">
+      휴대폰 파일 정리 · 저장공간 회수 · 데이터 수집 스크립트의 현재 기능과 수정 이력입니다.
+    </p>
+
+    <dl class="stats">
+      <div class="stat">
+        <dt>스크립트</dt>
+        <dd>6</dd>
+      </div>
+      <div class="stat">
+        <dt>커밋</dt>
+        <dd>14</dd>
+      </div>
+      <div class="stat">
+        <dt>최종 갱신</dt>
+        <dd>08.17</dd>
+      </div>
+    </dl>
+  </header>
+
+  <!-- ══ 스크립트 현황 ══ -->
+  <section class="band">
+    <h2 class="band-label">스크립트 현황</h2>
+    <ul class="tools">
+
+      <li class="tool primary">
+        <div class="tool-head">
+          <h3>run.py</h3>
+          <span class="role">통합 실행기</span>
+        </div>
+        <p>아래 네 스크립트를 서브명령 하나로 실행합니다. 각 스크립트의 옵션을 그대로 전달합니다.</p>
+        <pre><span class="prompt">$ </span>python run.py iphone     ~/iPhone_내보내기 ~/정리결과
+<span class="prompt">$ </span>python run.py migrate    --android ./정리결과
+<span class="prompt">$ </span>python run.py organize   ~/phone_files ./정리결과
+<span class="prompt">$ </span>python run.py realestate --lawd 11680 --start 202401 --end 202406</pre>
+        <dl class="specs">
+          <div class="spec">
+            <dt>서브명령</dt>
+            <dd><code>organize</code> · <code>migrate</code> · <code>iphone</code> · <code>realestate</code></dd>
+          </div>
+        </dl>
+      </li>
+
+      <li class="tool">
+        <div class="tool-head">
+          <h3>cleanup.py</h3>
+          <span class="role">저장공간 정리</span>
+        </div>
+        <p>용량을 어디서 잡아먹는지 분석하고, 중복·캐시를 지워 공간을 회수합니다. 기본은 읽기 전용 분석입니다.</p>
+        <pre><span class="prompt">$ </span>python cleanup.py ~/정리결과                  <span class="prompt"># 분석만</span>
+<span class="prompt">$ </span>python cleanup.py ~/정리결과 --apply          <span class="prompt"># 실제 삭제</span>
+<span class="prompt">$ </span>python cleanup.py --android                   <span class="prompt"># 기기 용량 리포트</span></pre>
+        <dl class="specs">
+          <div class="spec">
+            <dt>분석</dt>
+            <dd>카테고리별 용량 비중 · 상위 폴더 · 대용량 파일 · 중복 그룹 · 캐시 · 빈 폴더</dd>
+          </div>
+          <div class="spec">
+            <dt>중복 탐지</dt>
+            <dd>같은 크기 파일만 해시하는 2단계 방식 — 전체 해시보다 빠름</dd>
+          </div>
+          <div class="spec">
+            <dt>원본 보존</dt>
+            <dd>DCIM 등 카메라 폴더의 오래된 파일을 유지, <code>(1)</code>·<code>_copy</code>·<code>사본</code> 패턴을 삭제 후보로</dd>
+          </div>
+          <div class="spec">
+            <dt>옵션</dt>
+            <dd><code>--apply</code> · <code>--top</code> · <code>--min-size</code> · <code>--report</code> · <code>--android</code></dd>
+          </div>
+          <div class="spec">
+            <dt>출력</dt>
+            <dd><code>cleanup_report.json</code></dd>
+          </div>
+        </dl>
+      </li>
+
+      <li class="tool">
+        <div class="tool-head">
+          <h3>iphone_migrate.py</h3>
+          <span class="role">iPhone 13 Pro 전용</span>
+        </div>
+        <p>HEIC/HEIF를 지원하고, 같은 이름의 HEIC+MOV 쌍을 Live Photo로 자동 감지해 별도 폴더로 분리합니다.</p>
+        <dl class="specs">
+          <div class="spec">
+            <dt>분류</dt>
+            <dd>사진 · 라이브포토 · 동영상 · 슬로모션 · 타임랩스 · 음악 · 문서 · 압축파일 · 기타</dd>
+          </div>
+          <div class="spec">
+            <dt>패턴</dt>
+            <dd><code>SloMo</code> → 슬로모션, <code>TimeLapse</code> · <code>IMG_E####</code> → 타임랩스</dd>
+          </div>
+          <div class="spec">
+            <dt>옵션</dt>
+            <dd><code>--dry-run</code></dd>
+          </div>
+          <div class="spec">
+            <dt>출력</dt>
+            <dd><code>iphone_migration_report.json</code> (카테고리별 통계)</dd>
+          </div>
+        </dl>
+      </li>
+
+      <li class="tool">
+        <div class="tool-head">
+          <h3>migrate.py</h3>
+          <span class="role">Android · 로컬 폴더</span>
+        </div>
+        <p>ADB로 기기에 직접 연결해 파일을 끌어오거나, 기존 백업 폴더를 정리합니다.</p>
+        <dl class="specs">
+          <div class="spec">
+            <dt>ADB 경로</dt>
+            <dd>DCIM · Pictures · Movies · Music · Download · Documents · WhatsApp · Telegram · KakaoTalk</dd>
+          </div>
+          <div class="spec">
+            <dt>분류</dt>
+            <dd>사진 · 동영상 · 음악 · 문서 · 압축파일 · APK · 기타</dd>
+          </div>
+          <div class="spec">
+            <dt>옵션</dt>
+            <dd><code>--android</code> · <code>--source</code> · <code>--dry-run</code></dd>
+          </div>
+          <div class="spec">
+            <dt>출력</dt>
+            <dd><code>migration_report.json</code></dd>
+          </div>
+        </dl>
+      </li>
+
+      <li class="tool">
+        <div class="tool-head">
+          <h3>organize.py</h3>
+          <span class="role">기본 파일 정리</span>
+        </div>
+        <p>기기 종류를 가리지 않는 기본 정리기. 종류별 + 날짜별로 나누고 파일명을 통일합니다.</p>
+        <dl class="specs">
+          <div class="spec">
+            <dt>구조</dt>
+            <dd><code>카테고리/YYYY/MM/</code></dd>
+          </div>
+          <div class="spec">
+            <dt>파일명</dt>
+            <dd><code>YYYYMMDD_HHMMSS_원본이름.확장자</code></dd>
+          </div>
+          <div class="spec">
+            <dt>날짜</dt>
+            <dd>EXIF 촬영일 우선, 없으면 파일 수정일 (Pillow 설치 시)</dd>
+          </div>
+          <div class="spec">
+            <dt>옵션</dt>
+            <dd><code>--dry-run</code></dd>
+          </div>
+        </dl>
+      </li>
+
+      <li class="tool">
+        <div class="tool-head">
+          <h3>fetch_realestate.py</h3>
+          <span class="role">부동산 실거래가 · Loan4u / AVM</span>
+        </div>
+        <p>국토교통부 아파트 매매 실거래가 API(data.go.kr)를 지역·기간별로 조회해 CSV로 저장합니다.</p>
+        <dl class="specs">
+          <div class="spec">
+            <dt>컬럼</dt>
+            <dd>시군구코드 · 법정동 · 단지명 · 지번 · 전용면적 · 층 · 건축년도 · 거래일자 · 거래금액 · 해제여부 · 거래유형</dd>
+          </div>
+          <div class="spec">
+            <dt>옵션</dt>
+            <dd><code>--lawd</code> · <code>--start</code> · <code>--end</code> · <code>--key</code> · <code>--out</code> · <code>--delay</code></dd>
+          </div>
+          <div class="spec">
+            <dt>인증키</dt>
+            <dd><code>--key</code> 또는 환경변수 <code>DATA_GO_KR_KEY</code> (data.go.kr 디코딩 키)</dd>
+          </div>
+          <div class="spec">
+            <dt>출력</dt>
+            <dd><code>utf-8-sig</code> CSV — Excel에서 한글 깨짐 없음</dd>
+          </div>
+        </dl>
+      </li>
+
     </ul>
-  </article>
+  </section>
 
-  <article class="card">
-    <div class="card-head">
-      <span class="chip feat">기능 추가</span>
-      <h2>부동산 실거래가 수집 스크립트</h2>
-      <span class="commit">7d2d88d</span>
-    </div>
+  <!-- ══ 주의사항 ══ -->
+  <section class="caution">
+    <h2>실행 전 확인</h2>
     <ul>
-      <li><code>fetch_realestate.py</code> 신규 추가 (Loan4u / AVM 용)</li>
-      <li>국토교통부 아파트 매매 실거래가 API(data.go.kr) 연동</li>
-      <li>지역코드 + 기간 범위를 월별로 순회 조회</li>
-      <li>한글 컬럼 CSV(<code>utf-8-sig</code>) 저장, 거래금액 정규화</li>
-      <li>인증키는 <code>--key</code> 또는 환경변수 <code>DATA_GO_KR_KEY</code></li>
+      <li>원본 파일은 <strong>복사가 아니라 이동</strong>됩니다. 반드시 미리 백업하세요.</li>
+      <li>중복 파일은 MD5 해시로 감지해 <strong>원본만 남기고 삭제</strong>합니다.</li>
+      <li>먼저 <code>--dry-run</code>으로 결과를 확인하는 것을 권장합니다.</li>
     </ul>
-  </article>
+  </section>
 
-  <article class="card">
-    <div class="card-head">
-      <span class="chip chore">정리</span>
-      <h2>scratchpad 임시 디렉토리 gitignore 추가</h2>
-      <span class="commit">4256316</span>
-    </div>
-  </article>
-</section>
+  <!-- ══ 변경 이력 ══ -->
+  <section class="band">
+    <h2 class="band-label">변경 이력</h2>
+    <ol class="timeline">
 
-<section class="date-group">
-  <div class="date-label">2026-06-18</div>
+      <li class="day">
+        <h3 class="daylabel">2026 · 08 · 17</h3>
+        <ul class="entries">
 
-  <article class="card">
-    <div class="card-head">
-      <span class="chip docs">문서</span>
-      <h2>종합 README 작성</h2>
-      <span class="commit">ae5f9c1</span>
-    </div>
-    <ul>
-      <li>세 스크립트 통합 사용 가이드 작성</li>
-      <li>설치 방법, 기기별 사용법, 결과 폴더 구조, 주의사항 문서화</li>
-    </ul>
-  </article>
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag feat">기능</span>
+              <h3>저장공간 정리 스크립트</h3>
+              <span class="sha">2b3c038</span>
+            </div>
+            <ul>
+              <li><code>cleanup.py</code> 추가 — 용량 분석 및 중복·캐시 정리로 공간 회수</li>
+              <li>카테고리별 용량 비중, 용량 상위 폴더, 대용량 파일 목록 리포트</li>
+              <li>같은 크기 파일만 해시하는 2단계 중복 탐지로 속도 개선</li>
+              <li>카메라 폴더의 오래된 파일을 원본으로 유지, 사본 패턴을 삭제 후보로 분류</li>
+              <li>캐시·썸네일(<code>.thumbnails</code> · <code>cache</code> · <code>thumbdata</code>) 및 빈 폴더 탐지</li>
+              <li>기본은 읽기 전용, 삭제는 <code>--apply</code> 필요 — 대용량 파일은 자동 삭제 안 함</li>
+              <li><code>--android</code>로 기기 용량 리포트 (읽기 전용) · <code>run.py cleanup</code> 연결</li>
+            </ul>
+          </li>
 
-  <article class="card">
-    <div class="card-head">
-      <span class="chip fix">버그 수정</span>
-      <h2>파일명 충돌·deprecated API 수정</h2>
-      <span class="commit">3c03da6</span>
-    </div>
-    <ul>
-      <li>충돌 시 <code>file_1_2_3</code> 형태로 접미사가 무한히 길어지던 버그 수정 (3개 스크립트)</li>
-      <li>Pillow <code>_getexif()</code> → <code>getexif()</code> deprecated API 교체</li>
-      <li>미사용 import <code>os</code>, <code>subprocess</code> 제거</li>
-      <li><code>iphone_migrate.py</code>: 미사용 <code>LIVE_PHOTO_PATTERN</code> 삭제</li>
-      <li><code>iphone_migrate.py</code>: 라이브포토 카테고리 <code>.mov</code> 중복 등록 제거</li>
-    </ul>
-  </article>
+        </ul>
+      </li>
 
-  <article class="card">
-    <div class="card-head">
-      <span class="chip feat">기능 추가</span>
-      <h2>iPhone 13 Pro 전용 스크립트</h2>
-      <span class="commit">defae8d</span>
-    </div>
-    <ul>
-      <li><code>iphone_migrate.py</code> 신규 추가</li>
-      <li>HEIC/HEIF 지원, Live Photo(HEIC+MOV 쌍) 자동 감지</li>
-      <li>슬로모션·타임랩스 패턴 인식 및 별도 폴더 분류</li>
-      <li><code>iphone_migration_report.json</code> 통계 보고서 생성</li>
-    </ul>
-  </article>
-</section>
+      <li class="day">
+        <h3 class="daylabel">2026 · 08 · 10</h3>
+        <ul class="entries">
 
-<section class="date-group">
-  <div class="date-label">2026-06-10</div>
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag feat">기능</span>
+              <h3>통합 실행 스크립트</h3>
+              <span class="sha">d6acea2</span>
+            </div>
+            <ul>
+              <li><code>run.py</code> 추가 — 네 스크립트를 서브명령 하나로 실행</li>
+              <li><code>organize</code> · <code>migrate</code> · <code>iphone</code> · <code>realestate</code> 서브명령 제공</li>
+              <li><code>--dry-run</code>, <code>--android</code> 등 기존 옵션을 그대로 전달</li>
+            </ul>
+          </li>
 
-  <article class="card">
-    <div class="card-head">
-      <span class="chip feat">기능 추가</span>
-      <h2>Android 마이그레이션 스크립트</h2>
-      <span class="commit">80c323b · 6fee4b8</span>
-    </div>
-    <ul>
-      <li><code>migrate.py</code> 신규 추가</li>
-      <li>ADB 직접 연결로 Android 기기에서 파일 자동 추출 (<code>--android</code>)</li>
-      <li>로컬 백업 폴더 정리 지원 (<code>--source</code>)</li>
-      <li><code>migration_report.json</code> 보고서 생성 · gitignore 추가</li>
-    </ul>
-  </article>
-</section>
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag feat">기능</span>
+              <h3>부동산 실거래가 수집</h3>
+              <span class="sha">7d2d88d</span>
+            </div>
+            <ul>
+              <li><code>fetch_realestate.py</code> 추가 (Loan4u / AVM 용)</li>
+              <li>국토교통부 아파트 매매 실거래가 API(data.go.kr) 연동</li>
+              <li>지역코드 + 기간 범위를 월별로 순회 조회</li>
+              <li>한글 컬럼 CSV(<code>utf-8-sig</code>) 저장, 거래금액 정규화</li>
+              <li>월별 요청 간 대기(<code>--delay</code>) 및 네트워크·응답 오류 개별 처리</li>
+            </ul>
+          </li>
 
-<section class="date-group">
-  <div class="date-label">2026-05-31</div>
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag chore">정리</span>
+              <h3>scratchpad 임시 디렉토리 gitignore 추가</h3>
+              <span class="sha">4256316</span>
+            </div>
+          </li>
 
-  <article class="card">
-    <div class="card-head">
-      <span class="chip feat">기능 추가</span>
-      <h2>기본 파일 정리 스크립트</h2>
-      <span class="commit">47c7718 · 773f609</span>
-    </div>
-    <ul>
-      <li><code>organize.py</code> 신규 추가</li>
-      <li>종류별 + 날짜별(<code>YYYY/MM</code>) 자동 분류</li>
-      <li>파일명 <code>YYYYMMDD_HHMMSS_원본이름</code> 통일, MD5 중복 제거</li>
-      <li>EXIF 촬영일 기준 정렬 (Pillow 설치 시)</li>
-    </ul>
-  </article>
-</section>
+        </ul>
+      </li>
 
-<footer>
-  전체 상세 이력: <a href="CHANGELOG.md">CHANGELOG.md</a> · 최종 갱신 2026-08-10
-</footer>
+      <li class="day">
+        <h3 class="daylabel">2026 · 06 · 18</h3>
+        <ul class="entries">
+
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag docs">문서</span>
+              <h3>종합 README 작성</h3>
+              <span class="sha">ae5f9c1</span>
+            </div>
+            <ul>
+              <li>세 스크립트 통합 사용 가이드 작성</li>
+              <li>설치 방법, 기기별 사용법, 결과 폴더 구조, 주의사항 문서화</li>
+            </ul>
+          </li>
+
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag fix">수정</span>
+              <h3>파일명 충돌 · deprecated API</h3>
+              <span class="sha">3c03da6</span>
+            </div>
+            <ul>
+              <li>충돌 시 <code>file_1_2_3</code> 형태로 접미사가 무한히 길어지던 버그 수정 (3개 스크립트)</li>
+              <li>Pillow <code>_getexif()</code> → <code>getexif()</code> 교체</li>
+              <li>미사용 import <code>os</code>, <code>subprocess</code> 제거</li>
+              <li>미사용 <code>LIVE_PHOTO_PATTERN</code> 삭제</li>
+              <li>라이브포토 카테고리 <code>.mov</code> 중복 등록 제거</li>
+            </ul>
+          </li>
+
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag feat">기능</span>
+              <h3>iPhone 13 Pro 전용 스크립트</h3>
+              <span class="sha">defae8d</span>
+            </div>
+            <ul>
+              <li><code>iphone_migrate.py</code> 추가</li>
+              <li>HEIC/HEIF 지원, Live Photo(HEIC+MOV 쌍) 자동 감지</li>
+              <li>슬로모션 · 타임랩스 패턴 인식 및 별도 폴더 분류</li>
+              <li><code>iphone_migration_report.json</code> 통계 보고서 생성</li>
+            </ul>
+          </li>
+
+        </ul>
+      </li>
+
+      <li class="day">
+        <h3 class="daylabel">2026 · 06 · 10</h3>
+        <ul class="entries">
+
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag feat">기능</span>
+              <h3>Android 마이그레이션 스크립트</h3>
+              <span class="sha">80c323b · 6fee4b8</span>
+            </div>
+            <ul>
+              <li><code>migrate.py</code> 추가</li>
+              <li>ADB 직접 연결로 Android 기기에서 파일 자동 추출 (<code>--android</code>)</li>
+              <li>로컬 백업 폴더 정리 지원 (<code>--source</code>)</li>
+              <li><code>migration_report.json</code> 보고서 생성 · gitignore 추가</li>
+            </ul>
+          </li>
+
+        </ul>
+      </li>
+
+      <li class="day">
+        <h3 class="daylabel">2026 · 05 · 31</h3>
+        <ul class="entries">
+
+          <li class="entry">
+            <div class="entry-head">
+              <span class="tag feat">기능</span>
+              <h3>기본 파일 정리 스크립트</h3>
+              <span class="sha">47c7718 · 773f609</span>
+            </div>
+            <ul>
+              <li><code>organize.py</code> 추가</li>
+              <li>종류별 + 날짜별(<code>YYYY/MM</code>) 자동 분류</li>
+              <li>파일명 <code>YYYYMMDD_HHMMSS_원본이름</code> 통일, MD5 중복 제거</li>
+              <li>EXIF 촬영일 기준 정렬 (Pillow 설치 시)</li>
+            </ul>
+          </li>
+
+        </ul>
+      </li>
+
+    </ol>
+  </section>
+
+  <footer class="colophon">
+    <div>저장소 <span>Eugene-Eungkwon-Kim/-</span></div>
+    <div>브랜치 <span>claude/mobile-listing-code-updates-0tpnfu</span></div>
+    <div>최종 갱신 <span>2026-08-17</span></div>
+  </footer>
+</main>
 </body>
 </html>
