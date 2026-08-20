@@ -199,6 +199,43 @@ describe('알림 API와 SSE 스트림', () => {
       expect(res.statusCode).toBe(403);
     });
 
+    it('읽지 않은 알림 수를 조회한다', async () => {
+      const { userId, token } = await registerAndLogin('unread@example.com', 480);
+
+      const before = await app.inject({
+        method: 'GET',
+        url: `/api/users/${userId}/notifications/unread-count`,
+        headers: auth(token)
+      });
+      expect(before.json().data.count).toBe(0);
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/analytics/financial-analysis',
+        headers: auth(token),
+        payload: { userId, snapshotDate: '2026-01-02' }
+      });
+
+      const after = await app.inject({
+        method: 'GET',
+        url: `/api/users/${userId}/notifications/unread-count`,
+        headers: auth(token)
+      });
+      expect(after.json().data.count).toBeGreaterThan(0);
+    });
+
+    it('타인의 미읽음 수 조회는 403이다', async () => {
+      const owner = await registerAndLogin('uc-owner@example.com');
+      const other = await registerAndLogin('uc-other@example.com');
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/users/${owner.userId}/notifications/unread-count`,
+        headers: auth(other.token)
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
     it('없는 알림을 읽음 처리하면 404다', async () => {
       const { userId, token } = await registerAndLogin('n3@example.com');
 

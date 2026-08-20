@@ -65,6 +65,12 @@ export default defineConfig({
         // 각 Day 완료 시 Playwright로 수동 검증되며, 별도 프론트엔드 테스트
         // 인프라(@testing-library 등)는 이 세션의 DB중심/유지보수 우선순위 밖
         'src/App.tsx',
+        // 알림 배지·목록 — 표현 전용이다. 이 기능의 위험(재연결, 정리, 낙관적
+        // 갱신 되돌리기)은 전부 useNotificationStream.ts에 있고 그쪽은 테스트된다.
+        // 렌더링까지 검증하려면 @testing-library 도입과 vitest include에 .tsx
+        // 추가가 필요한데, 그건 이 저장소의 프론트엔드 테스트 방향을 정하는
+        // 별도 결정이라 알림 기능에 묻어가지 않는다. App.tsx와 같은 범주.
+        'src/components/NotificationBell.tsx',
         // 타입 전용 파일 — 런타임 코드가 없어 v8 provider가 0/0 statement를
         // 0%로 집계, perFile threshold를 항상 위반한다 (실제 로직 없음이 원인)
         'src/cache/cacheStore.ts',

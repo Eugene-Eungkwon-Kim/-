@@ -836,6 +836,28 @@ export const routeSchemas = {
     security: [{ Bearer: [] }]
   },
 
+  getUnreadCount: {
+    description: '읽지 않은 알림 수 (배지용)',
+    tags: ['Notifications'],
+    params: {
+      type: 'object',
+      properties: { userId: { type: 'string', format: 'uuid' } },
+      required: ['userId']
+    },
+    response: {
+      200: {
+        description: '조회 성공',
+        type: 'object',
+        properties: {
+          success: { const: true },
+          data: { type: 'object', additionalProperties: true, properties: { count: { type: 'integer' } } }
+        }
+      },
+      403: errorShape('권한 없음')
+    },
+    security: [{ Bearer: [] }]
+  },
+
   postNotificationRead: {
     description: '알림 읽음 처리',
     tags: ['Notifications'],

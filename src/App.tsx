@@ -1,4 +1,6 @@
 import { useEffect, useState, FormEvent } from 'react';
+import NotificationBell from './components/NotificationBell';
+import { useNotificationStream } from './hooks/useNotificationStream';
 import {
   applyForLoan,
   getLoanPortfolio,
@@ -41,6 +43,9 @@ export default function App() {
   const [txnAmount, setTxnAmount] = useState(1000000);
   const [txnError, setTxnError] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+
+  // 로그아웃하면 user가 null이 되고, 훅이 스트림을 닫는다.
+  const { notifications, unreadCount, status: streamStatus, markRead } = useNotificationStream(user?.id ?? null);
 
   // Day 9 - Task 4 (δ=1090): 새로고침 시 로그인 상태를 복원하고, 액세스+리프레시
   // 토큰이 모두 만료/무효화되어 webApiClient가 강제 로그아웃을 통지하면 화면에도 반영한다.
@@ -280,6 +285,15 @@ export default function App() {
           ))}
         </ul>
       </section>
+
+      {user && (
+        <NotificationBell
+          notifications={notifications}
+          unreadCount={unreadCount}
+          status={streamStatus}
+          onMarkRead={(id) => void markRead(id)}
+        />
+      )}
     </div>
   );
 }

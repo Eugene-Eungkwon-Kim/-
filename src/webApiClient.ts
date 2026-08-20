@@ -193,3 +193,45 @@ export function recordTransaction(input: {
 export function getTransactionHistory(userId: string) {
   return getJson<TransactionRecord[]>(`/api/users/${userId}/transactions`);
 }
+
+// ---- Phase 15 - Section 2: 알림 ----
+
+export interface NotificationRecord {
+  id: string;
+  userId: string;
+  metric: string;
+  severity: 'warning' | 'critical' | 'resolved';
+  value: number;
+  threshold: number;
+  snapshotDate: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export function getNotifications(userId: string, options: { unreadOnly?: boolean; limit?: number } = {}) {
+  const query = new URLSearchParams();
+  if (options.unreadOnly) query.set('unreadOnly', 'true');
+  if (options.limit !== undefined) query.set('limit', String(options.limit));
+
+  const suffix = query.toString() ? `?${query}` : '';
+  return getJson<NotificationRecord[]>(`/api/users/${userId}/notifications${suffix}`);
+}
+
+export function getUnreadCount(userId: string) {
+  return getJson<{ count: number }>(`/api/users/${userId}/notifications/unread-count`);
+}
+
+export function markNotificationRead(userId: string, notificationId: string) {
+  return postJson<NotificationRecord>(`/api/users/${userId}/notifications/${notificationId}/read`, {});
+}
+
+/**
+ * SSE 스트림용 1회용 티켓을 받는다.
+ *
+ * postJson을 거치므로 액세스 토큰이 만료됐으면 request()가 refresh 후 자동으로
+ * 재시도한다 — EventSource는 Authorization 헤더를 못 붙이기 때문에, 인증 갱신은
+ * 반드시 이 발급 단계에서 끝나 있어야 한다.
+ */
+export function issueStreamTicket() {
+  return postJson<{ ticket: string; expiresInMs: number }>('/api/notifications/ticket', {});
+}

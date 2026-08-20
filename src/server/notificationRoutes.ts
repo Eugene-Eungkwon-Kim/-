@@ -84,6 +84,16 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
     );
   });
 
+  app.get('/api/users/:userId/notifications/unread-count', { schema: routeSchemas.getUnreadCount }, async (request, reply) => {
+    const { userId } = request.params as { userId: string };
+    if (!isOwner(request, userId)) return forbidden(reply);
+
+    respond(
+      reply,
+      await toServiceResultAsync(async () => ({ count: await new NotificationRepository(pool).countUnread(userId) }))
+    );
+  });
+
   app.post('/api/users/:userId/notifications/:id/read', { schema: routeSchemas.postNotificationRead }, async (request, reply) => {
     const { userId, id } = request.params as { userId: string; id: string };
     if (!isOwner(request, userId)) return forbidden(reply);
