@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { StreamRegistry } from '../notifications/streamRegistry';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import type { CacheStore } from '../cache/cacheStore';
@@ -27,7 +28,7 @@ const TICKET_RATE_LIMIT = 20;
 
 /**
  * 사용자당 동시 SSE 연결 상한. 정상 사용은 탭 몇 개 수준이라 5면 충분하다.
- * 인스턴스 로컬 판정이라는 한계는 NotificationHub.subscriberCount 주석 참고.
+ * StreamRegistry가 Redis 기반이면 인스턴스 전체에 걸쳐 적용된다.
  */
 const MAX_STREAMS_PER_USER = 5;
 
@@ -60,13 +61,14 @@ export interface NotificationRouteDeps {
   pool: Pool;
   cache: CacheStore;
   hub: NotificationHub;
+  streams: StreamRegistry;
   isOwner: (request: FastifyRequest, targetUserId: string) => boolean;
   forbidden: (reply: FastifyReply) => void;
   respond: <T>(reply: FastifyReply, result: ServiceResult<T>) => void;
 }
 
 export function registerNotificationRoutes(app: FastifyInstance, deps: NotificationRouteDeps): void {
-  const { pool, cache, hub, isOwner, forbidden, respond } = deps;
+  const { pool, cache, hub, streams, isOwner, forbidden, respond } = deps;
 
   app.get('/api/users/:userId/notifications', { schema: routeSchemas.getNotifications }, async (request, reply) => {
     const { userId } = request.params as { userId: string };
@@ -139,9 +141,13 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
         .send({ success: false, error: { code: 'UNAUTHORIZED', message: 'Missing, expired, or already used ticket' } });
     }
 
-    // 상한 검사는 헤더를 쓰기 전에 해야 한다 — writeHead 이후에는 상태 코드를
-    // 바꿀 수 없어 429를 돌려줄 방법이 없다.
-    if (hub.subscriberCount(userId) >= MAX_STREAMS_PER_USER) {
+    // 먼저 등록하고 결과 개수로 판단한다. 세고 나서 등록하면 두 인스턴스가 동시에
+    // 같은 빈자리를 보고 둘 다 통과한다. 상한 검사는 헤더를 쓰기 전에 끝나야 한다 —
+    // writeHead 이후에는 상태 코드를 바꿀 수 없어 429를 돌려줄 방법이 없다.
+    const streamId = randomUUID();
+    const openStreams = await streams.registerAndCount(userId, streamId, Date.now());
+    if (openStreams > MAX_STREAMS_PER_USER) {
+      await streams.unregister(userId, streamId);
       return reply.code(429).send({
         success: false,
         error: {
@@ -174,7 +180,12 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
     };
 
     const unsubscribe = hub.subscribe(userId, send);
-    const heartbeat = setInterval(() => write(': ping\n\n'), HEARTBEAT_MS);
+    const heartbeat = setInterval(() => {
+      write(': ping\n\n');
+      // 레지스트리 항목을 갱신해 두지 않으면 STALE_AFTER_MS 뒤 살아 있는 스트림이
+      // 죽은 것으로 걷힌다.
+      void streams.heartbeat(userId, streamId, Date.now()).catch(() => undefined);
+    }, HEARTBEAT_MS);
     // 하트비트가 이벤트 루프를 붙잡아 프로세스 종료를 막지 않게 한다.
     heartbeat.unref?.();
 
@@ -187,6 +198,7 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
       clearInterval(heartbeat);
       unsubscribe();
       unsubscribeRevoke();
+      void streams.unregister(userId, streamId).catch(() => undefined);
       if (!reply.raw.writableEnded) reply.raw.end();
     };
 

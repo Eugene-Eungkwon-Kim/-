@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { cleanupTestDatabase, initializeTestDatabase } from '@db/__tests__/testDatabase';
 import { buildServer } from '@/server/app';
 import { MemoryNotificationHub } from '@/notifications/notificationHub';
+import { MemoryStreamRegistry } from '@/notifications/streamRegistry';
 import { FinancialSnapshotRepository } from '@repositories/FinancialSnapshotRepository';
 
 /**
@@ -14,12 +15,20 @@ describe('알림 API와 SSE 스트림', () => {
   let pool: Pool;
   let app: FastifyInstance;
   let hub: MemoryNotificationHub;
+  let streams: MemoryStreamRegistry;
 
   beforeEach(async () => {
     process.env.ENCRYPTION_KEY = 'de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0de0d';
     pool = await initializeTestDatabase();
     hub = new MemoryNotificationHub();
-    app = await buildServer(pool, { jwtSecret: 'test-secret', notificationHub: hub });
+    // 허브와 마찬가지로 레지스트리도 메모리로 주입해 테스트 간 상태가 남지 않게 한다.
+    // Redis 구현 자체는 streamRegistry.spec에서 인스턴스 간 동작까지 검증한다.
+    streams = new MemoryStreamRegistry();
+    app = await buildServer(pool, {
+      jwtSecret: 'test-secret',
+      notificationHub: hub,
+      streamRegistry: streams
+    });
   });
 
   afterEach(async () => {
@@ -122,6 +131,15 @@ describe('알림 API와 SSE 스트림', () => {
   async function issueTicketFor(token: string): Promise<string> {
     const res = await app.inject({ method: 'POST', url: '/api/notifications/ticket', headers: auth(token) });
     return res.json().data.ticket;
+  }
+
+  /** 비동기 조건용. 레지스트리 집계처럼 await가 필요한 경우에 쓴다. */
+  async function waitUntilAsync(predicate: () => Promise<boolean>, timeoutMs = 3000): Promise<void> {
+    const start = Date.now();
+    while (!(await predicate())) {
+      if (Date.now() - start > timeoutMs) throw new Error('timed out waiting for condition');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
   }
 
   /** 조건이 참이 될 때까지 기다린다 (소켓 종료가 서버에 반영되는 시차 흡수용). */
@@ -495,7 +513,7 @@ describe('알림 API와 SSE 스트림', () => {
 
         // 하나를 닫으면 자리가 비어 다시 열 수 있어야 한다.
         clients.pop()!.close();
-        await waitUntil(() => hub.subscriberCount(userId) === 4);
+        await waitUntilAsync(async () => (await streams.count(userId, Date.now())) === 4);
 
         const reopened = await StreamClient.connect(
           port,

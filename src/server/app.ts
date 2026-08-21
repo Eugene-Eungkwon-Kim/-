@@ -30,6 +30,7 @@ import {
 import { getDashboard } from '../api/dashboardService';
 import { createNotificationHub, type NotificationHub } from '../notifications/notificationHub';
 import { registerNotificationRoutes } from './notificationRoutes';
+import { createStreamRegistry, type StreamRegistry } from '../notifications/streamRegistry';
 import { createCacheStore } from '../cache/cacheFactory';
 import {
   checkBackupDue,
@@ -53,6 +54,8 @@ export interface BuildServerOptions {
   backupDir?: string;
   /** 미지정 시 REDIS_URL 유무로 결정된다. 테스트는 메모리 허브를 주입해 격리한다. */
   notificationHub?: NotificationHub;
+  /** 미지정 시 REDIS_URL 유무로 결정된다. Redis면 상한이 인스턴스 전체에 걸린다. */
+  streamRegistry?: StreamRegistry;
 }
 
 const DEFAULT_BACKUP_DIR = path.join(process.cwd(), 'data', 'backups');
@@ -142,6 +145,7 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   // 티켓을 프로세스 메모리에 두면 발급 인스턴스와 스트림 인스턴스가 달라질 때
   // 실패하므로, 0b에서 안정화한 CacheStore(프로덕션=Redis)를 그대로 쓴다.
   const notificationHub = options.notificationHub ?? createNotificationHub();
+  const streamRegistry = options.streamRegistry ?? createStreamRegistry();
   const cache = createCacheStore(pool);
 
   // Day 11 - Task 3 (δ=915): 구조화된 로깅 활성화 (pino 기반)
@@ -553,12 +557,21 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
   });
 
   // Phase 15 - Section 2 (B-6): 알림 조회 + SSE 스트림
-  registerNotificationRoutes(app, { pool, cache, hub: notificationHub, isOwner, forbidden, respond });
+  registerNotificationRoutes(app, {
+    pool,
+    cache,
+    hub: notificationHub,
+    streams: streamRegistry,
+    isOwner,
+    forbidden,
+    respond
+  });
 
   // 허브가 Redis 연결을 들고 있으므로 서버 종료 시 반드시 닫는다 —
   // 닫지 않으면 열린 핸들이 남아 vitest가 종료되지 않는다.
   app.addHook('onClose', async () => {
     await notificationHub.close();
+    await streamRegistry.close();
   });
 
   // Day 10 - Task 4 (δ=1065): adminService.ts도 HTTP로 노출한다. isOwner가 아니라
