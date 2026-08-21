@@ -429,7 +429,15 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
 
   app.post('/api/auth/logout', async (request, reply) => {
     const { refreshToken } = request.body as { refreshToken: string };
-    respond(reply, await revokeRefreshToken(pool, refreshToken));
+    const result = await revokeRefreshToken(pool, refreshToken);
+
+    // 열린 SSE 스트림은 티켓 1회로만 인증돼 이후 재인증되지 않는다. 서버가 끊지
+    // 않으면 로그아웃한 사용자의 브라우저로 알림이 계속 흐른다.
+    if (result.success && result.data.userId) {
+      await notificationHub.revoke(result.data.userId);
+    }
+
+    respond(reply, result);
   });
 
   app.get('/api/users/:userId', async (request, reply) => {

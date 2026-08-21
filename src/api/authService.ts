@@ -27,8 +27,17 @@ export async function verifyRefreshToken(pool: Pool, token: string): Promise<Ser
   });
 }
 
-export async function revokeRefreshToken(pool: Pool, token: string): Promise<ServiceResult<void>> {
+/**
+ * 취소된 토큰의 소유자를 함께 돌려준다 — 호출자가 그 사용자의 SSE 스트림을
+ * 끊는 데 쓴다. 이미 취소됐거나 없는 토큰이면 userId는 null이다(로그아웃은
+ * 멱등해야 하므로 실패로 보지 않는다).
+ */
+export async function revokeRefreshToken(
+  pool: Pool,
+  token: string
+): Promise<ServiceResult<{ userId: string | null }>> {
   return toServiceResultAsync(async () => {
-    await new RefreshTokenRepository(pool).revoke(token);
+    const revoked = await new RefreshTokenRepository(pool).revoke(token);
+    return { userId: revoked?.userId ?? null };
   });
 }

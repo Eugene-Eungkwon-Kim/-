@@ -123,6 +123,14 @@ export function useNotificationStream(
         }
       });
 
+      // 서버가 세션 종료로 스트림을 끊은 경우다. 재연결하면 안 된다 — 티켓 발급이
+      // 아직 통과하는 짧은 창 동안 다시 붙었다 끊기는 것을 반복하게 된다.
+      source.addEventListener('revoked', () => {
+        cancelled = true;
+        teardown();
+        setStatus('stopped');
+      });
+
       source.onerror = () => {
         // EventSource는 끊기면 같은 URL로 자동 재연결하는데, 그 URL의 티켓은 이미
         // 소진돼 401을 받고 또 끊긴다. close()로 브라우저의 재연결을 차단하고

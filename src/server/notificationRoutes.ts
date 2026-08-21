@@ -179,13 +179,25 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
     heartbeat.unref?.();
 
     let closed = false;
+    let unsubscribeRevoke = (): void => {};
+
     const cleanup = (): void => {
       if (closed) return;
       closed = true;
       clearInterval(heartbeat);
       unsubscribe();
+      unsubscribeRevoke();
       if (!reply.raw.writableEnded) reply.raw.end();
     };
+
+    // 로그아웃 등으로 서버가 이 사용자의 스트림을 끊을 때 호출된다. 스트림은
+    // 티켓 1회로만 인증되고 이후 재인증되지 않으므로, 클라이언트가 닫아주기를
+    // 기대하지 않고 서버가 직접 끊는다. 끊기 전에 이유를 한 프레임 보내
+    // 클라이언트가 재연결 루프에 빠지지 않고 로그아웃으로 처리하게 한다.
+    unsubscribeRevoke = hub.onRevoke(userId, () => {
+      write(`event: revoked\ndata: ${JSON.stringify({ reason: 'session_ended' })}\n\n`);
+      cleanup();
+    });
 
     request.raw.on('close', cleanup);
     request.raw.on('error', cleanup);

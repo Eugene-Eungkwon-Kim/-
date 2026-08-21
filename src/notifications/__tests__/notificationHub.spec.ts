@@ -147,6 +147,99 @@ describe('NotificationHub', () => {
     });
   });
 
+  describe('취소 (스트림 강제 종료)', () => {
+    it('메모리 허브: 등록된 핸들러가 호출된다', async () => {
+      const hub = new MemoryNotificationHub();
+      openHubs.push(hub);
+
+      let revoked = 0;
+      hub.onRevoke('user-1', () => {
+        revoked += 1;
+      });
+
+      await hub.revoke('user-1');
+      expect(revoked).toBe(1);
+    });
+
+    it('대상이 아닌 사용자의 핸들러는 호출되지 않는다', async () => {
+      const hub = new MemoryNotificationHub();
+      openHubs.push(hub);
+
+      let revoked = 0;
+      hub.onRevoke('user-2', () => {
+        revoked += 1;
+      });
+
+      await hub.revoke('user-1');
+      expect(revoked).toBe(0);
+    });
+
+    it('해제한 핸들러는 호출되지 않는다', async () => {
+      const hub = new MemoryNotificationHub();
+      openHubs.push(hub);
+
+      let revoked = 0;
+      const off = hub.onRevoke('user-1', () => {
+        revoked += 1;
+      });
+      off();
+
+      await hub.revoke('user-1');
+      expect(revoked).toBe(0);
+    });
+
+    it('핸들러가 순회 중 자기 자신을 해제해도 안전하다', async () => {
+      const hub = new MemoryNotificationHub();
+      openHubs.push(hub);
+
+      // SSE 라우트가 실제로 이렇게 동작한다: 취소 핸들러가 cleanup을 부르고
+      // cleanup이 다시 구독 해제를 호출한다.
+      const calls: string[] = [];
+      let offA = (): void => {};
+      offA = hub.onRevoke('user-1', () => {
+        calls.push('a');
+        offA();
+      });
+      hub.onRevoke('user-1', () => calls.push('b'));
+
+      await hub.revoke('user-1');
+      expect(calls).toEqual(['a', 'b']);
+    });
+
+    it('Redis 허브: 다른 인스턴스의 스트림도 끊긴다', async () => {
+      const publisher = new RedisNotificationHub(process.env.REDIS_URL || 'redis://localhost:6379');
+      const subscriber = new RedisNotificationHub(process.env.REDIS_URL || 'redis://localhost:6379');
+      openHubs.push(publisher, subscriber);
+      await subscriber.whenReady();
+
+      let revoked = 0;
+      subscriber.onRevoke('user-1', () => {
+        revoked += 1;
+      });
+
+      await publisher.revoke('user-1');
+      await waitFor(() => revoked > 0);
+
+      expect(revoked).toBe(1);
+    });
+
+    it('Redis 허브: 취소가 알림 전달을 깨뜨리지 않는다 (봉투 형식)', async () => {
+      const publisher = new RedisNotificationHub(process.env.REDIS_URL || 'redis://localhost:6379');
+      const subscriber = new RedisNotificationHub(process.env.REDIS_URL || 'redis://localhost:6379');
+      openHubs.push(publisher, subscriber);
+      await subscriber.whenReady();
+
+      const received: NotificationRecord[] = [];
+      subscriber.subscribe('user-1', (n) => received.push(n));
+
+      await publisher.revoke('user-2');
+      await publisher.publish(makeNotification('user-1', 'still-works'));
+      await waitFor(() => received.length > 0);
+
+      expect(received[0].id).toBe('still-works');
+    });
+  });
+
   describe('createNotificationHub', () => {
     const original = process.env.REDIS_URL;
 

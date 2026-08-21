@@ -372,6 +372,79 @@ describe('알림 API와 SSE 스트림', () => {
    * 티켓은 1회용 60초 만료라 EventSource의 기본 자동 재연결이 반드시 실패한다.
    * 클라이언트가 백오프 없이 재발급을 반복하면 발급이 폭주하므로 한도를 둔다.
    */
+  describe('로그아웃 시 스트림 강제 종료', () => {
+    it('로그아웃하면 열려 있던 스트림이 revoked 프레임과 함께 끊긴다', async () => {
+      const { userId, token } = await registerAndLogin('revoke@example.com');
+      const loginRes = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'revoke@example.com', password: 'correct-horse' }
+      });
+      const refreshToken = loginRes.json().data.refreshToken;
+
+      const port = await listen();
+      const client = await StreamClient.connect(port, `/api/notifications/stream?ticket=${await issueTicketFor(token)}`);
+
+      try {
+        await client.waitFor('event: connected');
+        expect(hub.subscriberCount(userId)).toBe(1);
+
+        await app.inject({ method: 'POST', url: '/api/auth/logout', payload: { refreshToken } });
+
+        // 스트림은 티켓 1회로만 인증되고 이후 재인증되지 않는다. 서버가 끊지
+        // 않으면 로그아웃한 사용자에게 알림이 계속 흐른다.
+        const received = await client.waitFor('event: revoked');
+        expect(received).toContain('session_ended');
+        await waitUntil(() => hub.subscriberCount(userId) === 0);
+      } finally {
+        client.close();
+      }
+    });
+
+    it('타인의 로그아웃은 내 스트림을 끊지 않는다', async () => {
+      const mine = await registerAndLogin('revoke-mine@example.com');
+      await registerAndLogin('revoke-other@example.com');
+      const otherLogin = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'revoke-other@example.com', password: 'correct-horse' }
+      });
+
+      const port = await listen();
+      const client = await StreamClient.connect(port, `/api/notifications/stream?ticket=${await issueTicketFor(mine.token)}`);
+
+      try {
+        await client.waitFor('event: connected');
+
+        await app.inject({
+          method: 'POST',
+          url: '/api/auth/logout',
+          payload: { refreshToken: otherLogin.json().data.refreshToken }
+        });
+
+        expect(hub.subscriberCount(mine.userId)).toBe(1);
+      } finally {
+        client.close();
+      }
+    });
+
+    it('이미 취소된 토큰으로 로그아웃해도 성공한다 (멱등)', async () => {
+      await registerAndLogin('revoke-idem@example.com');
+      const loginRes = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'revoke-idem@example.com', password: 'correct-horse' }
+      });
+      const refreshToken = loginRes.json().data.refreshToken;
+
+      const first = await app.inject({ method: 'POST', url: '/api/auth/logout', payload: { refreshToken } });
+      const second = await app.inject({ method: 'POST', url: '/api/auth/logout', payload: { refreshToken } });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+    });
+  });
+
   describe('남용 방지', () => {
     it('티켓 발급이 분당 한도를 넘으면 429다', async () => {
       const { token } = await registerAndLogin('rl@example.com');

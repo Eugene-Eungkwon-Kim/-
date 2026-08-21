@@ -53,10 +53,18 @@ export class RefreshTokenRepository {
     return { userId: row.user_id };
   }
 
-  async revoke(token: string): Promise<void> {
-    await this.pool.query(
-      'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = $1',
+  /**
+   * 취소된 토큰의 소유자를 함께 돌려준다 — 로그아웃 시 그 사용자의 SSE 스트림을
+   * 끊어야 하는데, verify를 따로 부르면 왕복이 늘고 그 사이에 상태가 바뀔 수 있다.
+   * 이미 취소됐거나 없는 토큰이면 null.
+   */
+  async revoke(token: string): Promise<VerifiedRefreshToken | null> {
+    const result = await this.pool.query(
+      'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = $1 RETURNING user_id',
       [hashToken(token)]
     );
+
+    const row = result.rows[0] as { user_id: string } | undefined;
+    return row ? { userId: row.user_id } : null;
   }
 }

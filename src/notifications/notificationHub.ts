@@ -20,8 +20,26 @@ export interface NotificationHub {
    * 한 클라이언트의 재연결 루프가 인스턴스를 고갈시키는 주된 시나리오는 막힌다.
    */
   subscriberCount(userId: string): number;
+  /**
+   * 해당 사용자의 열린 스트림을 모두 끊으라고 알린다 (로그아웃 등).
+   *
+   * SSE 연결은 티켓 1회로 인증되고 그 뒤로는 토큰을 싣지 않아 재인증되지 않는다.
+   * 클라이언트가 닫아주기를 기대할 수만은 없으므로 서버가 끊을 수단이 필요하다.
+   * Redis 허브에서는 모든 인스턴스로 전파된다.
+   */
+  revoke(userId: string): Promise<void>;
+  /** 취소 신호를 받을 핸들러 등록. 해제 함수를 돌려준다. */
+  onRevoke(userId: string, handler: () => void): () => void;
   close(): Promise<void>;
 }
+
+/**
+ * 채널 페이로드. 알림과 취소가 같은 채널을 쓰므로 태그로 구분한다 — 채널을 하나
+ * 더 두면 구독 관리가 두 배가 되고 순서 보장도 잃는다.
+ */
+type HubMessage =
+  | { type: 'notification'; notification: NotificationRecord }
+  | { type: 'revoke'; userId: string };
 
 export const NOTIFICATION_CHANNEL = 'maars:notifications';
 
@@ -31,6 +49,7 @@ export const NOTIFICATION_CHANNEL = 'maars:notifications';
  */
 class ListenerRegistry {
   private readonly listeners = new Map<string, Set<(n: NotificationRecord) => void>>();
+  private readonly revokeHandlers = new Map<string, Set<() => void>>();
 
   add(userId: string, listener: (n: NotificationRecord) => void): () => void {
     let set = this.listeners.get(userId);
@@ -53,6 +72,34 @@ class ListenerRegistry {
     return this.listeners.get(userId)?.size ?? 0;
   }
 
+  addRevokeHandler(userId: string, handler: () => void): () => void {
+    let set = this.revokeHandlers.get(userId);
+    if (!set) {
+      set = new Set();
+      this.revokeHandlers.set(userId, set);
+    }
+    set.add(handler);
+
+    return () => {
+      const current = this.revokeHandlers.get(userId);
+      if (!current) return;
+      current.delete(handler);
+      if (current.size === 0) this.revokeHandlers.delete(userId);
+    };
+  }
+
+  dispatchRevoke(userId: string): void {
+    // 핸들러가 스트림을 닫으면서 자기 자신을 해제하므로, 순회 중 변형을 피해 복사한다.
+    for (const handler of [...(this.revokeHandlers.get(userId) ?? [])]) {
+      try {
+        handler();
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('[notificationHub] revoke handler failed:', error);
+      }
+    }
+  }
+
   dispatch(notification: NotificationRecord): void {
     const set = this.listeners.get(notification.userId);
     if (!set) return;
@@ -69,6 +116,7 @@ class ListenerRegistry {
 
   clear(): void {
     this.listeners.clear();
+    this.revokeHandlers.clear();
   }
 }
 
@@ -86,6 +134,14 @@ export class MemoryNotificationHub implements NotificationHub {
 
   subscriberCount(userId: string): number {
     return this.registry.count(userId);
+  }
+
+  async revoke(userId: string): Promise<void> {
+    this.registry.dispatchRevoke(userId);
+  }
+
+  onRevoke(userId: string, handler: () => void): () => void {
+    return this.registry.addRevokeHandler(userId, handler);
   }
 
   async close(): Promise<void> {
@@ -116,7 +172,12 @@ export class RedisNotificationHub implements NotificationHub {
     this.subscriber.on('message', (channel, payload) => {
       if (channel !== NOTIFICATION_CHANNEL) return;
       try {
-        this.registry.dispatch(JSON.parse(payload) as NotificationRecord);
+        const message = JSON.parse(payload) as HubMessage;
+        if (message.type === 'notification') {
+          this.registry.dispatch(message.notification);
+        } else if (message.type === 'revoke') {
+          this.registry.dispatchRevoke(message.userId);
+        }
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error('[notificationHub] malformed payload:', error);
@@ -127,7 +188,8 @@ export class RedisNotificationHub implements NotificationHub {
   }
 
   async publish(notification: NotificationRecord): Promise<void> {
-    await this.publisher.publish(NOTIFICATION_CHANNEL, JSON.stringify(notification));
+    const message: HubMessage = { type: 'notification', notification };
+    await this.publisher.publish(NOTIFICATION_CHANNEL, JSON.stringify(message));
   }
 
   subscribe(userId: string, listener: (n: NotificationRecord) => void): () => void {
@@ -136,6 +198,16 @@ export class RedisNotificationHub implements NotificationHub {
 
   subscriberCount(userId: string): number {
     return this.registry.count(userId);
+  }
+
+  /** 모든 인스턴스에 전파된다 — 발행 인스턴스가 아닌 곳의 스트림도 끊긴다. */
+  async revoke(userId: string): Promise<void> {
+    const message: HubMessage = { type: 'revoke', userId };
+    await this.publisher.publish(NOTIFICATION_CHANNEL, JSON.stringify(message));
+  }
+
+  onRevoke(userId: string, handler: () => void): () => void {
+    return this.registry.addRevokeHandler(userId, handler);
   }
 
   /** SUBSCRIBE 완료를 기다린다 — 구독 직후 발행하는 테스트의 경합을 막는다. */

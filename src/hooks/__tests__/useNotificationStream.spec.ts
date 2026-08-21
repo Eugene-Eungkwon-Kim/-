@@ -264,6 +264,24 @@ describe('useNotificationStream', () => {
     expect(result.current.status).toBe('stopped');
   });
 
+  it('서버가 revoked를 보내면 재연결하지 않고 멈춘다', async () => {
+    const { result } = renderHook(() => useNotificationStream('u1', factory));
+    await flush();
+
+    await act(async () => FakeStream.instances[0].emit('revoked', JSON.stringify({ reason: 'session_ended' })));
+
+    expect(result.current.status).toBe('stopped');
+    expect(FakeStream.instances[0].closed).toBe(true);
+
+    // 취소 후에는 소켓이 닫히며 onerror가 뒤따를 수 있다. 그때도 재연결하면
+    // 티켓이 아직 발급되는 짧은 창 동안 붙었다 끊기를 반복한다.
+    await act(async () => FakeStream.instances[0].fail());
+    await act(async () => void vi.advanceTimersByTime(60_000));
+    await flush();
+
+    expect(FakeStream.instances).toHaveLength(1);
+  });
+
   describe('markRead', () => {
     it('성공하면 읽음으로 바뀌고 미읽음 수가 준다', async () => {
       vi.mocked(client.getNotifications).mockResolvedValue({ success: true, data: [notification('n1')] });
