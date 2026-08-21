@@ -127,6 +127,67 @@ describe('NotificationRepository (Phase 15 - Section 2, B-3)', () => {
     });
   });
 
+  describe('pruneOldNotifications', () => {
+    /** created_at을 직접 조작해 오래된 알림을 만든다. */
+    async function ageTo(id: string, createdAt: string): Promise<void> {
+      await pool.query('UPDATE notifications SET created_at = $1 WHERE id = $2', [createdAt, id]);
+    }
+
+    const NOW = '2026-06-01 00:00:00';
+
+    it('읽었고 보존기간을 넘긴 알림은 지운다', async () => {
+      const record = await repo.insertIfNew(input());
+      await repo.markRead(userId, record!.id);
+      await ageTo(record!.id, '2026-01-01 00:00:00');
+
+      const result = await repo.pruneOldNotifications(30, NOW);
+
+      expect(result.prunedCount).toBe(1);
+      expect(result.prunedIds).toEqual([record!.id]);
+      expect(await repo.list(userId)).toHaveLength(0);
+    });
+
+    it('읽지 않은 알림은 아무리 오래돼도 남긴다', async () => {
+      const record = await repo.insertIfNew(input());
+      await ageTo(record!.id, '2020-01-01 00:00:00');
+
+      const result = await repo.pruneOldNotifications(30, NOW);
+
+      // 사용자가 못 본 위험 경고가 조용히 사라지는 쪽이 더 나쁜 실패다.
+      expect(result.prunedCount).toBe(0);
+      expect(await repo.list(userId)).toHaveLength(1);
+    });
+
+    it('보존기간 안의 읽은 알림은 남긴다', async () => {
+      const record = await repo.insertIfNew(input());
+      await repo.markRead(userId, record!.id);
+      await ageTo(record!.id, '2026-05-25 00:00:00');
+
+      const result = await repo.pruneOldNotifications(30, NOW);
+
+      expect(result.prunedCount).toBe(0);
+      expect(await repo.list(userId)).toHaveLength(1);
+    });
+
+    it('사용자를 가리지 않고 전체를 정리한다 (관리자 배치)', async () => {
+      const mine = await repo.insertIfNew(input());
+      const theirs = await repo.insertIfNew(input({ userId: otherUserId }));
+      await repo.markRead(userId, mine!.id);
+      await repo.markRead(otherUserId, theirs!.id);
+      await ageTo(mine!.id, '2026-01-01 00:00:00');
+      await ageTo(theirs!.id, '2026-01-01 00:00:00');
+
+      const result = await repo.pruneOldNotifications(30, NOW);
+
+      expect(result.prunedCount).toBe(2);
+    });
+
+    it('지울 것이 없으면 0건을 반환한다', async () => {
+      const result = await repo.pruneOldNotifications(30, NOW);
+      expect(result).toEqual({ prunedCount: 0, prunedIds: [] });
+    });
+  });
+
   describe('markRead', () => {
     it('read_at을 채운다', async () => {
       const record = await repo.insertIfNew(input());

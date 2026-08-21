@@ -31,7 +31,15 @@ import { getDashboard } from '../api/dashboardService';
 import { createNotificationHub, type NotificationHub } from '../notifications/notificationHub';
 import { registerNotificationRoutes } from './notificationRoutes';
 import { createCacheStore } from '../cache/cacheFactory';
-import { checkBackupDue, createBackup, listBackups, pruneOldBackups, runIntegrityCheck, verifyBackup } from '../api/adminService';
+import {
+  checkBackupDue,
+  createBackup,
+  listBackups,
+  pruneOldBackups,
+  pruneOldNotifications,
+  runIntegrityCheck,
+  verifyBackup
+} from '../api/adminService';
 import { ServiceResult } from '../api/errorMapping';
 import { TrendMetric } from '../types/financialSnapshot';
 import { RecordPaymentInput } from '../types/loanPortfolio';
@@ -607,6 +615,13 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     if (!isAdmin(request)) return forbidden(reply);
     const { retentionDays, now } = request.body as { retentionDays: number; now: string };
     respond(reply, await pruneOldBackups(pool, backupDir, retentionDays, now));
+  });
+
+  // Phase 15 - B-3: 보존기간 초과 알림 정리 (읽음 처리된 것만)
+  app.post('/api/admin/notifications/prune', async (request, reply) => {
+    if (!isAdmin(request)) return forbidden(reply);
+    const { retentionDays, now } = request.body as { retentionDays: number; now: string };
+    respond(reply, await pruneOldNotifications(pool, retentionDays, now));
   });
 
   // Day 13 - Task G (δ=550): 감사 로그 조회 엔드포인트

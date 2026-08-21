@@ -6,6 +6,7 @@ import {
   ListNotificationsOptions,
   NotificationRecord,
   NotificationSeverity,
+  PruneNotificationsResult,
   buildDedupeKey
 } from '../types/notification';
 
@@ -108,6 +109,29 @@ export class NotificationRepository {
       [userId]
     );
     return Number((result.rows[0] as { count: string }).count);
+  }
+
+  /**
+   * 보존기간을 넘긴 알림을 정리한다 (Phase 15 - B-3).
+   *
+   * 읽음 처리된 것만 지운다. 알림은 상태 전이에만 쌓여 증가가 느리므로 공간을
+   * 아끼자고 읽지 않은 경고를 시스템이 임의로 없애는 건 대가가 맞지 않는다 —
+   * 사용자가 못 본 위험 경고가 조용히 사라지는 쪽이 더 나쁜 실패다.
+   * 읽지 않은 알림은 얼마나 오래됐든 남는다.
+   *
+   * BackupManager.pruneExpiredBackups와 같은 (retentionDays, now) 형태를 쓴다.
+   */
+  async pruneOldNotifications(retentionDays: number, now: string): Promise<PruneNotificationsResult> {
+    const result = await this.pool.query(
+      `DELETE FROM notifications
+       WHERE read_at IS NOT NULL
+         AND CAST(created_at AS TIMESTAMP) < (CAST($2 AS TIMESTAMP) - ($1 || ' days')::INTERVAL)
+       RETURNING id`,
+      [retentionDays, now]
+    );
+
+    const ids = (result.rows as { id: string }[]).map((r) => r.id);
+    return { prunedCount: ids.length, prunedIds: ids };
   }
 
   /**

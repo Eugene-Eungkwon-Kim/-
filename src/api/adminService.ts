@@ -3,6 +3,8 @@ import { IntegrityChecker, IntegrityCheckResult } from '../repositories/Integrit
 import { BackupManager, PruneResult, shouldRunBackup } from '../repositories/BackupManager';
 import { BackupRecord } from '../types/backup';
 import { ServiceResult, toServiceResultAsync } from './errorMapping';
+import { NotificationRepository } from '../repositories/NotificationRepository';
+import type { PruneNotificationsResult } from '../types/notification';
 
 export async function runIntegrityCheck(pool: Pool, asOfDate: string): Promise<ServiceResult<IntegrityCheckResult[]>> {
   return toServiceResultAsync(async () => new IntegrityChecker(pool).runFullCheck(asOfDate));
@@ -40,4 +42,16 @@ export async function pruneOldBackups(
   now: string
 ): Promise<ServiceResult<PruneResult>> {
   return toServiceResultAsync(async () => new BackupManager(pool, backupDir).pruneExpiredBackups(retentionDays, now));
+}
+
+/**
+ * 보존기간 초과 알림 정리 (Phase 15 - B-3).
+ * 읽음 처리된 것만 지운다 — 근거는 NotificationRepository.pruneOldNotifications 주석 참고.
+ */
+export async function pruneOldNotifications(
+  pool: Pool,
+  retentionDays: number,
+  now: string
+): Promise<ServiceResult<PruneNotificationsResult>> {
+  return toServiceResultAsync(async () => new NotificationRepository(pool).pruneOldNotifications(retentionDays, now));
 }

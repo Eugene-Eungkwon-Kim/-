@@ -249,6 +249,42 @@ describe('알림 API와 SSE 스트림', () => {
     });
   });
 
+  describe('알림 정리 (관리자)', () => {
+    it('비관리자는 403이다', async () => {
+      const { token } = await registerAndLogin('prune-user@example.com');
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/admin/notifications/prune',
+        headers: auth(token),
+        payload: { retentionDays: 30, now: '2026-06-01 00:00:00' }
+      });
+      expect(res.statusCode).toBe(403);
+    });
+
+    it('관리자는 정리를 실행한다', async () => {
+      const { userId } = await registerAndLogin('prune-admin@example.com');
+      // role 승격은 JWT payload에 실리므로 다시 로그인해 관리자 토큰을 받아야 한다.
+      await pool.query('UPDATE users SET role = $1 WHERE id = $2', ['admin', userId]);
+      const loginRes = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'prune-admin@example.com', password: 'correct-horse' }
+      });
+      const adminToken = loginRes.json().data.token;
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/admin/notifications/prune',
+        headers: auth(adminToken),
+        payload: { retentionDays: 30, now: '2026-06-01 00:00:00' }
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.json().data).toEqual({ prunedCount: 0, prunedIds: [] });
+    });
+  });
+
   describe('티켓 인증', () => {
     it('인증된 사용자는 티켓을 발급받는다', async () => {
       const { token } = await registerAndLogin('t1@example.com');

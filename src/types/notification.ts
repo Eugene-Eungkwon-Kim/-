@@ -41,3 +41,9 @@ export type NotificationState = NotificationSeverity | 'none';
 export function buildDedupeKey(input: CreateNotificationInput): string {
   return `${input.userId}:${input.metric}:${input.severity}:${input.snapshotDate}`;
 }
+
+/** 알림 정리 결과 (Phase 15 - B-3). BackupManager의 PruneResult와 같은 형태다. */
+export interface PruneNotificationsResult {
+  prunedCount: number;
+  prunedIds: string[];
+}

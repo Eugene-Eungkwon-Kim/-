@@ -59,6 +59,15 @@ describe('Performance Benchmarks (Day 12 - Task E, δ=800)', () => {
 
   describe('E1: User Registration Performance', () => {
     it('should register single user in acceptable time', async () => {
+      // 측정 대상은 정상 상태의 등록 비용(bcrypt + INSERT)이다. 파일의 첫 요청을
+      // 그대로 재면 커넥션 풀 최초 획득과 JIT 예열이 함께 잡혀, 스위트가 무거워질
+      // 때마다 임계값을 넘나든다. 한 건을 버리고 그 다음을 측정한다.
+      await app.inject({
+        method: 'POST',
+        url: '/api/users',
+        payload: { email: 'warmup-user@example.com', name: 'Warmup User', password: 'test-password-123' },
+      });
+
       const startTime = performance.now();
       const res = await app.inject({
         method: 'POST',
