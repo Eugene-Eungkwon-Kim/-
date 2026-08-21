@@ -1,0 +1,26 @@
+{
+  "country": "Germany",
+  "market_code": "DE",
+  "currency": "EUR",
+  "timestamp": "2026-06-25",
+  "data_collection": {
+    "primary": "Deutscher Maklerverband",
+    "data_volume_gb": 4
+  },
+  "sample_properties": [
+    {
+      "property_id": "DE_BER_001",
+      "address": "123 Kurfürstendamm, Berlin",
+      "area": 3500,
+      "old_price": 750000,
+      "new_price": 780000
+    },
+    {
+      "property_id": "DE_MUN_001",
+      "address": "456 Marienplatz, Munich",
+      "area": 3000,
+      "old_price": 900000,
+      "new_price": 950000
+    }
+  ]
+}

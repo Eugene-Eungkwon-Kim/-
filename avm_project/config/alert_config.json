@@ -1,0 +1,23 @@
+{
+  "email": {
+    "enabled": true,
+    "recipients": [
+      "support@loan4u.com"
+    ],
+    "on_failure": true,
+    "on_warning": true
+  },
+  "slack": {
+    "enabled": true,
+    "webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+    "channel": "#loan4u-alerts",
+    "on_failure": true,
+    "on_warning": true
+  },
+  "thresholds": {
+    "collection_timeout_minutes": 5,
+    "retrain_timeout_minutes": 10,
+    "model_r2_min": 0.85,
+    "api_uptime_min_percent": 99.0
+  }
+}

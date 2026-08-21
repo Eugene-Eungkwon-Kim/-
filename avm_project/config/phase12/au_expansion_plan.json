@@ -1,0 +1,26 @@
+{
+  "country": "Australia",
+  "market_code": "AU",
+  "currency": "AUD",
+  "timestamp": "2026-06-25",
+  "data_collection": {
+    "primary": "Australian Bureau of Statistics",
+    "data_volume_gb": 5
+  },
+  "sample_properties": [
+    {
+      "property_id": "AU_SYD_001",
+      "address": "123 Darling Harbour, Sydney",
+      "area": 4200,
+      "old_price": 1200000,
+      "new_price": 1280000
+    },
+    {
+      "property_id": "AU_MEL_001",
+      "address": "456 Collins Street, Melbourne",
+      "area": 3800,
+      "old_price": 950000,
+      "new_price": 1020000
+    }
+  ]
+}

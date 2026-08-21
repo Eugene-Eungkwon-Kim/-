@@ -1,0 +1,81 @@
+{
+  "markets": {
+    "Vietnam": {
+      "market_size_trillion": 5,
+      "opportunity_level": "VERY_HIGH",
+      "competition": "VERY_LOW",
+      "recommendation": "FIRST_PRIORITY"
+    },
+    "Thailand": {
+      "market_size_trillion": 3,
+      "opportunity_level": "HIGH",
+      "competition": "MEDIUM",
+      "recommendation": "SECOND_PRIORITY"
+    },
+    "Indonesia": {
+      "market_size_trillion": 10,
+      "opportunity_level": "HIGH",
+      "competition": "LOW",
+      "recommendation": "THIRD_PRIORITY"
+    }
+  },
+  "localization": {
+    "languages": [
+      "Vietnamese",
+      "Thai",
+      "Indonesian",
+      "English"
+    ],
+    "currencies": [
+      "VND",
+      "THB",
+      "IDR",
+      "KRW"
+    ],
+    "regulations": [
+      "Local data protection laws",
+      "Real estate regulations",
+      "Financial compliance",
+      "Payment methods"
+    ],
+    "infrastructure": [
+      "Regional servers (Asia)",
+      "CDN optimization",
+      "Local payment gateway",
+      "Multi-currency support"
+    ]
+  },
+  "partners": {
+    "Vietnam": [
+      {
+        "name": "Vietnam Real Estate Association",
+        "role": "Market partner",
+        "status": "Negotiating"
+      },
+      {
+        "name": "VietinBank",
+        "role": "Financial partner",
+        "status": "Initial contact"
+      }
+    ],
+    "Thailand": [
+      {
+        "name": "Thai Real Estate Board",
+        "role": "Market partner",
+        "status": "Research phase"
+      },
+      {
+        "name": "Kasikornbank",
+        "role": "Financial partner",
+        "status": "Interest confirmed"
+      }
+    ]
+  },
+  "phase12_readiness": {
+    "market_research": 100,
+    "technology_localization": 80,
+    "partner_development": 60,
+    "regulatory_compliance": 70,
+    "overall_readiness": 77.5
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "FREE": {
+    "monthly_predictions": 10,
+    "regions": 1,
+    "features": [
+      "basic_predict"
+    ],
+    "price": 0,
+    "users": 450,
+    "revenue": 0
+  },
+  "BASIC": {
+    "monthly_predictions": 100,
+    "regions": 8,
+    "features": [
+      "basic_predict",
+      "accuracy_insights"
+    ],
+    "price": 9900,
+    "users": 35,
+    "revenue": 3465000
+  },
+  "PREMIUM": {
+    "monthly_predictions": "unlimited",
+    "regions": 12,
+    "features": [
+      "all_features",
+      "trend_analysis",
+      "portfolio"
+    ],
+    "price": 29900,
+    "users": 15,
+    "revenue": 4485000
+  }
+}

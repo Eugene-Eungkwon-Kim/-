@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.Loan4U" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

@@ -1,0 +1,68 @@
+{
+  "banks": [
+    {
+      "name": "KB Bank",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 50000,
+      "revenue": 1250
+    },
+    {
+      "name": "Shinhan Capital",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 30000,
+      "revenue": 750
+    },
+    {
+      "name": "SC Finance",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 20000,
+      "revenue": 500
+    },
+    {
+      "name": "Woori Bank",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 40000,
+      "revenue": 1000
+    },
+    {
+      "name": "Hana Bank",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 35000,
+      "revenue": 875
+    }
+  ],
+  "capitals": [
+    {
+      "name": "Hyundai Capital",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 25000,
+      "revenue": 625
+    },
+    {
+      "name": "Kookmin Capital",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 20000,
+      "revenue": 500
+    },
+    {
+      "name": "Samsung Capital",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 15000,
+      "revenue": 375
+    }
+  ],
+  "loan_platforms": [
+    {
+      "name": "Toss Loan",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 30000,
+      "revenue": 750
+    },
+    {
+      "name": "Kakao Bank Loan",
+      "tier": "PROFESSIONAL",
+      "monthly_calls": 25000,
+      "revenue": 625
+    }
+  ]
+}

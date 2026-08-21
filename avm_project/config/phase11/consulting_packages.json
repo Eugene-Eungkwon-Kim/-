@@ -1,0 +1,23 @@
+{
+  "MARKET_ANALYSIS": {
+    "name": "시장 분석",
+    "duration": "3개월",
+    "price": 50000000,
+    "contracts": 2,
+    "monthly_revenue": 33333333.333333332
+  },
+  "VALUATION_AUDIT": {
+    "name": "감정가 감시",
+    "duration": "월간",
+    "price": 10000000,
+    "contracts": 3,
+    "monthly_revenue": 30000000
+  },
+  "CUSTOM_MODEL": {
+    "name": "맞춤형 모델",
+    "duration": "8주",
+    "price": 100000000,
+    "contracts": 1,
+    "monthly_revenue": 50000000.0
+  }
+}

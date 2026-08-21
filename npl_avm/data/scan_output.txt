@@ -1,6 +1,0 @@
-Traceback (most recent call last):
-  File "D:\NPL����\avm_project\scripts\scan_external_hdd.py", line 376, in <module>
-    main()
-  File "D:\NPL����\avm_project\scripts\scan_external_hdd.py", line 332, in main
-    print("\n" + "\U0001f50d LG �����ϵ� ������ Ȱ�� �м� " + "="*50)
-UnicodeEncodeError: 'cp949' codec can't encode character '\U0001f50d' in position 2: illegal multibyte sequence

@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-06-24T17:29:56.955061",
+  "predictions_total": 5432,
+  "avg_prediction_time_ms": 46.7,
+  "cache_hit_ratio": 0.78,
+  "model_r2": 0.87,
+  "api_uptime": 99.95,
+  "by_region": {
+    "서울": {
+      "predictions": 2000,
+      "avg_time_ms": 45.2
+    },
+    "경기": {
+      "predictions": 1800,
+      "avg_time_ms": 47.1
+    },
+    "인천": {
+      "predictions": 1200,
+      "avg_time_ms": 48.3
+    },
+    "지방": {
+      "predictions": 432,
+      "avg_time_ms": 49.5
+    }
+  }
+}

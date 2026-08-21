@@ -1,0 +1,66 @@
+{
+  "vworld": {
+    "api_key": "50D9ECCF-3977-37F1-B323-4997BEAAE387",
+    "api_version": "1.0",
+    "description": "Korean GIS Data Collection via Vworld API",
+    "provider": "국토교통부 공간정보포털"
+  },
+  "address_geocoding": {
+    "service": "address",
+    "request": "getcoord",
+    "crs": "EPSG:4326",
+    "format": "json",
+    "timeout": 10,
+    "retry_attempts": 3
+  },
+  "building_info": {
+    "service": "data",
+    "request": "GetFeature",
+    "data": "LT_C_LFAN_B",
+    "format": "json",
+    "timeout": 10
+  },
+  "rate_limiting": {
+    "delay_seconds": 0.3,
+    "max_concurrent_requests": 1,
+    "description": "API 요청 제한 (초당 3-4개)"
+  },
+  "data_enrichment": {
+    "target_columns": ["거래금액", "거래일", "면적", "지역"],
+    "output_columns": ["위도", "경도"],
+    "region_column": "지역",
+    "coordinate_precision": 4
+  },
+  "error_handling": {
+    "log_failed_addresses": true,
+    "skip_invalid_regions": true,
+    "fallback_to_region_center": false
+  },
+  "output": {
+    "format": "csv",
+    "encoding": "utf-8",
+    "save_metadata": true,
+    "output_path": "avm_project/data/raw/real_estate_2024_vworld_enriched.csv"
+  },
+  "regions_to_process": [
+    "강남구", "서초구", "송파구", "강동구",
+    "마포구", "서대문구", "은평구", "종로구", "중구",
+    "동대문구", "성동구", "광진구", "강북구", "도봉구", "노원구",
+    "강서구", "구로구", "금천구", "영등포구", "동작구", "관악구",
+    "서울시", "부산시", "대구시", "인천시", "광주시", "대전시",
+    "울산시", "경기도", "강원도", "충청북도", "충청남도",
+    "전라북도", "전라남도", "경상북도", "경상남도", "제주도"
+  ],
+  "features": {
+    "address_to_coordinate": true,
+    "building_info_lookup": false,
+    "facility_proximity": false,
+    "land_use_analysis": false
+  },
+  "performance": {
+    "batch_size": 50,
+    "parallel_processing": false,
+    "cache_results": true,
+    "cache_path": "avm_project/.vworld_cache"
+  }
+}

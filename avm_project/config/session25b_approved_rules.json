@@ -1,0 +1,17 @@
+{
+  "version": "25B.1",
+  "status": "HUMAN_APPROVED_MINIMUM_DRYRUN",
+  "approved_by": "eungk",
+  "approved_at": "2026-07-08T19:38:16.9108632+09:00",
+  "approved_crosswalk_rule_ids": [
+    "DW-0003"
+  ],
+  "approved_type_rule_ids": [
+    "TW-0013"
+  ],
+  "notes": [
+    "Human-approved minimum Session 25B dry-run rule set.",
+    "Approves only the exact factory match CQ-0001.",
+    "TW-0082 and TW-0083 remain excluded until separate warehouse or warehouse-land review."
+  ]
+}

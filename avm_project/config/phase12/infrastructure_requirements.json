@@ -1,0 +1,43 @@
+{
+  "deployment": {
+    "primary_regions": [
+      "EU-UK",
+      "SG",
+      "JP",
+      "US-VA"
+    ],
+    "api_servers": "4vCPU/16GB RAM per region",
+    "database": "PostgreSQL (transaction history, 3-years, ~30GB per country)",
+    "cache": "Redis (TTL 24h, 50K entries per region)",
+    "target_response_time_ms": 100,
+    "availability_sla": "99.9%"
+  },
+  "data_volume_summary": {
+    "uk": "6 GB",
+    "singapore": "4.5 GB",
+    "japan": "8 GB",
+    "germany": "5 GB",
+    "australia": "6 GB",
+    "canada": "5 GB",
+    "thailand": "3 GB",
+    "hong_kong": "2.5 GB",
+    "total_gb": 39.5,
+    "backup_multiplier": 3,
+    "total_with_backup_gb": 118.5
+  },
+  "monitoring": {
+    "metrics": [
+      "API response time (target <100ms)",
+      "Model R² score (monthly)",
+      "API availability (target 99.9%)",
+      "Cache hit rate (target >85%)",
+      "Data freshness (latest transaction age)"
+    ],
+    "alerts": [
+      "Response time >150ms",
+      "R² drop >2%",
+      "Availability <99.5%",
+      "API error rate >1%"
+    ]
+  }
+}

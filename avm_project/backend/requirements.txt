@@ -1,0 +1,28 @@
+# AVM Dashboard Backend - Python 의존성
+# 버전은 실제 모델(.joblib) 역직렬화/서빙이 검증된 환경에 맞춰 고정
+
+# --- 웹 프레임워크 ---
+fastapi==0.136.3
+uvicorn[standard]==0.49.0
+pydantic==2.13.4
+python-multipart==0.0.6
+python-dotenv==1.0.0
+aiofiles==23.2.1
+
+# --- ML 런타임 (Phase D-2 모델 로드 + 데이터 서빙) ---
+# 주의: scikit-learn/xgboost/lightgbm 버전은 모델을 학습한 환경과
+#       호환되어야 한다. 아래 버전으로 7개 실모델 로드가 검증됨.
+scikit-learn==1.9.0
+xgboost==3.2.0
+lightgbm==4.6.0
+pandas==3.0.3
+numpy==2.4.6
+joblib==1.5.3
+
+# --- 테스트 및 개발도구 ---
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-benchmark==4.0.0
+httpx==0.25.2
+websockets==12.0
+psutil==5.9.0

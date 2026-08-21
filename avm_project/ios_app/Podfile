@@ -1,0 +1,7 @@
+platform :ios, '14.0'
+
+target 'Loan4U_iOS' do
+  use_frameworks!
+  # ONNX Runtime provides the ORTEnv/ORTSession API used by MLModelService.
+  pod 'onnxruntime-objc', '~> 1.17'
+end

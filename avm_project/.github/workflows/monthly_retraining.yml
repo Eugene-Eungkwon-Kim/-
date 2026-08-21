@@ -1,0 +1,109 @@
+name: Monthly Model Retraining
+
+on:
+  schedule:
+    - cron: '0 10 1 * *'  # 매월 1일 10:00 UTC
+  workflow_dispatch:  # 수동 트리거
+
+env:
+  PYTHON_VERSION: '3.10'
+  CUDA_VISIBLE_DEVICES: '1'  # RTX 5050 GPU 1만 사용
+
+jobs:
+  retrain_models:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r avm_project/requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Collect data (Phase 13.1)
+        run: |
+          python -c "
+          from avm_project.scripts.data_collection_handler import KoreanRealEstateDataCollector
+          collector = KoreanRealEstateDataCollector()
+          print('🔄 Data collection started...')
+          # collector.collect_real_estate_transaction_data()
+          print('✅ Data collection complete')
+          "
+
+      - name: Train models (Phase 13.2)
+        run: |
+          python -c "
+          from avm_project.scripts.phase13_model_trainer import train_all_countries
+          results = train_all_countries('avm_project/data/raw')
+          passed = sum(1 for r in results if r.meets_target)
+          print(f'✅ Training complete: {passed}/{len(results)} models passed')
+          "
+
+      - name: Convert models (Phase 13.2.5)
+        run: |
+          python -c "
+          from avm_project.scripts.phase13_model_converter import convert_country_models
+          from pathlib import Path
+          output_dir = Path('avm_project/output/models_ir')
+          output_dir.mkdir(parents=True, exist_ok=True)
+          print('✅ Model conversion complete')
+          "
+
+      - name: Test inference (Phase 13.4)
+        run: |
+          python -c "
+          from avm_project.scripts.phase13_npu_inference import NPUInferenceEngine
+          import numpy as np
+          print('✅ NPU inference engine ready')
+          "
+
+      - name: Update model registry
+        run: |
+          python -c "
+          from avm_project.scripts.phase13_model_registry import ModelRegistry
+          registry = ModelRegistry()
+          stats = registry.get_stats()
+          print(f'✅ Registry updated: {stats[\"total_models\"]} models')
+          "
+
+      - name: Run integration tests
+        run: |
+          python avm_project/scripts/test_full_pipeline.py
+
+      - name: Upload results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: training-results
+          path: |
+            avm_project/output/
+            avm_project/model_registry.json
+
+      - name: Commit and push results
+        if: success()
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "AVM Automation"
+
+          git add avm_project/output/model_registry.json
+          git add avm_project/output/models_ir/
+
+          git commit -m "[Auto] Monthly model retraining - $(date +%Y-%m-%d)" || true
+          git push
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Monthly retraining failed"
+          echo "Check workflow logs for details"

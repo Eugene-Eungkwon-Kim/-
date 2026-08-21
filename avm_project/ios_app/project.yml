@@ -1,0 +1,37 @@
+# XcodeGen spec — run `xcodegen generate` in ios_app/ to produce Loan4U_iOS.xcodeproj.
+name: Loan4U_iOS
+options:
+  bundleIdPrefix: com.loan4u
+  deploymentTarget:
+    iOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Loan4U_iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Loan4U_iOS
+        excludes:
+          - "Tests/**"
+    resources:
+      - Loan4U_iOS/Models
+      - Loan4U_iOS/Resources
+    info:
+      path: Loan4U_iOS/Resources/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.loan4u.ios
+        INFOPLIST_FILE: Loan4U_iOS/Resources/Info.plist
+    dependencies:
+      - sdk: onnxruntime  # provided via CocoaPods (see Podfile)
+  Loan4U_iOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Loan4U_iOS/Tests
+    dependencies:
+      - target: Loan4U_iOS
