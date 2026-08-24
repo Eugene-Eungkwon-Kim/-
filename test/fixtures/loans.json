@@ -1,0 +1,47 @@
+{
+  "products": [
+    {
+      "id": "prime-loan-1",
+      "name": "프리미엄 전월세",
+      "type": "premium",
+      "minCreditScore": 800,
+      "rate": 2.5,
+      "maxAmount": 500000000,
+      "term": [120, 240],
+      "propertyTypes": ["아파트", "오피스텔"],
+      "requirements": {
+        "minIncome": 30000000,
+        "maxDebtRatio": 0.3
+      }
+    },
+    {
+      "id": "standard-loan-1",
+      "name": "표준 전세",
+      "type": "standard",
+      "minCreditScore": 700,
+      "rate": 3.2,
+      "maxAmount": 300000000,
+      "term": [120, 180, 240],
+      "propertyTypes": ["아파트", "원룸", "오피스텔"],
+      "requirements": {
+        "minIncome": 15000000,
+        "maxDebtRatio": 0.5
+      }
+    },
+    {
+      "id": "conditional-loan-1",
+      "name": "조건부 대출",
+      "type": "conditional",
+      "minCreditScore": 650,
+      "rate": 4.5,
+      "maxAmount": 150000000,
+      "term": [60, 120, 180],
+      "propertyTypes": ["원룸", "전세방"],
+      "requirements": {
+        "minIncome": 8000000,
+        "maxDebtRatio": 0.6,
+        "additionalReview": true
+      }
+    }
+  ]
+}
