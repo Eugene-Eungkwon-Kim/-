@@ -55,8 +55,15 @@ export class TransactionRepository {
     this.cache = createCacheStore(pool);
   }
 
-  private invalidateUserAggregates(userId: string): void {
-    this.cache.deleteByPrefix(`txn:${userId}:`);
+  /**
+   * deleteByPrefix는 async다 — RedisCacheStore에서는 SCAN+DEL로 실제 네트워크
+   * 왕복이 든다. 이 메서드가 반환값을 던지고(fire-and-forget) 호출자가 기다리지
+   * 않으면, 삭제가 아직 끝나기 전에 다음 getSummary()가 무효화 전 캐시를 읽는
+   * 경쟁이 생긴다. CI에서 러너가 붐빌 때만 간헐적으로 드러나는 정도의 창이라
+   * 로컬(메모리 캐시, 지연 없음)에서는 거의 재현되지 않았다.
+   */
+  private async invalidateUserAggregates(userId: string): Promise<void> {
+    await this.cache.deleteByPrefix(`txn:${userId}:`);
   }
 
   async recordTransaction(input: RecordTransactionInput): Promise<TransactionRecord> {
@@ -84,7 +91,7 @@ export class TransactionRepository {
       input.occurredAt
     );
 
-    this.invalidateUserAggregates(input.userId);
+    await this.invalidateUserAggregates(input.userId);
 
     return this.getTransactionOrThrow(id);
   }
@@ -153,7 +160,7 @@ export class TransactionRepository {
 
       await client.query('COMMIT');
 
-      if (candidates.length > 0) this.invalidateUserAggregates(userId);
+      if (candidates.length > 0) await this.invalidateUserAggregates(userId);
 
       return Promise.all(candidates.map((row) => this.getTransactionOrThrow(row.id)));
     } catch (error) {
