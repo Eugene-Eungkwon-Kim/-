@@ -1,10 +1,11 @@
 name: Test Suite & Coverage
 
 on:
+  # 브랜치 목록을 하드코딩하면 새 작업 브랜치를 만들 때마다 여기 추가해야 하고,
+  # 잊으면 CI가 조용히 안 돌아 "테스트 통과"를 아무도 확인하지 못한 채 넘어간다
+  # (claude/maars-platform이 실제로 이렇게 됐다). 필터 없이 모든 push와 PR에서 돈다.
   push:
-    branches: [ main, claude/code-session-connection-ml8t7v, claude/eloquent-meitner-lqxu9r ]
   pull_request:
-    branches: [ main, claude/code-session-connection-ml8t7v, claude/eloquent-meitner-lqxu9r ]
 
 jobs:
   test:
