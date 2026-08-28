@@ -526,4 +526,85 @@ describe('알림 API와 SSE 스트림', () => {
       }
     });
   });
+
+  /**
+   * 액세스 토큰은 1시간 후 만료되지만, 스트림은 티켓 1회 인증 이후 다시
+   * 확인되지 않는다. 짧은 수명으로 이 재인증 왕복 자체를 검증한다 — 실제
+   * 운영값(50분)으로는 테스트할 수 없다.
+   */
+  describe('스트림 재인증 (수명 만료)', () => {
+    beforeEach(async () => {
+      // 바깥 beforeEach가 만든 app을 짧은 수명으로 다시 만든다. listen()·
+      // issueTicketFor() 등 기존 헬퍼가 바깥 스코프의 app을 그대로 참조하므로
+      // 재선언 없이 그대로 쓸 수 있다.
+      await app.close();
+      hub = new MemoryNotificationHub();
+      streams = new MemoryStreamRegistry();
+      app = await buildServer(pool, {
+        jwtSecret: 'test-secret',
+        notificationHub: hub,
+        streamRegistry: streams,
+        streamLifetimeMs: 200
+      });
+    });
+
+    it('수명이 지나면 reauth 프레임과 함께 끊기고, 새 티켓으로 다시 열 수 있다', async () => {
+      const { userId, token } = await registerAndLogin('reauth@example.com');
+      const port = await listen();
+
+      const first = await StreamClient.connect(port, `/api/notifications/stream?ticket=${await issueTicketFor(token)}`);
+      try {
+        await first.waitFor('event: connected');
+
+        const received = await first.waitFor('event: reauth');
+        expect(received).toContain('stream_lifetime_exceeded');
+        await waitUntilAsync(async () => (await streams.count(userId, Date.now())) === 0);
+      } finally {
+        first.close();
+      }
+
+      // 만료로 끊긴 뒤에도 세션 자체는 살아 있으므로 새 티켓 발급과 재연결이 정상 동작해야 한다.
+      const second = await StreamClient.connect(port, `/api/notifications/stream?ticket=${await issueTicketFor(token)}`);
+      try {
+        expect(await second.waitFor('event: connected')).toContain('HTTP/1.1 200');
+      } finally {
+        second.close();
+      }
+    });
+
+    it('재인증 만료는 알림 전달을 방해하지 않는다 — 살아있는 동안은 정상 수신한다', async () => {
+      const { userId, token } = await registerAndLogin('reauth-live@example.com', 480);
+      const port = await listen();
+
+      const client = await StreamClient.connect(port, `/api/notifications/stream?ticket=${await issueTicketFor(token)}`);
+      try {
+        await client.waitFor('event: connected');
+
+        await new FinancialSnapshotRepository(pool).recordSnapshot({
+          userId,
+          snapshotDate: '2026-01-01',
+          creditScore: 480,
+          financialHealthScore: 80,
+          healthGrade: 'A',
+          debtToIncomeRatio: 0.2,
+          assetToDebtRatio: 3,
+          monthlySurplus: 1_000_000,
+          riskScore: 20,
+          riskLevel: 'low',
+          probabilityOfDefault: 0.01
+        });
+        await app.inject({
+          method: 'POST',
+          url: '/api/analytics/financial-analysis',
+          headers: auth(token),
+          payload: { userId, snapshotDate: '2026-01-02' }
+        });
+
+        const received = await client.waitFor('event: notification');
+        expect(received).toContain('creditScore');
+      } finally {
+        client.close();
+      }
+    });
+  });
 });

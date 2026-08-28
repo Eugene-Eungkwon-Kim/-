@@ -33,6 +33,18 @@ const TICKET_RATE_LIMIT = 20;
 const MAX_STREAMS_PER_USER = 5;
 
 /**
+ * 스트림 최대 수명. 로그아웃 시 취소(revoke)는 있지만, 그 외에는 스트림이
+ * 열린 뒤로 다시 인증을 확인하지 않는다 — 액세스 토큰이 1시간 후 만료돼도
+ * 이미 열린 스트림은 계속 흐른다. 액세스 토큰의 TTL(app.ts의 jwtSign
+ * expiresIn: '1h')보다 짧게 잡아, 스트림이 토큰과 거의 같은 시점에 만료되게
+ * 한다. 재연결은 클라이언트가 새 티켓을 받아 하므로, 리프레시 토큰이 아직
+ * 유효한 사용자는 끊김을 못 느끼고(webApiClient의 401 자동 갱신 경로를 그대로
+ * 탄다), 실제로 세션이 끝난 사용자는 여기서 걸러진다 — revoke가 놓친 경우의
+ * 방어선이다.
+ */
+const DEFAULT_STREAM_LIFETIME_MS = 50 * 60 * 1000;
+
+/**
  * 브라우저 EventSource는 Authorization 헤더를 설정할 수 없다. JWT를 쿼리에 실으면
  * 1시간짜리 액세스 토큰이 프록시·액세스 로그에 남으므로, 60초 1회용 티켓을 대신 쓴다.
  *
@@ -65,10 +77,12 @@ export interface NotificationRouteDeps {
   isOwner: (request: FastifyRequest, targetUserId: string) => boolean;
   forbidden: (reply: FastifyReply) => void;
   respond: <T>(reply: FastifyReply, result: ServiceResult<T>) => void;
+  /** 테스트에서 실제 50분을 기다리지 않도록 주입 가능하게 둔다. 기본값은 운영값. */
+  streamLifetimeMs?: number;
 }
 
 export function registerNotificationRoutes(app: FastifyInstance, deps: NotificationRouteDeps): void {
-  const { pool, cache, hub, streams, isOwner, forbidden, respond } = deps;
+  const { pool, cache, hub, streams, isOwner, forbidden, respond, streamLifetimeMs = DEFAULT_STREAM_LIFETIME_MS } = deps;
 
   app.get('/api/users/:userId/notifications', { schema: routeSchemas.getNotifications }, async (request, reply) => {
     const { userId } = request.params as { userId: string };
@@ -196,6 +210,7 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
       if (closed) return;
       closed = true;
       clearInterval(heartbeat);
+      clearTimeout(lifetimeTimer);
       unsubscribe();
       unsubscribeRevoke();
       void streams.unregister(userId, streamId).catch(() => undefined);
@@ -210,6 +225,16 @@ export function registerNotificationRoutes(app: FastifyInstance, deps: Notificat
       write(`event: revoked\ndata: ${JSON.stringify({ reason: 'session_ended' })}\n\n`);
       cleanup();
     });
+
+    // revoke와 달리 "재인증하라"는 뜻이다 — 클라이언트는 곧바로 새 티켓을 받아
+    // 다시 연결해야 한다. 새 티켓 발급은 유효한 JWT를 요구하므로(만료됐으면
+    // webApiClient가 리프레시 토큰으로 자동 갱신), 이 재연결 왕복 자체가
+    // 세션이 실제로 아직 유효한지 다시 확인하는 역할을 한다.
+    const lifetimeTimer = setTimeout(() => {
+      write(`event: reauth\ndata: ${JSON.stringify({ reason: 'stream_lifetime_exceeded' })}\n\n`);
+      cleanup();
+    }, streamLifetimeMs);
+    lifetimeTimer.unref?.();
 
     request.raw.on('close', cleanup);
     request.raw.on('error', cleanup);

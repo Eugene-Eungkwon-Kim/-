@@ -131,12 +131,34 @@ export function useNotificationStream(
         setStatus('stopped');
       });
 
+      // 서버가 스트림 최대 수명(액세스 토큰 TTL에 맞춘 값)에 도달해 재연결을
+      // 요구하는 경우다. revoked와 달리 실패가 아니므로 즉시 새 티켓을 받아
+      // 다시 연결한다 — 티켓 발급이 유효한 JWT를 요구하므로, 이 왕복 자체가
+      // 세션이 아직 유효한지 다시 확인하는 역할을 한다. teardown()으로 스트림을
+      // 동기적으로 닫아 곧이어 오는 onerror가 중복으로 재연결을 예약하지 않게 한다.
+      source.addEventListener('reauth', () => {
+        if (cancelled) return;
+        teardown();
+        attemptRef.current = 0; // 실패가 아니므로 백오프를 물리지 않는다.
+        setStatus('connecting');
+        // 지터: 배포 직후처럼 여러 스트림이 비슷한 시각에 열렸다면 수명도
+        // 비슷하게 끝나므로, 재연결이 한꺼번에 몰리는 것을 흩어놓는다.
+        timer = setTimeout(connect, Math.random() * 3000);
+      });
+
       source.onerror = () => {
         // EventSource는 끊기면 같은 URL로 자동 재연결하는데, 그 URL의 티켓은 이미
         // 소진돼 401을 받고 또 끊긴다. close()로 브라우저의 재연결을 차단하고
         // 새 티켓으로 우리가 직접 다시 연다.
         source.close();
-        if (stream === source) stream = null;
+
+        // reauth 등으로 이미 새 연결로 넘어간 뒤에 옛 연결의 지연된 error가
+        // 뒤따라 도착할 수 있다 — close()가 후속 이벤트를 막는다는 보장에만
+        // 기대지 않고, 지금 활성 스트림이 이 source가 맞는지 직접 확인한다.
+        // 아니라면 이미 처리가 끝난 연결의 뒤늦은 신호이므로 무시한다.
+        if (stream !== source) return;
+        stream = null;
+
         if (cancelled) return;
         scheduleRetry();
       };

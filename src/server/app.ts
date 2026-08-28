@@ -56,6 +56,8 @@ export interface BuildServerOptions {
   notificationHub?: NotificationHub;
   /** 미지정 시 REDIS_URL 유무로 결정된다. Redis면 상한이 인스턴스 전체에 걸린다. */
   streamRegistry?: StreamRegistry;
+  /** SSE 스트림 최대 수명(ms). 미지정 시 notificationRoutes의 기본값(50분)을 쓴다. */
+  streamLifetimeMs?: number;
 }
 
 const DEFAULT_BACKUP_DIR = path.join(process.cwd(), 'data', 'backups');
@@ -564,7 +566,8 @@ export async function buildServer(pool: Pool, options: BuildServerOptions = {}):
     streams: streamRegistry,
     isOwner,
     forbidden,
-    respond
+    respond,
+    streamLifetimeMs: options.streamLifetimeMs
   });
 
   // 허브가 Redis 연결을 들고 있으므로 서버 종료 시 반드시 닫는다 —

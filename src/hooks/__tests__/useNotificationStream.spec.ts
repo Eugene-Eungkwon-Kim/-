@@ -282,6 +282,62 @@ describe('useNotificationStream', () => {
     expect(FakeStream.instances).toHaveLength(1);
   });
 
+  it('서버가 reauth를 보내면 새 티켓으로 즉시 재연결한다', async () => {
+    const { result } = renderHook(() => useNotificationStream('u1', factory));
+    await flush();
+
+    const ticketsBefore = ticketCalls;
+    await act(async () => FakeStream.instances[0].emit('reauth', JSON.stringify({ reason: 'stream_lifetime_exceeded' })));
+
+    // 실패가 아니므로 상태가 멈추지 않고 재연결을 향해 간다.
+    expect(FakeStream.instances[0].closed).toBe(true);
+    expect(result.current.status).not.toBe('stopped');
+
+    // 지터(0~3초) 안에서 재연결하며, 백오프 없이 바로 다음 시도다.
+    await act(async () => void vi.advanceTimersByTime(3000));
+    await flush();
+
+    expect(ticketCalls).toBe(ticketsBefore + 1);
+    expect(FakeStream.instances).toHaveLength(2);
+
+    await act(async () => FakeStream.instances[1].emit('connected'));
+    expect(result.current.status).toBe('open');
+  });
+
+  it('reauth로 닫힌 소켓의 onerror가 뒤따라도 재연결이 중복되지 않는다', async () => {
+    renderHook(() => useNotificationStream('u1', factory));
+    await flush();
+
+    await act(async () => FakeStream.instances[0].emit('reauth', JSON.stringify({ reason: 'stream_lifetime_exceeded' })));
+    // teardown()의 close()가 이미 소켓을 닫았으므로, 뒤따르는 onerror는 실제
+    // EventSource라면 발생하지 않는다. 가짜 스트림에서는 명시적으로 fail()을
+    // 불러 이 경로를 흉내내고, 중복 재연결이 없는지 확인한다.
+    await act(async () => FakeStream.instances[0].fail());
+
+    await act(async () => void vi.advanceTimersByTime(3000));
+    await flush();
+
+    // reauth 1번에 새 연결도 1개여야 한다 — onerror가 두 번째 재연결을 얹으면 3개가 된다.
+    expect(FakeStream.instances).toHaveLength(2);
+  });
+
+  it('reauth 후 백오프가 물리지 않는다 — 다음 실패는 다시 1초부터다', async () => {
+    renderHook(() => useNotificationStream('u1', factory));
+    await flush();
+
+    await act(async () => FakeStream.instances[0].emit('reauth', JSON.stringify({})));
+    await act(async () => void vi.advanceTimersByTime(3000));
+    await flush();
+
+    await act(async () => FakeStream.instances[1].fail());
+    await act(async () => void vi.advanceTimersByTime(999));
+    expect(FakeStream.instances).toHaveLength(2); // 아직 1초가 안 지남
+
+    await act(async () => void vi.advanceTimersByTime(1));
+    await flush();
+    expect(FakeStream.instances).toHaveLength(3); // 지수 백오프가 아니라 1초부터 다시 시작
+  });
+
   describe('markRead', () => {
     it('성공하면 읽음으로 바뀌고 미읽음 수가 준다', async () => {
       vi.mocked(client.getNotifications).mockResolvedValue({ success: true, data: [notification('n1')] });
