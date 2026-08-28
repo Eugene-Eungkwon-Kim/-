@@ -20,7 +20,6 @@ coverage/
 *.swo
 *~
 .DS_Store
-package-lock.json
 data/*.db
 data/*.db-*
 test-results.xml
