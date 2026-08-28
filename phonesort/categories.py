@@ -38,7 +38,8 @@ IPHONE_CATEGORIES: dict[str, set[str]] = {
     OTHER: set(),
 }
 
-SLO_MO_PATTERN = re.compile(r"slo.?mo|slow", re.IGNORECASE)
+# `slow` 만으로는 "Slow Cooker Recipe" 같은 평범한 영상까지 슬로모션으로 끌고 온다.
+SLO_MO_PATTERN = re.compile(r"slo.?mo|slow.?motion", re.IGNORECASE)
 TIMELAPSE_PATTERN = re.compile(r"time.?lapse", re.IGNORECASE)
 # IMG_E1234 는 타임랩스가 아니라 "편집본(Edited)" 이다.
 EDITED_PATTERN = re.compile(r"^IMG_E\d+$", re.IGNORECASE)

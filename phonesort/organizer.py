@@ -124,19 +124,72 @@ class Organizer:
 
         classify = self.classifier_factory(files)
         duplicate_of, digests = hashing.plan_duplicates(files, self.workers)
+        prior = self._prior_keepers(files, duplicate_of, digests) if self.resume else {}
 
         self.log(f"\n총 {len(files)}개 파일 | 중복 후보 {len(duplicate_of)}개\n")
 
         with self.journal:
-            moved_to = self._move_originals(files, duplicate_of, digests, classify)
+            moved_to = self._move_originals(files, duplicate_of, digests, classify, prior)
             self._handle_duplicates(duplicate_of, digests, moved_to)
 
         return self.stats
 
+    def _prior_keepers(self, files: Iterable[Path], duplicate_of: dict[Path, Path],
+                       digests: dict[Path, str]) -> dict[Path, Path]:
+        """이전 실행에서 이미 옮긴 보존본을 이번 중복 판정에 끌어온다.
+
+        저널의 해시와 같은 내용이 목적지에 아직 남아 있으면, 이번에 발견한
+        파일을 새 보존본으로 올리지 않고 그 보존본의 사본으로 돌린다.
+        `duplicate_of` 와 `digests` 를 제자리에서 채우고, 보존본을 이동이 끝난
+        것으로 간주할 수 있도록 `moved_to` 의 씨앗을 돌려준다.
+        """
+        recorded = self.journal.completed_moves()
+        if not recorded:
+            return {}
+
+        # 크기로 먼저 좁힌다. 목적지에서 사라진 기록은 버린다.
+        by_size: dict[int, dict[str, Path]] = {}
+        for digest, destination in recorded.items():
+            target = Path(destination)
+            try:
+                by_size.setdefault(target.stat().st_size, {})[digest] = target
+            except OSError:
+                continue  # 사용자가 지웠거나 옮긴 파일
+        if not by_size:
+            return {}
+
+        seed: dict[Path, Path] = {}
+        for path in files:
+            if path in duplicate_of:
+                continue
+            try:
+                candidates = by_size.get(path.stat().st_size)
+                if not candidates:
+                    continue
+                digest = digests.get(path) or hashing.full_digest(path)
+            except OSError:
+                continue
+            keeper = candidates.get(digest)
+            if keeper is None:
+                continue
+            digests[path] = digest
+            duplicate_of[path] = keeper
+            seed[keeper] = keeper
+
+        # 보존본이던 파일이 사본으로 내려갔으면, 그를 가리키던 사본들도 함께
+        # 저널의 보존본으로 옮겨 붙인다. 그러지 않으면 사라진 보존본을 기다리다
+        # `[보류]` 로 남는다.
+        for copy, keeper in list(duplicate_of.items()):
+            final = duplicate_of.get(keeper)
+            if final is not None and final != copy:
+                duplicate_of[copy] = final
+        return seed
+
     def _move_originals(self, files: Iterable[Path], duplicate_of: dict[Path, Path],
-                        digests: dict[Path, str], classify: Classifier) -> dict[Path, Path]:
+                        digests: dict[Path, str], classify: Classifier,
+                        prior: dict[Path, Path] | None = None) -> dict[Path, Path]:
         """중복이 아닌 파일을 목적지로 옮기고 원본→대상 매핑을 돌려준다."""
-        moved_to: dict[Path, Path] = {}
+        moved_to: dict[Path, Path] = dict(prior or {})
         for path in files:
             if path in duplicate_of:
                 continue  # 원본이 옮겨진 뒤 따로 처리한다

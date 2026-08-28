@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from helpers import TempTreeTestCase, make_mp4, write
-from phonesort import hashing
+from phonesort import hashing, naming
 from phonesort.categories import iphone_category, live_photo_keys
 from phonesort.dates import video_date
 from phonesort.naming import new_filename, safe_name
@@ -40,6 +40,28 @@ class NamingTest(unittest.TestCase):
         once = new_filename(Path("IMG_0001.jpg"), JAN)
         twice = new_filename(Path(once), datetime(2025, 6, 1, 9, 0, 0))
         self.assertEqual(once, twice)
+
+    def test_long_name_is_cut_to_filesystem_limit(self):
+        result = new_filename(Path("x" * 300 + ".jpg"), JAN)
+        self.assertLessEqual(len(result.encode()), naming.MAX_NAME_BYTES)
+        self.assertTrue(result.startswith("20240115_143022_"))
+        self.assertTrue(result.endswith(".jpg"))
+
+    def test_long_korean_name_is_cut_on_a_character_boundary(self):
+        """한글은 글자당 3바이트라 85자만 넘어도 상한에 걸린다."""
+        result = new_filename(Path("가" * 200 + ".jpg"), JAN)
+        self.assertLessEqual(len(result.encode()), naming.MAX_NAME_BYTES)
+        self.assertNotIn("�", result, "글자 중간에서 잘렸다")
+        self.assertEqual(result, result.encode().decode("utf-8"))
+
+    def test_truncation_is_idempotent(self):
+        once = new_filename(Path("가" * 200 + ".jpg"), JAN)
+        twice = new_filename(Path(once), datetime(2025, 6, 1, 9, 0, 0))
+        self.assertEqual(once, twice)
+
+    def test_short_name_is_untouched(self):
+        self.assertEqual(new_filename(Path("IMG_0001.JPG"), JAN),
+                         "20240115_143022_IMG_0001.jpg")
 
 
 class HashingTest(TempTreeTestCase):
@@ -121,10 +143,18 @@ class IPhoneCategoryTest(TempTreeTestCase):
         self.assertEqual(result["IMG_E5678.MOV"], "편집본")
 
     def test_slomo_and_timelapse_patterns(self):
-        result = self.classify(["IMG_SloMo_01.mov", "TimeLapse_beach.mp4", "IMG_9999.mov"])
+        result = self.classify(["IMG_SloMo_01.mov", "TimeLapse_beach.mp4", "IMG_9999.mov",
+                                "slow motion dive.mov"])
         self.assertEqual(result["IMG_SloMo_01.mov"], "슬로모션")
+        self.assertEqual(result["slow motion dive.mov"], "슬로모션")
         self.assertEqual(result["TimeLapse_beach.mp4"], "타임랩스")
         self.assertEqual(result["IMG_9999.mov"], "동영상")
+
+    def test_word_slow_alone_is_not_a_slomo(self):
+        """`slow` 만으로 잡으면 평범한 영상까지 슬로모션으로 끌려온다."""
+        result = self.classify(["Slow Cooker Recipe.mp4", "slowdance.mov"])
+        self.assertEqual(result["Slow Cooker Recipe.mp4"], "동영상")
+        self.assertEqual(result["slowdance.mov"], "동영상")
 
     def test_documents_and_unknown_extensions(self):
         result = self.classify(["notes.pages", "mystery.xyz"])

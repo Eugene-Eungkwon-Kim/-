@@ -19,23 +19,38 @@ class Journal:
         self.enabled = enabled
         self._handle = None
 
-    def completed_sources(self) -> set[str]:
-        """이미 처리가 끝난 원본 경로 집합."""
+    def _entries(self):
+        """저널을 한 줄씩 읽는다. 깨진 줄은 건너뛴다."""
         if not self.path.exists():
-            return set()
-        done = set()
+            return
         for line in self.path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
-                entry = json.loads(line)
+                yield json.loads(line)
             except json.JSONDecodeError:
                 continue  # 중단 시점에 잘린 마지막 줄
-            source = entry.get("source")
-            if source:
-                done.add(source)
-        return done
+
+    def completed_sources(self) -> set[str]:
+        """이미 처리가 끝난 원본 경로 집합."""
+        return {entry["source"] for entry in self._entries() if entry.get("source")}
+
+    def completed_moves(self) -> dict[str, str]:
+        """이전 실행에서 목적지로 옮긴 보존본의 `해시 → 목적지 경로`.
+
+        재개할 때 이미 옮겨진 보존본은 이번 실행의 파일 목록에 없다. 이 기록이
+        없으면 남은 사본 중 하나가 새 보존본으로 승격돼 같은 내용이 목적지에
+        두 벌 남는다.
+        """
+        moves = {}
+        for entry in self._entries():
+            if entry.get("action") != "move":
+                continue
+            digest, destination = entry.get("digest"), entry.get("destination")
+            if digest and destination:
+                moves[digest] = destination
+        return moves
 
     def record(self, action: str, source: Path, destination: Path | None = None,
                digest: str | None = None) -> None:

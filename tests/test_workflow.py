@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from helpers import TempTreeTestCase
+from phonesort.categories import DUPLICATES
 from phonesort.journal import JOURNAL_NAME
 from phonesort.organizer import Organizer
 
@@ -61,6 +62,53 @@ class JournalTest(TempTreeTestCase):
 
         self.assertEqual(stats.errors, 0)
         self.assertEqual(stats.moved, 1)
+
+    def test_resume_does_not_promote_a_copy_to_a_second_keeper(self):
+        """중복 처리 직전에 끊겨도 사본이 새 보존본으로 올라가면 안 된다.
+
+        저널의 해시를 대조하지 않으면 이미 옮긴 보존본이 이번 목록에 없어
+        남은 사본 중 하나가 승격되고, 같은 내용이 목적지에 두 벌 남는다.
+        """
+        payload = b"identical-payload"
+        for name in ("a.jpg", "b.jpg", "c.jpg"):
+            self.src(name, payload, JAN)
+
+        class Interrupted(Organizer):
+            def _handle_duplicates(self, *args, **kwargs):
+                raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            Interrupted(self.source, self.dest, log=self.quiet).run()
+
+        stats = Organizer(self.source, self.dest, log=self.quiet).run()
+
+        self.assertEqual(stats.moved, 0, "사본이 새 보존본으로 승격됐다")
+        self.assertEqual(stats.duplicates, 2)
+        self.assertEqual(stats.errors, 0)
+        kept = [p for p in self.dest.rglob("*")
+                if p.is_file() and DUPLICATES not in p.parts
+                and p.read_bytes() == payload]
+        self.assertEqual(len(kept), 1, "같은 내용이 목적지에 두 벌 남았다")
+
+    def test_resume_ignores_journal_entry_whose_destination_is_gone(self):
+        """저널에 있어도 목적지 파일이 사라졌으면 남은 파일을 정상 보존한다."""
+        payload = b"identical-payload"
+        for name in ("a.jpg", "b.jpg"):
+            self.src(name, payload, JAN)
+
+        class Interrupted(Organizer):
+            def _handle_duplicates(self, *args, **kwargs):
+                raise KeyboardInterrupt
+
+        with self.assertRaises(KeyboardInterrupt):
+            Interrupted(self.source, self.dest, log=self.quiet).run()
+        for moved in list(self.dest.rglob("*.jpg")):
+            moved.unlink()  # 사용자가 결과물을 지운 상황
+
+        stats = Organizer(self.source, self.dest, log=self.quiet).run()
+
+        self.assertEqual(stats.moved, 1, "보존본이 사라졌는데 아무것도 남기지 않았다")
+        self.assertEqual(stats.errors, 0)
 
     def test_dry_run_writes_no_journal(self):
         self.src("a.jpg", b"one", JAN)
