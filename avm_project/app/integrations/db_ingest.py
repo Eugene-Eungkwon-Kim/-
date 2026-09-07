@@ -60,6 +60,54 @@ def bulk_ingest_transactions(db: Session, records: List[Any]) -> Dict[str, int]:
     return stats
 
 
+def bulk_ingest_commercial_transactions(db: Session, records: List[Any]) -> Dict[str, int]:
+    """CommercialTransactionRecord(상업업무용) 리스트를 ComparableSale 로 적재한다.
+
+    필드 구성이 공장/창고와 동일해(대지면적·건물면적, complex_name 대신
+    building_name) 로직은 사실상 같지만, property_type 표기를 구분하기
+    위해 별도 함수로 둔다.
+    """
+    from app.db.models import ComparableSale
+    from app.integrations.sgg_codes import sido_of, sigungu_of
+
+    stats = {"inserted": 0, "skipped": 0, "errors": 0}
+
+    for record in records:
+        try:
+            key = record.transaction_key
+            exists = (
+                db.query(ComparableSale.id)
+                .filter(ComparableSale.transaction_key == key)
+                .first()
+            )
+            if exists:
+                stats["skipped"] += 1
+                continue
+
+            db.add(ComparableSale(
+                subject_property_serial=f"{record.sgg_code}-{record.building_name}",
+                case_index=1,
+                transaction_key=key,
+                address_full=f"{sido_of(record.sgg_code)} {sigungu_of(record.sgg_code)} "
+                             f"{record.address_dong} {record.address_jibun}".strip(),
+                address_sido=sido_of(record.sgg_code),
+                address_sigungu=sigungu_of(record.sgg_code),
+                property_type="상가",
+                land_area=record.land_area,
+                building_area=record.building_area,
+                trade_date=record.contract_date,
+                trade_amount=record.price_won,
+                note=record.building_name,
+            ))
+            stats["inserted"] += 1
+        except Exception as e:
+            logger.warning(f"[db_ingest] 상업업무용 레코드 적재 실패: {e}")
+            stats["errors"] += 1
+
+    db.commit()
+    return stats
+
+
 def bulk_ingest_industrial_transactions(db: Session, records: List[Any]) -> Dict[str, int]:
     """IndustrialTransactionRecord(공장/창고) 리스트를 ComparableSale 로 적재한다.
 
