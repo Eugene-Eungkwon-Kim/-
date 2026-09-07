@@ -28,7 +28,9 @@ API_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvc
 MAX_RETRIES = 3
 RETRY_BASE_S = 2.0
 
-# data.go.kr 공통 오류 코드 중 서비스키(인증) 관련 코드.
+# data.go.kr 공통 오류 코드 중 서비스키/접근권한 관련 코드. "22"(호출량 제한
+# 초과)는 엄밀히는 인증 실패가 아니라 쿼터 초과지만, 재시도로 해결되지 않고
+# 즉시 중단해야 한다는 점은 인증 오류와 동일해 같은 버킷으로 묶는다.
 AUTH_RESULT_CODES = {"20", "22", "30", "31", "32"}
 
 
@@ -115,7 +117,7 @@ def fetch_month(service_key: str, lawd_cd: str, deal_ymd: str,
     if result_code not in (None, "00", "000"):
         msg = root.findtext(".//resultMsg") or "알 수 없는 오류"
         if result_code in AUTH_RESULT_CODES or "서비스키" in msg or "SERVICE_KEY" in msg.upper():
-            raise AuthFetchError(f"API 인증 오류 [{result_code}] {msg}")
+            raise AuthFetchError(f"API 인증/쿼터 오류 [{result_code}] {msg}")
         raise SchemaFetchError(f"API 오류 [{result_code}] {msg}")
 
     try:
@@ -195,8 +197,8 @@ def main():
                 print(f"  [{ymd}] 일시적 오류, {wait:.0f}초 후 재시도 ({attempt}/{MAX_RETRIES}): {e}")
                 time.sleep(wait)
             except AuthFetchError as e:
-                print(f"\n인증 오류: {e}")
-                print("재시도로 해결되지 않습니다 — 서비스키를 확인한 뒤 다시 실행하세요.")
+                print(f"\n인증/쿼터 오류: {e}")
+                print("재시도로 해결되지 않습니다 — 서비스키 또는 일일 호출량 한도를 확인한 뒤 다시 실행하세요.")
                 sys.exit(2)
             except SchemaFetchError as e:
                 print(f"  [{ymd}] 응답 구조 오류(검토 필요): {e}")
@@ -205,18 +207,26 @@ def main():
                 break
         time.sleep(args.delay)
 
-    if not all_rows:
-        print("\n수집된 데이터가 없습니다. 인증키/지역코드/기간을 확인하세요.")
+    # review_needed(스키마 오류)가 있으면 데이터가 0건이어도 그 사실을 먼저
+    # 보고해야 한다 — "인증키를 확인하라"는 일반 메시지 뒤에 묻히면 실제 원인
+    # (응답 구조 변경)을 놓치게 된다.
+    if not all_rows and not review_needed:
+        if stats["실패"] == 0:
+            print("\n조회는 모두 성공했지만 수집된 거래가 없습니다. 해당 지역·기간에 실거래가 없을 수 있습니다.")
+        else:
+            print("\n수집된 데이터가 없습니다. 인증키/지역코드/기간을 확인하세요.")
         sys.exit(1)
 
-    columns = [col for _, col in FIELDS]
-    with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(all_rows)
-
     print("\n" + "=" * 45)
-    print(f"완료: 총 {len(all_rows)}건 저장 → {out_path}")
+    if all_rows:
+        columns = [col for _, col in FIELDS]
+        with open(out_path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.DictWriter(f, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(all_rows)
+        print(f"완료: 총 {len(all_rows)}건 저장 → {out_path}")
+    else:
+        print("완료: 저장할 데이터 없음 (전 구간이 검토 대상으로 건너뛰어짐)")
     print(f"조회 성공 {stats['성공']}개월 | 실패 {stats['실패']}개월")
 
     if review_needed:
