@@ -22,7 +22,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 )
 
-JUSO_KEY = os.environ.get("JUSO_API_KEY", "")
+JUSO_KEY = os.environ.get("JUSO_API_KEY_PROVIDE", "")
 
 
 def convert_address_to_pnu(address: str) -> Optional[str]:
