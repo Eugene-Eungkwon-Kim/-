@@ -5,6 +5,7 @@ FastAPI 기반 REST API 서버
 """
 
 import os
+import sys
 import json
 import asyncio
 from datetime import datetime, timedelta
@@ -399,6 +400,75 @@ async def get_region_distribution(token: str = Depends(verify_token)):
             {"name": "기타", "value": 950},
         ]
     }
+
+
+# ============================================
+# 실거래 수집 데이터 (app/db 연동)
+#
+# 위 /data/* 세 엔드포인트는 고정 예시값을 돌려준다(데모용으로 보인다).
+# 아래는 scripts/fetch_transactions_parallel.py 등 수집 파이프라인이
+# app/db 에 적재한 실제 데이터를 그 자리에서 조회한다 — 관리자 화면이
+# "수집된 데이터가 실제로 몇 건 들어왔는지"를 보려면 이 경로를 쓴다.
+# ============================================
+sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _comparable_sales_session():
+    from app.db.database import SessionLocal, init_db
+    init_db()
+    return SessionLocal()
+
+
+@app.get("/data/comparable-sales/summary", tags=["Data"])
+async def get_comparable_sales_summary(token: str = Depends(verify_token)):
+    """수집 파이프라인이 적재한 실거래 데이터 현황(실측)."""
+    from sqlalchemy import func
+    from app.db.models import ComparableSale
+
+    db = _comparable_sales_session()
+    try:
+        total = db.query(func.count(ComparableSale.id)).scalar() or 0
+        by_type = (
+            db.query(ComparableSale.property_type, func.count(ComparableSale.id))
+            .group_by(ComparableSale.property_type).all()
+        )
+        by_sido = (
+            db.query(ComparableSale.address_sido, func.count(ComparableSale.id))
+            .group_by(ComparableSale.address_sido).all()
+        )
+        return {
+            "total_rows": total,
+            "by_property_type": [{"name": t or "미상", "count": c} for t, c in by_type],
+            "by_region": [{"name": s or "미상", "count": c} for s, c in by_sido],
+        }
+    finally:
+        db.close()
+
+
+@app.get("/data/comparable-sales/price-distribution", tags=["Data"])
+async def get_comparable_sales_price_distribution(token: str = Depends(verify_token)):
+    """실거래 수집 데이터의 가격 분포(실측). /data/price-distribution 과 같은
+    응답 모양을 쓰지만 값은 고정값이 아니라 DB 조회 결과다."""
+    from app.db.models import ComparableSale
+
+    buckets = [
+        ("1-5억", 100_000_000, 500_000_000),
+        ("5-10억", 500_000_000, 1_000_000_000),
+        ("10-15억", 1_000_000_000, 1_500_000_000),
+        ("15-20억", 1_500_000_000, 2_000_000_000),
+        ("20억+", 2_000_000_000, None),
+    ]
+    db = _comparable_sales_session()
+    try:
+        data = []
+        for label, lo, hi in buckets:
+            q = db.query(ComparableSale).filter(ComparableSale.trade_amount >= lo)
+            if hi is not None:
+                q = q.filter(ComparableSale.trade_amount < hi)
+            data.append({"range": label, "count": q.count()})
+        return {"data": data}
+    finally:
+        db.close()
 
 
 # ============================================
