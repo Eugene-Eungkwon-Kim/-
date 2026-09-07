@@ -4,10 +4,12 @@ import json
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 from helpers import TempTreeTestCase
+from phonesort import hashing
 from phonesort.categories import DUPLICATES
-from phonesort.journal import JOURNAL_NAME
+from phonesort.journal import Journal, JOURNAL_NAME
 from phonesort.organizer import Organizer
 
 JAN = datetime(2024, 1, 15, 14, 30, 22)
@@ -109,6 +111,34 @@ class JournalTest(TempTreeTestCase):
 
         self.assertEqual(stats.moved, 1, "보존본이 사라졌는데 아무것도 남기지 않았다")
         self.assertEqual(stats.errors, 0)
+
+    def test_move_verification_failure_is_journaled(self):
+        """검증 실패로 원본이 사라져도 저널에 남아 추적할 수 있어야 한다."""
+        self.src("a.jpg", b"data", JAN)
+        organizer = Organizer(self.source, self.dest, log=self.quiet, verify=True)
+
+        real_digest = hashing.full_digest
+        calls = {"n": 0}
+
+        def flaky_digest(path):
+            calls["n"] += 1
+            return "corrupted" if calls["n"] == 2 else real_digest(path)
+
+        with mock.patch("phonesort.hashing.full_digest", side_effect=flaky_digest):
+            stats = organizer.run()
+
+        self.assertEqual(stats.errors, 1)
+        lines = (self.dest / JOURNAL_NAME).read_text(encoding="utf-8").strip().splitlines()
+        actions = [json.loads(line)["action"] for line in lines]
+        self.assertIn("move-failed", actions)
+
+    def test_move_failed_entry_does_not_count_as_completed(self):
+        """move-failed 는 완료가 아니므로 재개 시 건너뛸 대상에서 빠져야 한다."""
+        journal = Journal(self.dest / JOURNAL_NAME)
+        journal.record("move-failed", Path("/some/source.jpg"), Path("/some/dest.jpg"))
+        journal.close()
+
+        self.assertEqual(journal.completed_sources(), set())
 
     def test_dry_run_writes_no_journal(self):
         self.src("a.jpg", b"one", JAN)

@@ -17,7 +17,7 @@ from . import hashing
 from .categories import DEFAULT_CATEGORIES, DUPLICATES, by_extension
 from .dates import file_date
 from .journal import JOURNAL_NAME, Journal
-from .naming import new_filename
+from .naming import extract_date, new_filename, safe_name
 
 Classifier = Callable[[Path], str]
 ClassifierFactory = Callable[[list[Path]], Classifier]
@@ -198,7 +198,10 @@ class Organizer:
                 target = self._destination_for(path, category)
                 if target == path:
                     # 이미 제자리에 있는 파일. 자기 자신을 중복으로 오인해
-                    # 삭제하는 일이 없도록 여기서 끊는다.
+                    # 삭제하는 일이 없도록 여기서 끊는다. moved_to 에도 등록해야
+                    # 이 파일을 보존본으로 가리키는 사본이 '이동 미확인'으로
+                    # 보류되지 않는다.
+                    moved_to[path] = path
                     self.stats.skipped += 1
                     continue
                 existing = self._existing_identical(target, path)
@@ -256,7 +259,10 @@ class Organizer:
             return str(path)
 
     def _destination_for(self, path: Path, category: str) -> Path:
-        date = file_date(path)
+        # 이름에 이미 날짜가 박혀 있으면 그 값을 그대로 쓴다. 그러지 않으면
+        # 새 촬영일로 다시 계산할 때 폴더는 새 날짜, 파일명은 옛 날짜로
+        # 갈라진다(예: Pillow를 나중에 설치하고 재실행하는 경우).
+        date = extract_date(safe_name(path.stem)) or file_date(path)
         folder = self.dest / category / f"{date:%Y}" / f"{date:%m}"
         return folder / new_filename(path, date)
 
@@ -289,9 +295,13 @@ class Organizer:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(source), str(target))
 
+        # 이 지점부터는 원본이 이미 사라졌다. 검증에 실패해도 되돌릴 수 없으니
+        # 최소한 저널에 남겨 어디로 갔는지, 왜 의심스러운지 추적 가능하게 한다.
         if not target.exists() or target.stat().st_size != expected_size:
+            self.journal.record("move-failed", source, target)
             raise OSError(f"이동 후 검증 실패: {target}")
         if expected_digest is not None and hashing.full_digest(target) != expected_digest:
+            self.journal.record("move-failed", source, target)
             raise OSError(f"내용 검증 실패: {target}")
 
     # ── 뒷정리 ──────────────────────────────────────────────────────────────

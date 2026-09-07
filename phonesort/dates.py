@@ -150,13 +150,22 @@ def _mvhd_date(fp, start: int, end: int) -> datetime | None:
 
 
 def _udta_date(fp, start: int, end: int) -> datetime | None:
-    """moov/udta 안의 날짜 문자열(©day 등). 있으면 로컬 시각이라 더 정확하다."""
-    found = _find_box(fp, start, end, (b"moov", b"udta"))
+    """moov/udta/©day 문자열. 있으면 로컬 시각이라 더 정확하다.
+
+    udta 블록 전체를 정규식으로 훑으면 댓글·저작권 같은 무관한 텍스트
+    필드에서 날짜처럼 보이는 문자열을 잘못 집어올 수 있다. `©day` 박스
+    안쪽만 본다.
+    """
+    found = _find_box(fp, start, end, (b"moov", b"udta", b"\xa9day"))
     if not found:
         return None
-    body, udta_end = found
+    body, box_end = found
     fp.seek(body)
-    blob = fp.read(min(udta_end - body, 1 << 16))
+    header = fp.read(4)  # 2바이트 길이 + 2바이트 언어 코드
+    if len(header) < 4:
+        return None
+    text_len = struct.unpack(">H", header[:2])[0]
+    blob = fp.read(min(text_len, box_end - body - 4))
     match = _ISO_DATE.search(blob.decode("utf-8", "ignore"))
     if not match:
         return None

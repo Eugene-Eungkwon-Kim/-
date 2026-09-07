@@ -117,6 +117,25 @@ class CollisionTest(TempTreeTestCase):
         self.assertEqual((target_dir / "20240115_143022_IMG_0001_1.jpg").read_bytes(),
                          b"incoming")
 
+    def test_duplicate_of_an_already_in_place_file_is_quarantined_not_stuck(self):
+        """target == path 인 제자리 파일도 moved_to 에 등록돼야 한다.
+
+        등록되지 않으면, 그 파일을 보존본으로 가리키는 사본이 '이동 미확인'
+        으로 오인되어 옮겨지지도 격리되지도 않은 채 오류로 보류된다.
+        """
+        category_dir = self.dest / "사진" / "2024" / "01"
+        category_dir.mkdir(parents=True)
+        (category_dir / "20240115_143022_IMG_0001.jpg").write_bytes(b"same-content")
+        (category_dir / "IMG_0001_dup.jpg").write_bytes(b"same-content")
+
+        stats = Organizer(self.dest / "사진", self.dest, log=self.quiet).run()
+
+        self.assertEqual(stats.duplicates, 1)
+        self.assertEqual(stats.errors, 0, "이미 제자리인 파일을 가리키는 사본이 보류로 남았다")
+        self.assertTrue((self.dest / "중복" / "IMG_0001_dup.jpg").exists())
+        self.assertTrue((category_dir / "20240115_143022_IMG_0001.jpg").exists(),
+                        "제자리 보존본이 사라졌다")
+
     def test_identical_file_already_at_destination_is_not_duplicated(self):
         target_dir = self.dest / "사진" / "2024" / "01"
         target_dir.mkdir(parents=True)

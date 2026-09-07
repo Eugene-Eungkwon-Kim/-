@@ -33,8 +33,15 @@ class Journal:
                 continue  # 중단 시점에 잘린 마지막 줄
 
     def completed_sources(self) -> set[str]:
-        """이미 처리가 끝난 원본 경로 집합."""
-        return {entry["source"] for entry in self._entries() if entry.get("source")}
+        """이미 처리가 끝난 원본 경로 집합.
+
+        `move-failed` 는 원본이 이미 사라졌지만 결과를 신뢰할 수 없다는 기록일
+        뿐 '완료'가 아니므로 재개 시 건너뛰기 대상에서 뺀다.
+        """
+        return {
+            entry["source"] for entry in self._entries()
+            if entry.get("source") and entry.get("action") != "move-failed"
+        }
 
     def completed_moves(self) -> dict[str, str]:
         """이전 실행에서 목적지로 옮긴 보존본의 `해시 → 목적지 경로`.

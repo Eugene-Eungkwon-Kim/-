@@ -26,8 +26,17 @@ def box(box_type: bytes, payload: bytes) -> bytes:
     return struct.pack(">I4s", 8 + len(payload), box_type) + payload
 
 
-def make_mp4(created: datetime, udta_text: str | None = None) -> bytes:
-    """mvhd(그리고 선택적으로 udta 날짜 문자열)를 담은 최소 MP4 바이트열."""
+def _udta_text_atom(fourcc: bytes, text: str) -> bytes:
+    return box(fourcc, struct.pack(">HH", len(text), 0) + text.encode())
+
+
+def make_mp4(created: datetime, udta_text: str | None = None,
+             decoy_atom: tuple[bytes, str] | None = None) -> bytes:
+    """mvhd(그리고 선택적으로 udta 날짜 문자열)를 담은 최소 MP4 바이트열.
+
+    `decoy_atom` 은 `©day` 가 아닌 다른 udta 하위 박스(예: 댓글)에 날짜처럼
+    보이는 문자열을 넣어, 날짜 파싱이 `©day` 박스만 보는지 확인할 때 쓴다.
+    """
     seconds = int((created - QUICKTIME_EPOCH).total_seconds())
     mvhd_payload = (
         bytes(4)                       # version 0 + flags
@@ -37,9 +46,14 @@ def make_mp4(created: datetime, udta_text: str | None = None) -> bytes:
         + struct.pack(">I", 0)         # duration
     )
     children = box(b"mvhd", mvhd_payload)
+    udta_children = b""
+    if decoy_atom is not None:
+        fourcc, text = decoy_atom
+        udta_children += _udta_text_atom(fourcc, text)
     if udta_text is not None:
-        day = box(b"\xa9day", struct.pack(">HH", len(udta_text), 0) + udta_text.encode())
-        children += box(b"udta", day)
+        udta_children += _udta_text_atom(b"\xa9day", udta_text)
+    if udta_children:
+        children += box(b"udta", udta_children)
     return box(b"ftyp", b"qt  \x00\x00\x02\x00") + box(b"moov", children)
 
 

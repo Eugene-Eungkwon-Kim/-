@@ -8,7 +8,7 @@ from helpers import TempTreeTestCase, make_mp4, write
 from phonesort import hashing, naming
 from phonesort.categories import iphone_category, live_photo_keys
 from phonesort.dates import video_date
-from phonesort.naming import new_filename, safe_name
+from phonesort.naming import extract_date, new_filename, safe_name
 
 JAN = datetime(2024, 1, 15, 14, 30, 22)
 
@@ -62,6 +62,26 @@ class NamingTest(unittest.TestCase):
     def test_short_name_is_untouched(self):
         self.assertEqual(new_filename(Path("IMG_0001.JPG"), JAN),
                          "20240115_143022_IMG_0001.jpg")
+
+    def test_windows_reserved_device_name_is_suffixed(self):
+        self.assertEqual(safe_name("CON"), "CON_file")
+        self.assertEqual(safe_name("con"), "con_file")
+        self.assertEqual(safe_name("LPT1"), "LPT1_file")
+        self.assertEqual(safe_name("COM3"), "COM3_file")
+
+    def test_ordinary_name_containing_reserved_word_is_untouched(self):
+        self.assertEqual(safe_name("CONcert"), "CONcert")
+
+    def test_extract_date_reads_full_timestamp_prefix(self):
+        self.assertEqual(extract_date("20240115_143022_IMG_0001"), JAN)
+
+    def test_extract_date_reads_date_only_prefix(self):
+        self.assertEqual(extract_date("20240115_vacation"),
+                         datetime(2024, 1, 15, 0, 0, 0))
+
+    def test_extract_date_returns_none_when_not_dated(self):
+        self.assertIsNone(extract_date("IMG_0001"))
+        self.assertIsNone(extract_date("12345678_invoice"))  # 형태는 맞지만 월=56이라 실존하지 않는 날짜
 
 
 class HashingTest(TempTreeTestCase):
@@ -235,6 +255,13 @@ class VideoDateTest(TempTreeTestCase):
     def test_garbage_file_returns_none(self):
         path = self.src("broken.mp4", b"not a real container at all")
         self.assertIsNone(video_date(path))
+
+    def test_date_like_text_outside_day_atom_is_ignored(self):
+        """`©day` 가 아닌 다른 텍스트 필드의 날짜 형태 문자열에 속으면 안 된다."""
+        created = datetime(2023, 7, 4, 18, 45, 30)
+        path = self.src("clip.mov", make_mp4(
+            created, decoy_atom=(b"\xa9cmt", "recorded 2000-01-01T00:00:00Z on trip")))
+        self.assertEqual(video_date(path), created)
 
     def test_video_date_drives_folder_choice(self):
         """mtime 이 엉뚱해도 컨테이너 촬영일로 분류된다."""
