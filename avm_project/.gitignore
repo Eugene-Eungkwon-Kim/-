@@ -18,6 +18,8 @@ data/raw/*.csv
 data/processed/*.csv
 data/raw/*.json
 data/processed/*.json
+data/*.sqlite
+data/*.sqlite3
 
 # Models
 models/*.pkl
