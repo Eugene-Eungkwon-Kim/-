@@ -22,6 +22,9 @@ data/*.sqlite
 data/*.sqlite3
 data/milvus_lite.db/
 
+# scripts/export_comparable_sales_excel.py 기본 출력 (실행 산출물, 소스 아님)
+comparable_sales_export.xlsx
+
 # Models
 models/*.pkl
 models/*.joblib
