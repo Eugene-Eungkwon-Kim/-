@@ -293,3 +293,10 @@ engine.py/routes.py 가 실제로 쓰는 컬럼·쿼리를 전수 조사해 스�
 | Loan4U 업로드 엑셀 정확한 포맷 | 대체 도구(`export_comparable_sales_excel.py`, 기존 가격판정 로직 재사용)만 존재 | 실제 업로드 템플릿 파일 |
 | 공장/상업 API 필드 태그명 | 서비스 코드는 확인됐으나 실응답 미검증(샌드박스 egress 정책이 apis.data.go.kr 차단) | 네트워크 제약 없는 환경에서 `--debug` 실행 |
 
+위 표의 OnBid·P6 모델 항목은 `scripts/sync_from_external_drive.py` 로
+수작업 없이 한 번에 가져올 수 있다 — 외장하드를 연결한 PC에서
+`python scripts/sync_from_external_drive.py` 실행 한 줄이면 드라이브
+문자(D:/E:/F:)를 자동으로 훑어 `npl_avm.db`의 OnBid 데이터를 SQL 쿼리
+직접 작성 없이 바로 적재하고, 학습된 P6 모델 파일을 찾아
+`models/`(engine.py 가 이미 보는 위치)로 복사한다.
+
