@@ -23,6 +23,26 @@ import xml.etree.ElementTree as ET
 # 국토교통부_아파트 매매 실거래가 상세 자료
 API_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
 
+# 재시도(지수 백오프)는 일시적 오류에만 적용한다. 인증·스키마 오류는 재시도로
+# 해결되지 않으므로 별도로 분류해 처리한다 (CLAUDE.md 참고).
+MAX_RETRIES = 3
+RETRY_BASE_S = 2.0
+
+# data.go.kr 공통 오류 코드 중 서비스키(인증) 관련 코드.
+AUTH_RESULT_CODES = {"20", "22", "30", "31", "32"}
+
+
+class TransientFetchError(Exception):
+    """재시도하면 해결될 수 있는 오류 (타임아웃, 429, 5xx, 네트워크 오류)."""
+
+
+class AuthFetchError(Exception):
+    """서비스키/인증 문제. 재시도로 해결되지 않으므로 즉시 중단해야 한다."""
+
+
+class SchemaFetchError(Exception):
+    """응답 구조가 예상과 다른 경우 (API 오류 코드, XML 파싱 실패, 필드 변경 등)."""
+
 # 응답 XML 항목 → CSV 컬럼 (한글 태그 대응)
 FIELDS = [
     ("sggCd",          "시군구코드"),
@@ -58,7 +78,11 @@ def month_range(start: str, end: str):
 
 def fetch_month(service_key: str, lawd_cd: str, deal_ymd: str,
                 num_rows: int = 1000) -> list[dict]:
-    """한 달치 실거래가 데이터를 조회하여 항목 리스트로 반환."""
+    """한 달치 실거래가 데이터를 조회하여 항목 리스트로 반환.
+
+    오류는 TransientFetchError(재시도 가능) / AuthFetchError(즉시 중단) /
+    SchemaFetchError(구조 변경, 검토 필요) 중 하나로 분류해 던진다.
+    """
     params = {
         "serviceKey": service_key,   # 디코딩 키 (urlencode가 다시 인코딩)
         "LAWD_CD": lawd_cd,
@@ -67,29 +91,47 @@ def fetch_month(service_key: str, lawd_cd: str, deal_ymd: str,
         "numOfRows": str(num_rows),
     }
     url = f"{API_URL}?{urlencode(params, quote_via=quote_plus)}"
-
     req = Request(url, headers={"User-Agent": "Loan4u-AVM/1.0"})
-    with urlopen(req, timeout=30) as resp:
-        raw = resp.read().decode("utf-8")
 
-    root = ET.fromstring(raw)
+    try:
+        with urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+    except HTTPError as e:
+        if e.code in (401, 403):
+            raise AuthFetchError(f"인증 오류 (HTTP {e.code}): {e.reason}") from e
+        if e.code == 429 or 500 <= e.code < 600:
+            raise TransientFetchError(f"일시적 HTTP 오류 ({e.code}): {e.reason}") from e
+        raise SchemaFetchError(f"예기치 않은 HTTP 오류 ({e.code}): {e.reason}") from e
+    except URLError as e:
+        raise TransientFetchError(f"네트워크 오류: {e.reason}") from e
+
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as e:
+        raise SchemaFetchError(f"응답 파싱 실패(XML 구조 변경 가능성): {e}") from e
 
     # 오류 응답 처리
     result_code = root.findtext(".//resultCode")
     if result_code not in (None, "00", "000"):
         msg = root.findtext(".//resultMsg") or "알 수 없는 오류"
-        raise RuntimeError(f"API 오류 [{result_code}] {msg}")
+        if result_code in AUTH_RESULT_CODES or "서비스키" in msg or "SERVICE_KEY" in msg.upper():
+            raise AuthFetchError(f"API 인증 오류 [{result_code}] {msg}")
+        raise SchemaFetchError(f"API 오류 [{result_code}] {msg}")
 
-    rows = []
-    for item in root.findall(".//item"):
-        row = {}
-        for tag, col in FIELDS:
-            val = item.findtext(tag)
-            row[col] = (val or "").strip()
-        # 거래금액 정규화 (콤마·공백 제거 → 숫자 만원 단위)
-        amt = row.get("거래금액", "").replace(",", "").replace(" ", "")
-        row["거래금액"] = amt
-        rows.append(row)
+    try:
+        rows = []
+        for item in root.findall(".//item"):
+            row = {}
+            for tag, col in FIELDS:
+                val = item.findtext(tag)
+                row[col] = (val or "").strip()
+            # 거래금액 정규화 (콤마·공백 제거 → 숫자 만원 단위)
+            amt = row.get("거래금액", "").replace(",", "").replace(" ", "")
+            row["거래금액"] = amt
+            rows.append(row)
+    except Exception as e:
+        raise SchemaFetchError(f"응답 항목 구조가 예상과 다릅니다: {e}") from e
+
     return rows
 
 
@@ -126,6 +168,7 @@ def main():
 
     all_rows = []
     stats = {"성공": 0, "실패": 0}
+    review_needed = []  # 스키마 오류로 건너뛴 월 (사람/AI 검토 필요)
 
     try:
         months = list(month_range(args.start, args.end))
@@ -134,17 +177,32 @@ def main():
         sys.exit(1)
 
     for ymd in months:
-        try:
-            rows = fetch_month(service_key, args.lawd, ymd)
-            all_rows.extend(rows)
-            print(f"  [{ymd}] {len(rows):>4}건 수집")
-            stats["성공"] += 1
-        except (HTTPError, URLError) as e:
-            print(f"  [{ymd}] 네트워크 오류: {e}")
-            stats["실패"] += 1
-        except (ET.ParseError, RuntimeError) as e:
-            print(f"  [{ymd}] 응답 오류: {e}")
-            stats["실패"] += 1
+        attempt = 0
+        while True:
+            try:
+                rows = fetch_month(service_key, args.lawd, ymd)
+                all_rows.extend(rows)
+                print(f"  [{ymd}] {len(rows):>4}건 수집")
+                stats["성공"] += 1
+                break
+            except TransientFetchError as e:
+                attempt += 1
+                if attempt > MAX_RETRIES:
+                    print(f"  [{ymd}] 일시적 오류, {MAX_RETRIES}회 재시도 후 건너뜀: {e}")
+                    stats["실패"] += 1
+                    break
+                wait = RETRY_BASE_S * (2 ** (attempt - 1))
+                print(f"  [{ymd}] 일시적 오류, {wait:.0f}초 후 재시도 ({attempt}/{MAX_RETRIES}): {e}")
+                time.sleep(wait)
+            except AuthFetchError as e:
+                print(f"\n인증 오류: {e}")
+                print("재시도로 해결되지 않습니다 — 서비스키를 확인한 뒤 다시 실행하세요.")
+                sys.exit(2)
+            except SchemaFetchError as e:
+                print(f"  [{ymd}] 응답 구조 오류(검토 필요): {e}")
+                stats["실패"] += 1
+                review_needed.append(ymd)
+                break
         time.sleep(args.delay)
 
     if not all_rows:
@@ -160,6 +218,10 @@ def main():
     print("\n" + "=" * 45)
     print(f"완료: 총 {len(all_rows)}건 저장 → {out_path}")
     print(f"조회 성공 {stats['성공']}개월 | 실패 {stats['실패']}개월")
+
+    if review_needed:
+        print(f"\n주의: {len(review_needed)}개월은 응답 구조가 예상과 달라 확인이 필요합니다 → {', '.join(review_needed)}")
+        sys.exit(3)
 
 
 if __name__ == "__main__":
