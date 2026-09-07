@@ -17,8 +17,9 @@ import sqlite3
 import logging
 import requests
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, Any, List, Tuple
+
+from avm_paths import DB_PATH, LEDGER_PATH
 
 log = logging.getLogger(__name__)
 logging.basicConfig(
@@ -28,8 +29,6 @@ logging.basicConfig(
 
 # API 키
 DATA_GO_KR_KEY = os.environ.get("DATAGOVKR_API_KEY", "")
-DB_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\db\vworld_wfs_multi_layer.sqlite")
-LEDGER_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\ledger")
 
 
 def collect_layer11_apartment_prices() -> Dict[str, Any]:

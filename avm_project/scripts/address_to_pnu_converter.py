@@ -11,9 +11,10 @@ import os
 import sqlite3
 import logging
 import requests
-from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
+
+from avm_paths import DB_PATH
 
 log = logging.getLogger(__name__)
 logging.basicConfig(
@@ -21,7 +22,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 )
 
-DB_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\db\vworld_wfs_multi_layer.sqlite")
 JUSO_KEY = os.environ.get("JUSO_API_KEY", "")
 
 

@@ -12,9 +12,9 @@ import os
 import sqlite3
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, List, Any
 
+from avm_paths import DB_PATH, LEDGER_PATH
 from vworld_api_connector import VWorldConnector
 
 log = logging.getLogger(__name__)
@@ -24,8 +24,6 @@ logging.basicConfig(
 )
 
 API_KEY = os.environ.get("VWORLD_API_KEY", "")
-DB_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\db\vworld_wfs_multi_layer.sqlite")
-LEDGER_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\ledger")
 
 
 def get_search_queries() -> List[str]:

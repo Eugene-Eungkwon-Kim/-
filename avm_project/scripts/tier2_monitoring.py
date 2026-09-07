@@ -17,18 +17,16 @@ import sqlite3
 import psutil
 import json
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, Any, List
 from dataclasses import dataclass, asdict
+
+from avm_paths import DB_PATH, LEDGER_PATH
 
 log = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 )
-
-DB_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\db\vworld_wfs_multi_layer.sqlite")
-LEDGER_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\ledger")
 
 
 @dataclass
