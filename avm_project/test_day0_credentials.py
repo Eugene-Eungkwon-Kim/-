@@ -8,7 +8,10 @@ os.environ.setdefault("ENVIRONMENT", "development")
 
 def test_datagovkr_api():
     """Task 0.1: Test Data.go.kr API credentials"""
-    api_key = os.environ.get("DATAGOVKR_API_KEY", "")
+    # 원래 이 테스트에 박혀 있던 값은 짧은 형식(DATAGOVKR_API_KEY)이 아니라
+    # data.go.kr 의 긴 base64 "일반 인증키(Decoding)" 형식이었다. 두 키가
+    # 실제로 같은 계정인지 확인되지 않아 별도 이름으로 구분해 둔다.
+    api_key = os.environ.get("DATAGOVKR_DECODING_KEY", "")
 
     url = "http://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSAptTradeDev"
     params = {

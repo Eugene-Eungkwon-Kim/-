@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 VWORLD_API_KEY = os.getenv('VWORLD_API_KEY', '')
 ADDRESS_AUTH_KEY = os.getenv('ADDRESS_AUTH_KEY', os.getenv('JUSO_API_KEY_PROVIDE', ''))
 BOK_API_KEY = os.getenv('BOK_API_KEY', '')
-FISIS_API_KEY = os.getenv('FISIS_API_KEY', 'b8d1e5a430b2f44bbc45171880d517e5')
+FISIS_API_KEY = os.getenv('FISIS_API_KEY', '')
 
 # Korea Configuration
 KOREA_REGIONS = {
