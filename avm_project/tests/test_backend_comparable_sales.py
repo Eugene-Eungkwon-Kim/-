@@ -67,6 +67,37 @@ class TestComparableSalesEndpoints:
         assert {"name": "아파트", "count": 2} in body["by_property_type"]
         assert {"name": "서울", "count": 2} in body["by_region"]
 
+    def test_summary_aggregates_every_property_type_without_code_changes(self, db_session, auth_headers):
+        """관리자 화면 연결이 '아파트 전용'이 아니라 자산유형 무관 일반
+        로직임을 확인한다 — 공장·상가·토지 데이터가 들어오면 이 엔드포인트를
+        고치지 않아도 자동으로 집계에 잡혀야 한다."""
+        from app.db.models import ComparableSale
+
+        seed = [
+            ("서울", "강남구", "아파트", 1_200_000_000),
+            ("서울", "송파구", "상가", 800_000_000),
+            ("서울", "구로구", "공장창고", 2_000_000_000),
+            ("경기도", "화성시", "토지", 900_000_000),
+        ]
+        for sido, sigungu, ptype, amount in seed:
+            db_session.add(ComparableSale(
+                case_index=1, address_sido=sido, address_sigungu=sigungu,
+                address_full=f"{sido} {sigungu}", property_type=ptype,
+                building_area=100.0, trade_date=date(2025, 12, 1), trade_amount=amount,
+            ))
+        db_session.commit()
+
+        client, headers = auth_headers
+        r = client.get("/data/comparable-sales/summary", headers=headers)
+
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total_rows"] == 4
+        types = {row["name"] for row in body["by_property_type"]}
+        assert types == {"아파트", "상가", "공장창고", "토지"}
+        regions = {row["name"] for row in body["by_region"]}
+        assert regions == {"서울", "경기도"}
+
     def test_price_distribution_buckets_are_computed_not_hardcoded(self, db_session, auth_headers):
         from app.db.models import ComparableSale
 
