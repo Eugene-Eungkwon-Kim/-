@@ -106,22 +106,24 @@ class TestDbLayerAndComparableSearch:
         assert result.comparables[0].hammer_rate == pytest.approx(0.7)
 
 
-class TestRagPipelineFallback:
-    """Milvus/OpenAI 가 없는 이 환경에서 항상 타는 경로."""
+class TestRagPipelineSqlFallback:
+    """Milvus 색인이 비어 있을 때(OpenAI 는 이 환경에 항상 없음) 타는 경로."""
 
-    def test_pipeline_reports_external_services_unavailable(self, monkeypatch):
-        monkeypatch.delenv("MILVUS_HOST", raising=False)
+    def test_pipeline_reports_openai_unavailable(self, monkeypatch, tmp_path):
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("MILVUS_URI", str(tmp_path / "unused_milvus.db"))
         from app.avm.rag_pipeline import RAGPipeline
 
         pipeline = RAGPipeline()
-        assert pipeline.collection is None
         assert pipeline.client is None
 
-    def test_process_falls_back_to_sql_and_template_explanation(self, db_session, monkeypatch):
+    def test_process_falls_back_to_sql_when_vector_index_empty(
+        self, db_session, monkeypatch, tmp_path,
+    ):
         session, database_module = db_session
         _seed_one_comparable(session)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("MILVUS_URI", str(tmp_path / "empty_milvus.db"))
 
         # rag_pipeline._retrieve_from_sql 는 자체 세션을 새로 여므로, 이 테스트가
         # 재바인딩해 둔 SessionLocal(임시 DB)을 그대로 쓰게 된다.
@@ -138,7 +140,8 @@ class TestRagPipelineFallback:
         assert result["similar_cases"][0]["hammer_price"] == 350_000_000
         assert "350,000,000" in result["explanation"]
 
-    def test_process_returns_safe_defaults_when_no_comparables(self, db_session):
+    def test_process_returns_safe_defaults_when_no_comparables(self, db_session, monkeypatch, tmp_path):
+        monkeypatch.setenv("MILVUS_URI", str(tmp_path / "empty_milvus2.db"))
         from app.avm.rag_pipeline import RAGPipeline
 
         pipeline = RAGPipeline()
@@ -149,6 +152,48 @@ class TestRagPipelineFallback:
 
         assert result["similar_cases"] == []
         assert "유사 사례를 찾지 못해" in result["explanation"]
+
+
+class TestRagPipelineVectorIndex:
+    """Milvus Lite(임베디드, 서버 불필요)에 실제로 색인·검색하는 경로."""
+
+    def test_rebuild_index_and_search_returns_real_similarity(
+        self, db_session, monkeypatch, tmp_path,
+    ):
+        session, database_module = db_session
+        _seed_one_comparable(session)
+        monkeypatch.setenv("MILVUS_URI", str(tmp_path / "milvus_lite.db"))
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+        from app.avm.rag_pipeline import RAGPipeline
+
+        pipeline = RAGPipeline()
+        assert pipeline.collection is not None, "Milvus Lite 클라이언트 초기화 실패"
+
+        indexed = pipeline.rebuild_index(session)
+        assert indexed == 1
+
+        result = pipeline.process(
+            {"address_sido": "서울", "address_sigungu": "강남구", "property_type": "주거",
+             "land_area": 95.0, "building_area": 78.0, "appraisal_amount": 500_000_000},
+            {"hammer_price": 350_000_000, "hammer_rate": 0.7},
+        )
+
+        assert len(result["similar_cases"]) == 1
+        case = result["similar_cases"][0]
+        assert case["hammer_price"] == pytest.approx(350_000_000)
+        # 하드코딩된 0.5 가 아니라 실제 거리 기반 계산값이어야 한다.
+        assert 0.0 < case["similarity"] <= 1.0
+        assert "match_reasons" in case and len(case["match_reasons"]) > 0
+        assert any(reason in result["explanation"] for reason in case["match_reasons"])
+
+    def test_search_on_empty_index_returns_empty_list(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("MILVUS_URI", str(tmp_path / "fresh_milvus.db"))
+        from app.avm.vector_index import search_similar
+        from app.avm.rag_pipeline import RAGPipeline
+
+        pipeline = RAGPipeline()
+        assert search_similar(pipeline.collection, [0.0] * 6) == []
 
 
 class TestConfidenceScorer:

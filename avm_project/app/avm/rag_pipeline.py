@@ -1,33 +1,31 @@
-"""RAG 파이프라인: 유사 사례 검색 + 설명 생성.
+"""RAG 파이프라인: 벡터 검색 기반 유사 사례 조회 + 설명 생성.
 
 이 모듈은 원래 존재하지 않아 routes_rag.py 의 import 가 실패하고
 있었다. 그 파일의 헬스체크 코드(`rag.collection`, `rag.client`)를 보면
 원래 설계는 Milvus(벡터DB) + OpenAI(임베딩/설명 생성) 조합을 염두에 둔
-것으로 보이는데, 이 환경에는 둘 다 구성되어 있지 않다(Milvus 서버 없음,
-OPENAI_API_KEY 미제공).
+것으로 보인다.
 
-두 서비스가 없어도 API가 죽지 않도록 항상 동작하는 대체 경로를 기본으로
-둔다:
-  - 검색: 기존 AVM 엔진의 DB 기반 비교사례 검색(engine.estimate)을 재사용
-  - 설명: OpenAI 클라이언트가 있으면 자연어 설명을 생성하고, 없으면
-    결정적 템플릿 문장으로 대체
+OpenAI 는 이 환경에 키가 없어 여전히 대체 경로(템플릿 설명)를 쓰지만,
+Milvus 는 `pymilvus[milvus_lite]` 로 서버 없이 파일 하나로 동작하는
+Milvus Lite 를 실제로 붙였다 — `MilvusClient(uri=...)` 는 uri 가 로컬
+경로면 Lite, "http://host:port" 면 실제 서버로 동일한 코드가 그대로
+접속하므로, 나중에 진짜 서버로 옮겨도 이 파일을 고칠 필요가 없다.
 
-Milvus/OpenAI 를 실제로 붙이려면:
-  pip install pymilvus openai
-  export MILVUS_HOST=... OPENAI_API_KEY=...
-그 순간부터 이 클래스가 자동으로 그 경로를 탄다 — 다만 이 환경에는 실제
-서비스가 없어 그 경로 자체는 아직 실행 검증하지 못했다는 점을 분명히
-해둔다(SQL 대체 경로만 테스트로 검증됨).
+Milvus 색인이 비어 있거나(초기 상태) 접속에 실패하면, 기존 AVM 엔진의
+DB 기반 비교사례 검색으로 조용히 대체한다 — 벡터 색인은 `rebuild_index()`
+로 채운다(자동 색인은 하지 않는다. 데이터가 바뀔 때마다 전량 재색인하는
+연산 비용을 API 요청 경로에 두지 않기 위해서다).
 """
 
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 try:
-    from pymilvus import Collection, connections
+    from pymilvus import MilvusClient
     _MILVUS_AVAILABLE = True
 except ImportError:  # pragma: no cover - 환경 의존
     _MILVUS_AVAILABLE = False
@@ -38,6 +36,9 @@ try:
 except ImportError:  # pragma: no cover - 환경 의존
     _OPENAI_AVAILABLE = False
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]  # avm_project/
+_DEFAULT_MILVUS_LITE_PATH = _PROJECT_ROOT / "data" / "milvus_lite.db"
+
 
 class RAGPipeline:
     def __init__(self) -> None:
@@ -45,15 +46,13 @@ class RAGPipeline:
         self.client = self._init_openai()
 
     def _init_milvus(self):
-        host = os.environ.get("MILVUS_HOST")
-        if not (_MILVUS_AVAILABLE and host):
+        if not _MILVUS_AVAILABLE:
             return None
+        uri = os.environ.get("MILVUS_URI", str(_DEFAULT_MILVUS_LITE_PATH))
         try:
-            connections.connect(
-                alias="default", host=host,
-                port=os.environ.get("MILVUS_PORT", "19530"),
-            )
-            return Collection(os.environ.get("MILVUS_COLLECTION", "avm_comparables"))
+            if not uri.startswith("http"):
+                Path(uri).parent.mkdir(parents=True, exist_ok=True)
+            return MilvusClient(uri=uri)
         except Exception as e:
             logger.warning(f"[RAG] Milvus 연결 실패, DB 기반 검색으로 대체: {e}")
             return None
@@ -68,6 +67,13 @@ class RAGPipeline:
             logger.warning(f"[RAG] OpenAI 클라이언트 초기화 실패, 템플릿 설명으로 대체: {e}")
             return None
 
+    def rebuild_index(self, db) -> int:
+        """SQL DB 내용으로 벡터 색인을 전량 재구성한다. 색인된 건수를 돌려준다."""
+        if self.collection is None:
+            raise RuntimeError("Milvus 클라이언트가 초기화되지 않았습니다")
+        from app.avm.vector_index import build_index
+        return build_index(db, self.collection)
+
     def process(self, property_info: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
         similar_cases = self._retrieve_similar_cases(property_info)
         explanation = self._generate_explanation(property_info, result, similar_cases)
@@ -75,12 +81,26 @@ class RAGPipeline:
 
     def _retrieve_similar_cases(self, property_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         if self.collection is not None:
-            # TODO: Milvus 벡터 검색 — 임베딩 생성 포함, 실 서비스 없어 미검증.
-            pass
+            try:
+                cases = self._retrieve_from_vector_index(property_info)
+                if cases:
+                    return cases
+            except Exception as e:
+                logger.warning(f"[RAG] 벡터 검색 실패, DB 기반 검색으로 대체: {e}")
         return self._retrieve_from_sql(property_info)
 
+    def _retrieve_from_vector_index(self, property_info: Dict[str, Any]) -> List[Dict[str, Any]]:
+        from app.avm.vector_index import search_similar, vectorize
+
+        query_vector = vectorize(
+            property_info.get("land_area"), property_info.get("building_area"),
+            property_info.get("appraisal_amount"), property_info.get("property_type"),
+            property_info.get("address_sido"), None,
+        )
+        return search_similar(self.collection, query_vector, limit=5)
+
     def _retrieve_from_sql(self, property_info: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """기존 AVM 엔진의 비교사례 검색을 재사용하는 대체 경로."""
+        """벡터 색인이 없거나 실패했을 때의 대체 경로 — DB 비교사례 검색 재사용."""
         try:
             from app.avm import engine as avm
             from app.db.database import SessionLocal
@@ -114,8 +134,9 @@ class RAGPipeline:
                 "address_sido": comp.address,
                 "hammer_price": comp.hammer_price or comp.appraisal_value,
                 "hammer_rate": comp.hammer_rate or 0.0,
-                # TODO: engine._area_similarity_score 는 비공개 함수라 이 값을
-                # 직접 노출하지 않는다 — 공개 인터페이스로 뽑아내는 후속 작업 필요.
+                # engine._area_similarity_score 는 비공개 함수라 직접 노출하지
+                # 않는다. 벡터 검색 경로와 달리 이 대체 경로는 근거 축 설명을
+                # 만들지 않는다 — match_reasons 는 벡터 검색 결과에서만 나온다.
                 "similarity": 0.5,
             }
             for idx, comp in enumerate(avm_result.comparables)
@@ -136,7 +157,7 @@ class RAGPipeline:
         self, property_info: Dict[str, Any], result: Dict[str, Any],
         similar_cases: List[Dict[str, Any]],
     ) -> str:
-        # 실 서비스가 없어 이 경로는 아직 실행 검증하지 못했다.
+        # 실 서비스(OPENAI_API_KEY)가 없어 이 경로는 아직 실행 검증하지 못했다.
         prompt = (
             f"물건 정보: {property_info}\n"
             f"예상 낙찰가: {result.get('hammer_price')}원 (낙찰가율 {result.get('hammer_rate')})\n"
@@ -162,10 +183,14 @@ class RAGPipeline:
                 f"유사 사례를 찾지 못해 모델 단독 추정치({hammer_price:,}원, "
                 f"낙찰가율 {hammer_rate:.2f})를 제시합니다. 참고용으로만 활용하세요."
             )
-        return (
+        base = (
             f"유사 사례 {count}건을 근거로 예상 낙찰가 {hammer_price:,}원"
             f"(낙찰가율 {hammer_rate:.2f})을 추정했습니다."
         )
+        top_reasons = similar_cases[0].get("match_reasons")
+        if top_reasons:
+            base += f" 가장 유사한 사례는 {', '.join(top_reasons)} 기준으로 근접했습니다."
+        return base
 
 
 _pipeline: Optional[RAGPipeline] = None

@@ -38,6 +38,15 @@ pydantic-settings==2.0.3
 # Database
 sqlalchemy==2.0.23
 
+# Vector search (RAG). pymilvus[milvus_lite] runs embedded — no separate
+# Milvus server needed for local/dev use. Point MILVUS_URI at a real server
+# ("http://host:19530") for production without code changes.
+pymilvus[milvus_lite]==3.0.1
+
+# Optional: only used if OPENAI_API_KEY is set (app/avm/rag_pipeline.py).
+# Falls back to a deterministic template explanation when absent.
+# openai==1.x
+
 # Testing
 pytest==7.4.3
 pytest-cov==4.1.0

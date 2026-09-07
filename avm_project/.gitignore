@@ -20,6 +20,7 @@ data/raw/*.json
 data/processed/*.json
 data/*.sqlite
 data/*.sqlite3
+data/milvus_lite.db/
 
 # Models
 models/*.pkl

@@ -104,6 +104,11 @@ async def estimate_with_explanation(request: PropertyRequest):
             'address_sido': request.address_sido,
             'address_sigungu': request.address_sigungu,
             'appraisal_amount': request.appraisal_amount,
+            # RAG 파이프라인의 비교사례 검색(벡터/DB 둘 다)이 면적 매칭에
+            # 이 두 필드를 직접 쓴다 — 빠지면 면적 유사도가 항상 기본값으로
+            # 고정돼 검색 정확도가 떨어진다.
+            'land_area': request.land_area,
+            'building_area': request.building_area,
             'total_area': (request.land_area or 0) + (request.building_area or 0),
         }
 
