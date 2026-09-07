@@ -223,3 +223,48 @@ class TestComparator:
         assert isinstance(result.position, str)
         assert "KR" in result.comparisons
         assert len(result.comparisons) >= 5
+
+
+class TestDbIngest:
+    """국토부 실거래가 수집(scripts/fetch_transactions_parallel.py)이 참조하는
+    app.integrations.db_ingest / sgg_codes 검증.
+
+    이 환경은 apis.data.go.kr 로의 아웃바운드가 조직 정책으로 차단되어
+    있어(egress 403) 실제 API 호출까지는 이 테스트로 검증할 수 없다.
+    KoreaLandAPI.TransactionRecord 를 직접 만들어 '응답을 받은 뒤' 단계만
+    검증한다.
+    """
+
+    def test_sgg_code_lookup_roundtrip(self):
+        from app.integrations.sgg_codes import SGG_CODES, sido_of, sigungu_of
+
+        code = SGG_CODES["서울 강남구"]
+        assert code == "11680"
+        assert sido_of(code) == "서울"
+        assert sigungu_of(code) == "강남구"
+        assert sido_of("99999") == ""  # 모르는 코드는 조용히 빈 문자열
+
+    def test_bulk_ingest_inserts_and_deduplicates(self, db_session):
+        session, _ = db_session
+        from app.integrations.db_ingest import bulk_ingest_transactions
+        from app.db.models import ComparableSale
+        from app.integrations.korea_api import TransactionRecord
+
+        record = TransactionRecord(
+            sgg_code="11680", property_type="아파트", complex_name="테스트아파트",
+            address_dong="역삼동", address_jibun="1", contract_year=2025,
+            contract_month=12, contract_day=1, price_manwon=50000,
+            exclusive_area=84.5, floor=10,
+        )
+
+        first = bulk_ingest_transactions(session, [record])
+        assert first == {"inserted": 1, "skipped": 0, "errors": 0}
+
+        second = bulk_ingest_transactions(session, [record])
+        assert second == {"inserted": 0, "skipped": 1, "errors": 0}, "같은 거래가 중복 적재됐다"
+
+        rows = session.query(ComparableSale).all()
+        assert len(rows) == 1
+        assert rows[0].address_sido == "서울"
+        assert rows[0].address_sigungu == "강남구"
+        assert rows[0].trade_amount == 500_000_000  # 5억(만원 -> 원 변환)

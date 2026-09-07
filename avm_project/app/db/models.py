@@ -96,6 +96,9 @@ class ComparableSale(Base):
     id = Column(Integer, primary_key=True)
     subject_property_serial = Column(String, index=True)
     case_index = Column(Integer, default=0)
+    # 국토부 실거래가 API 수집(app/integrations/db_ingest.py)의 중복 방지 키.
+    # 그 외 경로로 입력되는 행은 채우지 않아도 되므로 nullable.
+    transaction_key = Column(String, unique=True, index=True, nullable=True)
 
     address_full = Column(String)
     address_sido = Column(String, index=True)
