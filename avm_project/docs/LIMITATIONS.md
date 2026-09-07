@@ -231,3 +231,65 @@ raw sklearn pickle 추론보다 빠르다. "NPU 1ms 목표"라는 표현은 애�
 패턴으로 변경했다. 수정 후 `output/trained_models/`에 KR+SG+HK 모델이 모두
 공존한 상태에서도 `test_kr_valuation.py` 38/38 안정적으로 통과함을 확인했다.
 
+---
+
+## 8. `app/` API 서버가 임포트 단계에서부터 죽어 있던 문제 (2026-09-07, 수정됨)
+
+RAG 벡터 DB·XAI 구축 작업을 시작하려다 보니, `app/main.py`가 참조하는
+`app.db.database`, `app.db.models`, `app.avm.comparator`,
+`app.avm.rag_pipeline`, `app.avm.confidence_scorer` **다섯 모듈이 전부
+실체 없이 import 문만 존재**했다. `python -c "import app.main"` 이 최초
+`ModuleNotFoundError: No module named 'app.db'` 로 즉시 죽었다 — API
+서버가 한 번도 부팅에 성공한 적이 없었다는 뜻이다.
+
+engine.py/routes.py 가 실제로 쓰는 컬럼·쿼리를 전수 조사해 스키마를
+역산하고 다섯 모듈을 신설했다(공식 설계 문서 없음 — 사용 패턴에서 역산한
+초안). Milvus(pymilvus[milvus_lite], 서버 없이 파일 하나로 동작)로 실제
+벡터 검색을 연결했고, OpenAI 는 키가 없어 결정적 템플릿 설명으로 대체했다.
+
+### 8.1 부수적으로 발견·수정한 실제 버그 4건
+
+- **재개 시 중복 제거 무효** (별개 프로젝트, phonesort — 저널의 해시를
+  재개 시 대조하지 않아 이미 옮긴 보존본이 사본으로 승격되던 문제.
+  `claude/phonesort-refactor` 브랜치에서 수정).
+- **NULL 조인으로 비교사례가 조용히 0건**: `Appraisal.appraisal_date`
+  를 비워두면 `_find_comparables`의 "최신 감정가" 조인
+  (`appraisal_date == MAX(appraisal_date)`)이 SQL NULL 비교 규칙 때문에
+  항상 실패한다. OnBid 데이터 임포터(`import_onbid_csv.py`)가 이 값을
+  안 채우고 있어 데이터를 넣어도 비교사례 검색이 늘 0건이었다 —
+  가져온 시점 날짜로 채우도록 수정.
+- **Decimal/float TypeError**: SQLAlchemy `Numeric` 컬럼(`trade_amount`)
+  이 `Decimal` 로 반환되는데, 엑셀 내보내기(`export_comparable_sales_
+  excel.py`)가 `float` 와 그대로 나눠 실제 데이터로 돌리자마자 죽었다.
+- **CI 의존성 충돌**: `.github/workflows/backend-test.yml` 이
+  `backend/requirements.txt` 만 설치하고 `tests/` 전체를 돌리는데, 이
+  파일에 새 테스트가 쓰는 sqlalchemy/pymilvus/openpyxl/requests 가 아예
+  없었다 — 즉 이 항목들을 쓰는 커밋들이 CI를 계속 실패시키고 있었을
+  가능성이 높다. 추가하자 `pymilvus`(python-dotenv>=1.0.1 요구)와
+  `python-dotenv==1.0.0` 고정이 정면으로 충돌해 설치 자체가 실패하는
+  것도 함께 드러났다 — 두 requirements 파일 모두 1.0.1 로 올려 해결.
+  깨끗한 가상환경에 `backend/requirements.txt` 만 설치해 실제 CI와
+  동일한 경로로 재현·검증했다.
+- **관리자 화면 고정값**: `backend/main.py`의 `/data/quality`,
+  `/data/price-distribution`, `/data/region-distribution` 세 엔드포인트가
+  DB를 전혀 조회하지 않고 코드에 박힌 데모용 고정값을 리턴하고 있었다.
+  기존 엔드포인트는 그대로 두고 `/data/comparable-sales/*` 를 신설해
+  실측 조회로 대체했다 — `property_type` 으로 그냥 GROUP BY 하는 일반
+  쿼리라 특정 자산유형에 매여 있지 않다(아파트/상가/공장창고/토지 4종을
+  섞어 넣고 코드 변경 없이 정확히 집계됨을 테스트로 확인).
+
+### 8.2 이 세션이 닫지 못한 것 — 코드가 아니라 정보 자체가 없어서
+
+아래 네 가지는 추가 코드나 검색으로 해결되지 않는다. 이 README 상단에도
+이미 적혀 있듯 이 프로젝트의 실데이터는 **외장하드**(`D:\NPL폴더`, 세션
+따라 D:/E:/F: 로 잡힘)에 있고, 이 항목들은 전부 거기 있거나 사용자만
+가진 정보다.
+
+| 항목 | 상태 | 필요한 것 |
+|---|---|---|
+| 토지 실거래 API 서비스 코드 | 12회+ 웹 검색 시도, 확인 실패 | data.go.kr 마이페이지 → 활용신청 내역 |
+| OnBid 경매 데이터 | 임포터(`import_onbid_csv.py`)는 완성, 실데이터 0건 | 외장하드 `npl_avm.db`의 `onbid_auction_results` CSV 내보내기 |
+| P6 가격 추정 모델 | 학습 데이터 없어 미구현 (가짜 모델 생성은 거부 — 대출 심사에 쓰일 수 있는 값이라 위험) | 외장하드의 학습 데이터 또는 이미 학습된 모델 파일 |
+| Loan4U 업로드 엑셀 정확한 포맷 | 대체 도구(`export_comparable_sales_excel.py`, 기존 가격판정 로직 재사용)만 존재 | 실제 업로드 템플릿 파일 |
+| 공장/상업 API 필드 태그명 | 서비스 코드는 확인됐으나 실응답 미검증(샌드박스 egress 정책이 apis.data.go.kr 차단) | 네트워크 제약 없는 환경에서 `--debug` 실행 |
+
