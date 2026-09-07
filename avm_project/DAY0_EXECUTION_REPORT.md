@@ -74,7 +74,7 @@ Secondary: ./data/raw/         ✅ ACCESSIBLE
 ### V-World API Configuration
 ```
 Provider: V-World (한국국토정보공사)
-API Key: 50D9ECCF-3977-37F1-B323-4997BEAAE387
+API Key: <REDACTED-환경변수 VWORLD_API_KEY 참조>
 Status: ✅ CONFIGURED
 Endpoints: Land prices, Jeonse data, Regional statistics
 Rate Limit: 1000 req/day

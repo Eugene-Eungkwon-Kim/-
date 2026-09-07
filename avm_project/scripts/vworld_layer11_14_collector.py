@@ -12,6 +12,7 @@ Layer 14: 용도별 지가변동률
 """
 
 import json
+import os
 import sqlite3
 import logging
 import requests
@@ -26,7 +27,7 @@ logging.basicConfig(
 )
 
 # API 키
-DATA_GO_KR_KEY = "90E1FB30-58B3-3CEF-8D8C-804F5A56DC62"
+DATA_GO_KR_KEY = os.environ.get("DATAGOVKR_API_KEY", "")
 DB_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\db\vworld_wfs_multi_layer.sqlite")
 LEDGER_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\ledger")
 

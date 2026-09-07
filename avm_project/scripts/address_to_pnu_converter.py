@@ -7,6 +7,7 @@ Layer 8-10 수집에 필요한 주소 → PNU 변환 함수.
     python scripts/address_to_pnu_converter.py
 """
 
+import os
 import sqlite3
 import logging
 import requests
@@ -21,7 +22,7 @@ logging.basicConfig(
 )
 
 DB_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\db\vworld_wfs_multi_layer.sqlite")
-JUSO_KEY = "U01TX0FVVEgyMDI2MDcwOTEzMzM0MzExOTY3OTE="
+JUSO_KEY = os.environ.get("JUSO_API_KEY", "")
 
 
 def convert_address_to_pnu(address: str) -> Optional[str]:

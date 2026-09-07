@@ -10,10 +10,10 @@
 
 ### API 키 확정
 ```
-VWorld API Key:    50D9ECCF-3977-37F1-B323-4997BEAAE387 ✓
-data.go.kr Key:    90E1FB30-58B3-3CEF-8D8C-804F5A56DC62 ✓
-주소승인키 (정보제공): U01TX0FVVEgyMDI2MDcwOTEzMzM0MzExOTY3OTE= ✓
-주소승인키 (정보):    U01TX0FVVEgyMDI2MDcwOTEzMzM0MzExOTY3OTA= ✓
+VWorld API Key:    <REDACTED-환경변수 VWORLD_API_KEY 참조> ✓
+data.go.kr Key:    <REDACTED-환경변수 DATAGOVKR_API_KEY 참조> ✓
+주소승인키 (정보제공): <REDACTED-환경변수 JUSO_API_KEY_PROVIDE 참조> ✓
+주소승인키 (정보):    <REDACTED-환경변수 JUSO_API_KEY_INFO 참조> ✓
 ```
 
 ### 환경 준비 체크리스트

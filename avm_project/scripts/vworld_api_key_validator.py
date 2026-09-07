@@ -9,6 +9,7 @@
 
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict
@@ -18,10 +19,10 @@ import requests
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-VWORLD_KEY = "50D9ECCF-3977-37F1-B323-4997BEAAE387"
-DATA_GO_KR_KEY = "90E1FB30-58B3-3CEF-8D8C-804F5A56DC62"
-JUSO_KEY_PROVIDE = "U01TX0FVVEgyMDI2MDcwOTEzMzM0MzExOTY3OTE="
-JUSO_KEY_INFO = "U01TX0FVVEgyMDI2MDcwOTEzMzM0MzExOTY3OTA="
+VWORLD_KEY = os.environ.get("VWORLD_API_KEY", "")
+DATA_GO_KR_KEY = os.environ.get("DATAGOVKR_API_KEY", "")
+JUSO_KEY_PROVIDE = os.environ.get("JUSO_API_KEY_PROVIDE", "")
+JUSO_KEY_INFO = os.environ.get("JUSO_API_KEY_INFO", "")
 
 LEDGER_DIR = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\ledger")
 TIMEOUT = 15

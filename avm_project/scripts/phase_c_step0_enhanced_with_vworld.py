@@ -49,7 +49,7 @@ def search_csv_files(root_path: str) -> list:
 
 
 def phase_c_step0_enhanced(
-    vworld_api_key: str = "50D9ECCF-3977-37F1-B323-4997BEAAE387",
+    vworld_api_key: str = os.environ.get("VWORLD_API_KEY", ""),
     manual_path: Optional[str] = None,
     enable_vworld: bool = True
 ) -> Tuple[pd.DataFrame, str]:

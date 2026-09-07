@@ -38,7 +38,7 @@
 
 ```
 발급 기관: 한국석유공사 오피넷
-API 키: F260619859
+API 키: <REDACTED-환경변수 OPINET_API_KEY 참조>
 유효기간: 무제한
 상태: ✅ 활성
 ```
@@ -103,7 +103,7 @@ pip install requests pandas
 from scripts.opinet_data_collector import OpimetDataCollector
 
 # 1. 초기화
-api_key = "F260619859"
+api_key = "<REDACTED-환경변수 OPINET_API_KEY 참조>"
 collector = OpimetDataCollector(api_key)
 
 # 2. 좌표 입력
@@ -127,7 +127,7 @@ print(f"주유소 밀도: {stats['station_density']:.2f}")
 ```python
 from scripts.opinet_data_collector import OpimetDataCollector
 
-api_key = "F260619859"
+api_key = "<REDACTED-환경변수 OPINET_API_KEY 참조>"
 collector = OpimetDataCollector(api_key)
 
 # CSV 파일 강화
@@ -164,7 +164,7 @@ python scripts/phase_c_step0_complete_integration.py
 ```python
 from scripts.opinet_data_collector import OpimetDataCollector
 
-api_key = "F260619859"
+api_key = "<REDACTED-환경변수 OPINET_API_KEY 참조>"
 collector = OpimetDataCollector(api_key)
 
 # 서울역 좌표
@@ -188,7 +188,7 @@ for name, (lat, lon) in locations.items():
 import pandas as pd
 from scripts.opinet_data_collector import OpimetDataCollector
 
-api_key = "F260619859"
+api_key = "<REDACTED-환경변수 OPINET_API_KEY 참조>"
 collector = OpimetDataCollector(api_key)
 
 # 좌표 데이터가 있는 DataFrame
@@ -212,7 +212,7 @@ print(f"평균 휘발유 가격: {enriched['avg_gas_price'].mean():.0f}원")
 ```python
 from scripts.opinet_data_collector import OpimetDataCollector
 
-api_key = "F260619859"
+api_key = "<REDACTED-환경변수 OPINET_API_KEY 참조>"
 collector = OpimetDataCollector(api_key)
 
 # API 키 검증
@@ -319,7 +319,7 @@ import requests
 requests.get("http://www.opinet.co.kr")
 
 # 2. API 키 재확인
-api_key = "F260619859"
+api_key = "<REDACTED-환경변수 OPINET_API_KEY 참조>"
 
 # 3. 요청 간격 증가
 collector.rate_limit = 1.0  # 1초로 증가

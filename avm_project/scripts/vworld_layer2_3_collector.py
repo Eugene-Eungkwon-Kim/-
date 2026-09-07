@@ -8,6 +8,7 @@ Layer 3: WFS 메타데이터 수집 (14개 레이어 정보)
 """
 
 import json
+import os
 import sqlite3
 import logging
 from datetime import datetime
@@ -22,7 +23,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
 )
 
-API_KEY = "50D9ECCF-3977-37F1-B323-4997BEAAE387"
+API_KEY = os.environ.get("VWORLD_API_KEY", "")
 DB_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\db\vworld_wfs_multi_layer.sqlite")
 LEDGER_PATH = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer\ledger")
 

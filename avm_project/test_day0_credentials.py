@@ -8,7 +8,7 @@ os.environ.setdefault("ENVIRONMENT", "development")
 
 def test_datagovkr_api():
     """Task 0.1: Test Data.go.kr API credentials"""
-    api_key = "9+Sz4Yn+RoH4bEhkrqfzS+AJz9ldaehP57wEhL3sEKmDMZW5t7UnTs7rPOA3BNcczF8AI/OX0YJ51PmPAAEZFw=="
+    api_key = os.environ.get("DATAGOVKR_API_KEY", "")
 
     url = "http://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSAptTradeDev"
     params = {

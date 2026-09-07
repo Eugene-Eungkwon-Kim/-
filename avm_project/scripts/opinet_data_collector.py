@@ -7,6 +7,7 @@ Korean Gas Station Price Information via Opinet API
 import requests
 import pandas as pd
 import json
+import os
 import time
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
@@ -261,7 +262,7 @@ class OpimetDataCollector:
 def main():
     """메인 실행 함수"""
 
-    api_key = "F260619859"
+    api_key = os.environ.get("OPINET_API_KEY", "")
 
     collector = OpimetDataCollector(api_key)
 

@@ -11,8 +11,8 @@ API 통합:
 
 실행:
     python scripts/phase13_real_data_kr.py
-    export VWORLD_API_KEY=50D9ECCF-3977-37F1-B323-4997BEAAE387
-    export BOK_API_KEY=AAF7C5HUL93UL539OPSC
+    export VWORLD_API_KEY=발급받은_VWorld_키
+    export BOK_API_KEY=발급받은_한국은행_키
 """
 
 import json
@@ -35,9 +35,9 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 # API Keys
-VWORLD_API_KEY = os.getenv('VWORLD_API_KEY', '50D9ECCF-3977-37F1-B323-4997BEAAE387')
-ADDRESS_AUTH_KEY = os.getenv('ADDRESS_AUTH_KEY', 'U01TX0FVVEgyMDI2MDcwOTEzMzM0MzExOTY3OTE=')
-BOK_API_KEY = os.getenv('BOK_API_KEY', 'AAF7C5HUL93UL539OPSC')
+VWORLD_API_KEY = os.getenv('VWORLD_API_KEY', '')
+ADDRESS_AUTH_KEY = os.getenv('ADDRESS_AUTH_KEY', os.getenv('JUSO_API_KEY', ''))
+BOK_API_KEY = os.getenv('BOK_API_KEY', '')
 FISIS_API_KEY = os.getenv('FISIS_API_KEY', 'b8d1e5a430b2f44bbc45171880d517e5')
 
 # Korea Configuration

@@ -49,8 +49,8 @@ def search_csv_files(root_path: str) -> list:
 
 
 def phase_c_step0_complete(
-    vworld_api_key: str = "50D9ECCF-3977-37F1-B323-4997BEAAE387",
-    opinet_api_key: str = "F260619859",
+    vworld_api_key: str = os.environ.get("VWORLD_API_KEY", ""),
+    opinet_api_key: str = os.environ.get("OPINET_API_KEY", ""),
     manual_path: Optional[str] = None,
     enable_vworld: bool = True,
     enable_opinet: bool = True

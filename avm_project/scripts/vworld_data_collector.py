@@ -7,6 +7,7 @@ Korean GIS Data Collection via Vworld API
 import requests
 import pandas as pd
 import json
+import os
 import time
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
@@ -244,7 +245,7 @@ class VworldDataCollector:
 def main():
     """메인 실행 함수"""
 
-    api_key = "50D9ECCF-3977-37F1-B323-4997BEAAE387"
+    api_key = os.environ.get("VWORLD_API_KEY", "")
 
     collector = VworldDataCollector(api_key)
 

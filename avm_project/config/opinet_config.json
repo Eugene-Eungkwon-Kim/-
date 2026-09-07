@@ -1,6 +1,7 @@
 {
   "opinet": {
-    "api_key": "F260619859",
+    "api_key": "",
+    "_api_key_note": "환경변수 OPINET_API_KEY 로 주입하세요. 여기에 실제 키를 적지 마세요.",
     "api_version": "1.0",
     "description": "Korean Gas Station Price Information via Opinet API",
     "provider": "한국석유공사 오피넷(Opinet)"

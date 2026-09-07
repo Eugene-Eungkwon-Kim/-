@@ -3,6 +3,7 @@
 Data.go.kr 실거래 데이터 수집 실행 스크립트
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ sys.path.insert(0, str(project_root / 'scripts'))
 from data_collection_handler import KoreanRealEstateDataCollector
 
 # API 키
-API_KEY = "90E1FB30-58B3-3CEF-8D8C-804F5A56DC62"
+API_KEY = os.environ.get("DATAGOVKR_API_KEY", "")
 
 def main():
     print("=" * 70)

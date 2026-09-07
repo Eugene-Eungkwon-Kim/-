@@ -42,7 +42,7 @@
 
 ```
 발급 기관: 국토교통부 공간정보포털
-API 키: 50D9ECCF-3977-37F1-B323-4997BEAAE387
+API 키: <REDACTED-환경변수 VWORLD_API_KEY 참조>
 만료일: 2027-06-19 (1년)
 상태: ✅ 활성
 ```
@@ -68,7 +68,7 @@ avm_project/
 
 ```bash
 # .env 파일 생성
-VWORLD_API_KEY="50D9ECCF-3977-37F1-B323-4997BEAAE387"
+VWORLD_API_KEY="<REDACTED-환경변수 VWORLD_API_KEY 참조>"
 ```
 
 ### 3. 필수 패키지
@@ -87,7 +87,7 @@ pip install requests pandas
 from scripts.vworld_data_collector import VworldDataCollector
 
 # 1. 초기화
-api_key = "50D9ECCF-3977-37F1-B323-4997BEAAE387"
+api_key = "<REDACTED-환경변수 VWORLD_API_KEY 참조>"
 collector = VworldDataCollector(api_key)
 
 # 2. 주소 변환
@@ -166,7 +166,7 @@ python scripts/phase_c_step0_enhanced_with_vworld.py
 ```python
 from scripts.vworld_data_collector import VworldDataCollector
 
-api_key = "50D9ECCF-3977-37F1-B323-4997BEAAE387"
+api_key = "<REDACTED-환경변수 VWORLD_API_KEY 참조>"
 collector = VworldDataCollector(api_key)
 
 # 강남역 주소
@@ -214,7 +214,7 @@ python /home/user/-/avm_project/scripts/vworld_data_collector.py
 # 2. Python 코드에서 실행
 from scripts.vworld_data_collector import VworldDataCollector
 
-collector = VworldDataCollector("50D9ECCF-3977-37F1-B323-4997BEAAE387")
+collector = VworldDataCollector("<REDACTED-환경변수 VWORLD_API_KEY 참조>")
 df = collector.enrich_real_estate_data(
     csv_path="avm_project/data/raw/real_estate_2024.csv",
     output_path="avm_project/data/raw/real_estate_2024_vworld.csv"
@@ -231,7 +231,7 @@ print(f"좌표 있는 행: {df['위도'].notna().sum()}/{len(df)}")
 ```python
 from scripts.vworld_data_collector import VworldDataCollector
 
-api_key = "50D9ECCF-3977-37F1-B323-4997BEAAE387"
+api_key = "<REDACTED-환경변수 VWORLD_API_KEY 참조>"
 collector = VworldDataCollector(api_key)
 
 # API 키 유효성 확인
@@ -266,7 +266,7 @@ requests.exceptions.HTTPError: 403 Client Error: Forbidden
 **해결책:**
 ```python
 # 1. API 키 확인
-print("50D9ECCF-3977-37F1-B323-4997BEAAE387")
+print("<REDACTED-환경변수 VWORLD_API_KEY 참조>")
 
 # 2. 공식 포털에서 API 상태 확인
 # https://www.vworld.kr/
