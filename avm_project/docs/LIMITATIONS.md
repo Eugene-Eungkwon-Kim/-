@@ -293,6 +293,23 @@ engine.py/routes.py 가 실제로 쓰는 컬럼·쿼리를 전수 조사해 스�
 | Loan4U 업로드 엑셀 정확한 포맷 | 대체 도구(`export_comparable_sales_excel.py`, 기존 가격판정 로직 재사용)만 존재 | 실제 업로드 템플릿 파일 |
 | 공장/상업 API 필드 태그명 | 서비스 코드는 확인됐으나 실응답 미검증(샌드박스 egress 정책이 apis.data.go.kr 차단) | 네트워크 제약 없는 환경에서 `--debug` 실행 |
 
+### 8.3 회귀 검증 — 이번 세션이 기존 테스트를 깨뜨리지 않았는지 확인
+
+`tests/` 전체(342개 기존 + 43개 신규)를 처음으로 한 번에 돌려봤다.
+50개 실패 + 24개 수집 오류가 나왔지만, 전부 이번 세션 이전부터 있던
+문제였다 — 실패한 파일 어디에도 이번 세션이 건드린 모듈(app.db,
+app.avm.rag_pipeline/confidence_scorer/comparator, app.integrations.*,
+backend.main 신규 엔드포인트)을 참조하는 곳이 없었고, 최초 커밋
+(a473489)의 원본 파일로 되돌려 동일 테스트를 돌려도 **글자 하나
+다르지 않게 같은 실패**가 재현됐다(예: test_avm_engine.py 4건 —
+"All models failed prediction", 학습된 모델 파일이 애초에 없어서).
+나머지도 원인이 전부 이번 세션과 무관하다: `models/` 디렉터리 부재,
+`/mnt/avm_data` 외부 경로 부재, `torch`/`reportlab` 미설치,
+`Phase12Validator` 생성자 시그니처 불일치(pre-existing) 등.
+
+**결론**: 이번 세션의 변경은 기존 342개 테스트 중 어느 것도 새로
+깨뜨리지 않았다. 신규 43개를 더해 전부 통과.
+
 위 표의 OnBid·P6 모델 항목은 `scripts/sync_from_external_drive.py` 로
 수작업 없이 한 번에 가져올 수 있다 — 외장하드를 연결한 PC에서
 `python scripts/sync_from_external_drive.py` 실행 한 줄이면 드라이브
