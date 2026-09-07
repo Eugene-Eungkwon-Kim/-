@@ -6,7 +6,7 @@ fastapi==0.136.3
 uvicorn[standard]==0.49.0
 pydantic==2.13.4
 python-multipart==0.0.6
-python-dotenv==1.0.0
+python-dotenv==1.0.1
 aiofiles==23.2.1
 
 # --- ML 런타임 (Phase D-2 모델 로드 + 데이터 서빙) ---
@@ -26,3 +26,13 @@ pytest-benchmark==4.0.0
 httpx==0.25.2
 websockets==12.0
 psutil==5.9.0
+
+# --- app/ AVM API 연동 (tests/test_app_rag_pipeline.py 등) ---
+# backend-test.yml 이 tests/ 전체를 이 requirements.txt 로만 돌리므로,
+# app/db, app/avm/rag_pipeline, app/integrations/* 가 쓰는 의존성도
+# 여기 있어야 CI 가 실패하지 않는다. backend/ 자체는 이 패키지들을
+# 쓰지 않는다.
+sqlalchemy==2.0.52
+pymilvus[milvus_lite]==3.0.1
+openpyxl==3.1.2
+requests==2.33.1
