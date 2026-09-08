@@ -53,7 +53,7 @@ class TestExportComparableSalesExcel:
 
         from openpyxl import load_workbook
         ws = load_workbook(out)["아파트"]
-        grades = {r[2]: r[7] for r in ws.iter_rows(min_row=2, values_only=True)}
+        grades = {r[2]: r[8] for r in ws.iter_rows(min_row=2, values_only=True)}
         assert grades["이상치"] == "편차주의"
 
     def test_single_transaction_group_defaults_to_within_range(self, tmp_path):
@@ -65,7 +65,19 @@ class TestExportComparableSalesExcel:
         from openpyxl import load_workbook
         ws = load_workbook(out)["상가"]
         row = list(ws.iter_rows(min_row=2, values_only=True))[0]
-        assert row[7] == "적정"
+        assert row[8] == "적정"
+
+    def test_land_rows_use_land_area_as_unit_price_basis(self, tmp_path):
+        """토지는 건물면적이 없다 — 대지면적으로 ㎡당 단가를 내야 '추가확인'으로 빠지지 않는다."""
+        rows = [{**_row("경기", "성남시", "밭", "토지", None, 4_500_000_000), "land_area": 1250.5}]
+        out = tmp_path / "out.xlsx"
+        export(rows, out)
+
+        from openpyxl import load_workbook
+        row = list(load_workbook(out)["토지"].iter_rows(min_row=2, values_only=True))[0]
+        assert row[6] == pytest.approx(1250.5)
+        assert row[7] == round(4_500_000_000 / 1250.5)
+        assert row[8] == "적정"
 
     def test_missing_area_or_amount_does_not_crash(self, tmp_path):
         rows = [

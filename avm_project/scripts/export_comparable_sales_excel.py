@@ -18,7 +18,6 @@ import argparse
 import sys
 from collections import defaultdict
 from pathlib import Path
-from statistics import median
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -33,16 +32,21 @@ from loan4u_phase12_pipeline import (
 )
 from openpyxl.styles import PatternFill
 
-COLUMNS = ["시도", "시군구", "주소", "거래일", "거래금액", "건물면적",
-          "평당가(㎡당)", "가격부합성", "편차율", "최종조치"]
+COLUMNS = ["시도", "시군구", "주소", "거래일", "거래금액", "건물면적", "대지면적",
+          "㎡당 단가", "가격부합성", "편차율", "최종조치"]
 
 
-def _per_area_price(trade_amount, building_area) -> Optional[float]:
-    if not trade_amount or not building_area:
+def _per_area_price(trade_amount, area) -> Optional[float]:
+    if not trade_amount or not area:
         return None
     # trade_amount 는 SQLAlchemy Numeric 컬럼이라 Decimal 로 온다 —
-    # float(building_area) 와 그대로 나누면 TypeError 가 난다.
-    return float(trade_amount) / float(building_area)
+    # float(area) 와 그대로 나누면 TypeError 가 난다.
+    return float(trade_amount) / float(area)
+
+
+def _basis_area(row: dict) -> Optional[float]:
+    # 건물이 있으면 건물면적, 토지처럼 건물이 없으면 대지면적을 단가 기준으로 쓴다.
+    return row.get("building_area") or row.get("land_area")
 
 
 def export(rows: list[dict], out_path: Path) -> int:
@@ -71,7 +75,7 @@ def export(rows: list[dict], out_path: Path) -> int:
         excel_row = 2
         for region_rows in by_region.values():
             priced = [
-                {**r, "_per_area": _per_area_price(r.get("trade_amount"), r.get("building_area"))}
+                {**r, "_per_area": _per_area_price(r.get("trade_amount"), _basis_area(r))}
                 for r in region_rows
             ]
             source_records = [{"price": r["_per_area"]} for r in priced if r["_per_area"]]
@@ -93,10 +97,11 @@ def export(rows: list[dict], out_path: Path) -> int:
                 ws.cell(excel_row, 4, str(r.get("trade_date") or ""))
                 ws.cell(excel_row, 5, r.get("trade_amount"))
                 ws.cell(excel_row, 6, r.get("building_area"))
-                ws.cell(excel_row, 7, round(per_area) if per_area else None)
-                grade_cell = ws.cell(excel_row, 8, grade)
-                ws.cell(excel_row, 9, f"{deviation:.2%}" if deviation is not None else "")
-                ws.cell(excel_row, 10, classify_final_action(grade))
+                ws.cell(excel_row, 7, r.get("land_area"))
+                ws.cell(excel_row, 8, round(per_area) if per_area else None)
+                grade_cell = ws.cell(excel_row, 9, grade)
+                ws.cell(excel_row, 10, f"{deviation:.2%}" if deviation is not None else "")
+                ws.cell(excel_row, 11, classify_final_action(grade))
 
                 grade_cell.fill = PatternFill(fill_type="solid",
                                               fgColor=GRADE_COLORS.get(grade, "FFFFFF"))
@@ -110,6 +115,32 @@ def export(rows: list[dict], out_path: Path) -> int:
     return total_rows
 
 
+def load_rows(db) -> list[dict]:
+    """DB의 비교사례(case_index > 0)를 export() 가 받는 dict 목록으로 뽑는다."""
+    from app.db.models import ComparableSale
+
+    sales = db.query(ComparableSale).filter(ComparableSale.case_index > 0).all()
+    return [{
+        "address_sido": s.address_sido, "address_sigungu": s.address_sigungu,
+        "address_full": s.address_full, "property_type": s.property_type,
+        "trade_date": s.trade_date, "trade_amount": s.trade_amount,
+        "building_area": s.building_area, "land_area": s.land_area,
+    } for s in sales]
+
+
+def export_from_db(out_path: Path) -> int:
+    """현재 DB 전체를 엑셀로 내보내고 행 수를 돌려준다 (0이면 파일을 만들지 않는다)."""
+    from app.db.database import SessionLocal, init_db
+
+    init_db()
+    db = SessionLocal()
+    try:
+        rows = load_rows(db)
+    finally:
+        db.close()
+    return export(rows, out_path) if rows else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -117,18 +148,11 @@ def main() -> int:
     args = parser.parse_args()
 
     from app.db.database import SessionLocal, init_db
-    from app.db.models import ComparableSale
 
     init_db()
     db = SessionLocal()
     try:
-        sales = db.query(ComparableSale).filter(ComparableSale.case_index > 0).all()
-        rows = [{
-            "address_sido": s.address_sido, "address_sigungu": s.address_sigungu,
-            "address_full": s.address_full, "property_type": s.property_type,
-            "trade_date": s.trade_date, "trade_amount": s.trade_amount,
-            "building_area": s.building_area,
-        } for s in sales]
+        rows = load_rows(db)
     finally:
         db.close()
 

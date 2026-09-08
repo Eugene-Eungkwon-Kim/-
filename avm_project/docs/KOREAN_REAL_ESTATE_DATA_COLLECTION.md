@@ -787,3 +787,38 @@ API 기반 수집 (자동): 1주일 (월별 처리)
 관련 파일:
 - `scripts/korean_real_estate_data_sources.py` - 데이터 소스 정보
 - `scripts/data_collection_handler.py` - 수집 핸들러
+
+---
+
+## 부록: 실거래 통합 수집 CLI (2026-09-08 추가, 권장)
+
+주거용(아파트·다세대·오피스텔)·공장/창고·상업업무용·토지 실거래를 한 번에
+수집해 `comparable_sales` 테이블에 적재하고, 바로 Loan4U 스타일 엑셀로
+내보내는 오케스트레이터다.
+
+```bash
+# .env 에 DATAGOVKR_DECODING_KEY (또는 KOREA_API_KEY 등) 설정 후
+python scripts/collect_all_transactions.py --sgg 11680 11650 --year 2025 --month 12 --debug
+python scripts/collect_all_transactions.py --sgg 11680 --year 2025 --month 12 \
+    --types land commercial --export loan4u_upload.xlsx
+```
+
+| 옵션 | 의미 |
+|---|---|
+| `--sgg` | 법정동코드 5자리, 여러 개 가능 (`app/integrations/sgg_codes.py`) |
+| `--types` | `residential industrial commercial land` 중 선택 (기본 전부) |
+| `--export PATH` | 수집 후 DB 전체를 자산 유형별 시트의 엑셀로 내보냄 |
+| `--debug` | 원본 XML 응답을 로그로 남김 — **첫 실행 시 필수** |
+
+동작 원칙:
+- 한 유형의 API 실패는 그 유형만 `호출실패`로 집계되고 나머지는 계속 수집된다.
+- 재실행해도 같은 거래는 `transaction_key` 로 걸러져 두 번 쌓이지 않는다.
+- 토지 서비스 코드(`RTMSDataSvcLandTrade`)와 4개 유형의 응답 필드 태그명은
+  라이브 미검증이다 — `docs/LIMITATIONS.md` §8, §12 참고. 오류 응답이 나면
+  data.go.kr 마이페이지의 활용신청 내역에서 서비스명을 확인해
+  `app/integrations/korea_api_land.py` 의 `SERVICE` 상수를 맞춘다.
+
+유형별 단독 실행 스크립트: `fetch_transactions_parallel.py`(주거용, 병렬·체크포인트),
+`fetch_industrial_transactions.py`, `fetch_commercial_transactions.py`,
+`fetch_land_transactions.py`. 엑셀만 다시 내보내려면
+`export_comparable_sales_excel.py --out 파일명.xlsx`.

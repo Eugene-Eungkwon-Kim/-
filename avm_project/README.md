@@ -22,13 +22,16 @@ NPL(Non-Performing Loans) 데이터 기반 자동감정가 모델 개발 및 실
 | **실거래 데이터** | ❌ **0건** (국토부 API 로컬 수집 대기) |
 | **대출 심사 투입** | ❌ **불가** (실데이터 검증 후 가능) |
 | RAG 벡터 검색(Milvus Lite) / XAI | ✅ 동작 (39 테스트 통과, 2026-09-07) |
-| 아파트/공장·창고/상업업무용 수집기 | ✅ 코드 완성 (필드 태그명은 라이브 미검증 — `docs/LIMITATIONS.md` §8) |
-| 토지 수집기 / OnBid 경매 데이터 / P6 모델 / Loan4U 엑셀 정확한 포맷 | ❌ 외장하드·사용자 보유 정보 필요 — `docs/LIMITATIONS.md` §8.2 |
+| 아파트/공장·창고/상업업무용/토지 수집기 + 통합 수집 CLI | ✅ 코드 완성 (`scripts/collect_all_transactions.py`; 필드 태그명·토지 서비스 코드는 라이브 미검증 — `docs/LIMITATIONS.md` §8, §12) |
+| OnBid 경매 데이터 / P6 모델 / Loan4U 엑셀 정확한 포맷 | ❌ 외장하드·사용자 보유 정보 필요 — `docs/LIMITATIONS.md` §8.2 |
 
 > 독립 코드리뷰 점수 추이: **42 → 58 → 71 / 100** (상한은 실거래 데이터 확보에 묶임)
 > RAG/XAI/수집 파이프라인 구축 세부사항은 **[docs/LIMITATIONS.md](docs/LIMITATIONS.md) §8** 참고.
 
-**다음 단계**: `scripts/collect_kr_data_local.py` 로 실거래 수집 → `KR_data.csv` 교체 →
+**다음 단계**: 네트워크가 열린 PC에서
+`python scripts/collect_all_transactions.py --sgg 11680 --year 2025 --month 12 --debug --export loan4u_upload.xlsx`
+로 4개 자산 유형을 한 번에 수집·적재·엑셀 내보내기(첫 실행은 `--debug`로 원본 XML 확인) →
+`scripts/collect_kr_data_local.py` 로 학습용 실거래 수집 → `KR_data.csv` 교체 →
 `train_kr_model.py` 재학습 → 그때의 R²가 비로소 의미 있는 성능 지표.
 
 ---
