@@ -4,6 +4,8 @@ test_phone/
 migration_output/
 __pycache__/
 *.pyc
+.pytest_cache/
+.phonesort_journal.jsonl
 iphone_test/
 iphone_output/
 iphone_test2/
