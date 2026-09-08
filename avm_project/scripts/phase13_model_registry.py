@@ -109,16 +109,7 @@ class ModelRegistry:
 
 
 if __name__ == '__main__':
+    # phase14_deploy.yml이 stdout을 model_registry_status.json으로 그대로
+    # 리다이렉트한다 — 사람이 읽는 텍스트가 아니라 유효한 JSON을 찍어야 한다.
     registry = ModelRegistry()
-    print(f"Available countries: {registry.list_countries()}")
-    for cc in registry.list_countries():
-        info = registry.get_info(cc)
-        if info:
-            perf = info.get('performance', {})
-            mape = perf.get('test_mape', 0.0)
-            r2 = perf.get('test_r2', 0.0)
-            if isinstance(mape, str):
-                mape = float(mape.rstrip('%')) / 100
-            if isinstance(r2, str):
-                r2 = float(r2)
-            print(f"  {cc}: MAPE={mape:.2%}, R²={r2:.4f}")
+    print(json.dumps(registry.get_model_summary(), ensure_ascii=False, indent=2))

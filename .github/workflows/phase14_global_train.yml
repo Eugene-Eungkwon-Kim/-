@@ -27,9 +27,12 @@ jobs:
         run: |
           pip install -q numpy pandas scikit-learn xgboost lightgbm openpyxl
 
-      - name: Retrain all 9 countries (parallel)
+      - name: Retrain 8 countries (parallel)
+        # KR은 여기 없다: phase13_global_pipeline.py의 --country choices에
+        # KR이 없어(한국 전용 파이프라인은 phase13_korea_model_trainer.py로
+        # 별도 분리돼 있다, korea_monthly_retrain.yml 참고) 항상 argparse
+        # 오류로 실패했다. 한국 재학습은 그 워크플로우가 전담한다.
         run: |
-          python scripts/phase13_global_pipeline.py --country KR &
           python scripts/phase13_global_pipeline.py --country BR &
           python scripts/phase13_global_pipeline.py --country SG &
           python scripts/phase13_global_pipeline.py --country HK &
