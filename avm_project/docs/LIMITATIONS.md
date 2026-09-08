@@ -360,3 +360,29 @@ organization-AuPIl`로 설정돼 있어 `workflow_dispatch` 수동 실행이
 필요하며, 저장소 설정을 세션이 임의로 바꾸지 않는다는 원칙에 따라
 사용자 결정을 기다리는 중이다.
 
+## 10. Phase 13.5 자동화 엔진이 애초에 임포트조차 안 되던 문제 (2026-09-08, 수정됨)
+
+`phase13_automation_engine.py`(주간 KR 재학습→검증→배포결정→등록
+파이프라인)는 `phase13_model_registry.py`에서 `ModelMetadata`를
+임포트하고 `registry.register_model()`/`registry.list_models()`를
+호출하는데, 그 모듈의 `ModelRegistry`는 추론 라우팅용 절반
+(`load_model`/`get_info`/`get_model_summary`)만 구현돼 있었고 등록
+API는 애초에 존재한 적이 없었다. 결과적으로
+`tests/test_phase13_5_automation.py`는 수집 단계에서부터
+`ImportError`로 죽어 있었고, 이 자동화 엔진 자체가 프로덕션에서도
+임포트되지 않는 상태였다 — Phase 13.5는 이름만 있고 실행 불가능한
+기능이었던 것.
+
+`ModelMetadata` 데이터클래스와 `ModelRegistry.register_model()`/
+`list_models()`(국가별 등록 이력을 `registry_dir` 아래 JSON으로 최신순
+누적, 과거 이력을 지우지 않는 감사 가능한 구조)를 새로 구현해 해결.
+기존 `model_dir`/`metadata_dir` 기반 추론 라우팅 API(`phase14_deploy.
+yml`, `phase13_inference_api.py`가 사용)는 그대로 두고 `registry_dir`를
+추가 파라미터로만 얹어 하위 호환을 유지했다.
+
+**검증**: `test_phase13_5_automation.py` 10개 전부 수집 오류에서
+통과로 전환. 전체 스위트 500 passed(기존 490에서 +10), 실패·에러
+50/22건은 이번 변경 전후 완전히 동일한 목록(전부 `torch` 미설치,
+`test_phase13_korea_model_trainer.py`/`test_model_performance.py`의
+사전 학습 모델 파일 부재 등 무관한 기존 문제) — 회귀 없음.
+
