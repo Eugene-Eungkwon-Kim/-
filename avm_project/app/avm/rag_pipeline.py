@@ -76,8 +76,28 @@ class RAGPipeline:
 
     def process(self, property_info: Dict[str, Any], result: Dict[str, Any]) -> Dict[str, Any]:
         similar_cases = self._retrieve_similar_cases(property_info)
-        explanation = self._generate_explanation(property_info, result, similar_cases)
-        return {"explanation": explanation, "similar_cases": similar_cases}
+        excluded_reason = self._excluded_reason(property_info, similar_cases)
+        explanation = self._generate_explanation(property_info, result, similar_cases, excluded_reason)
+        return {
+            "explanation": explanation,
+            "similar_cases": similar_cases,
+            "excluded_reason": excluded_reason,
+        }
+
+    @staticmethod
+    def _excluded_reason(property_info: Dict[str, Any], similar_cases: List[Dict[str, Any]]) -> Optional[str]:
+        """유형이 다른 사례가 근거에 섞여 있으면, 감정평가 근거로 그대로 쓰지 않도록
+        조용히 넘기지 않고 이유를 명시한다."""
+        query_type = property_info.get("property_type")
+        if not query_type or not similar_cases:
+            return None
+        mismatched = [c for c in similar_cases if not c.get("type_matched", True)]
+        if not mismatched:
+            return None
+        return (
+            f"동일 유형({query_type}) 사례가 부족해 다른 유형 {len(mismatched)}건이 "
+            "포함됨 — 해당 사례는 근거로 참고만 할 것"
+        )
 
     def _retrieve_similar_cases(self, property_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         if self.collection is not None:
@@ -97,7 +117,10 @@ class RAGPipeline:
             property_info.get("appraisal_amount"), property_info.get("property_type"),
             property_info.get("address_sido"), None,
         )
-        return search_similar(self.collection, query_vector, limit=5)
+        return search_similar(
+            self.collection, query_vector,
+            property_type=property_info.get("property_type"), limit=5,
+        )
 
     def _retrieve_from_sql(self, property_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """벡터 색인이 없거나 실패했을 때의 대체 경로 — DB 비교사례 검색 재사용."""
@@ -136,33 +159,40 @@ class RAGPipeline:
                 "hammer_rate": comp.hammer_rate or 0.0,
                 # engine._area_similarity_score 는 비공개 함수라 직접 노출하지
                 # 않는다. 벡터 검색 경로와 달리 이 대체 경로는 근거 축 설명을
-                # 만들지 않는다 — match_reasons 는 벡터 검색 결과에서만 나온다.
+                # 만들지 않는다 — match_reasons/evidence 는 벡터 검색 결과에서만 나온다.
                 "similarity": 0.5,
+                # 이 경로는 이미 engine.avm.estimate() 가 property_type 으로
+                # 필터링한 결과만 준다(app/avm/engine.py Property.property_type
+                # ilike 조건) — 그래서 항상 True.
+                "type_matched": True,
             }
             for idx, comp in enumerate(avm_result.comparables)
         ]
 
     def _generate_explanation(
         self, property_info: Dict[str, Any], result: Dict[str, Any],
-        similar_cases: List[Dict[str, Any]],
+        similar_cases: List[Dict[str, Any]], excluded_reason: Optional[str] = None,
     ) -> str:
         if self.client is not None:
             try:
-                return self._generate_explanation_openai(property_info, result, similar_cases)
+                return self._generate_explanation_openai(
+                    property_info, result, similar_cases, excluded_reason,
+                )
             except Exception as e:
                 logger.warning(f"[RAG] OpenAI 설명 생성 실패, 템플릿으로 대체: {e}")
-        return self._generate_explanation_template(result, similar_cases)
+        return self._generate_explanation_template(result, similar_cases, excluded_reason)
 
     def _generate_explanation_openai(
         self, property_info: Dict[str, Any], result: Dict[str, Any],
-        similar_cases: List[Dict[str, Any]],
+        similar_cases: List[Dict[str, Any]], excluded_reason: Optional[str] = None,
     ) -> str:
         # 실 서비스(OPENAI_API_KEY)가 없어 이 경로는 아직 실행 검증하지 못했다.
+        caveat = f"\n주의: {excluded_reason}" if excluded_reason else ""
         prompt = (
             f"물건 정보: {property_info}\n"
             f"예상 낙찰가: {result.get('hammer_price')}원 (낙찰가율 {result.get('hammer_rate')})\n"
             f"유사 사례 {len(similar_cases)}건을 참고해 감정평가 근거를 "
-            "3문장 이내 한국어로 설명하라."
+            f"3문장 이내 한국어로 설명하라.{caveat}"
         )
         response = self.client.chat.completions.create(
             model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
@@ -174,6 +204,7 @@ class RAGPipeline:
     @staticmethod
     def _generate_explanation_template(
         result: Dict[str, Any], similar_cases: List[Dict[str, Any]],
+        excluded_reason: Optional[str] = None,
     ) -> str:
         count = len(similar_cases)
         hammer_price = result.get("hammer_price", 0)
@@ -190,6 +221,8 @@ class RAGPipeline:
         top_reasons = similar_cases[0].get("match_reasons")
         if top_reasons:
             base += f" 가장 유사한 사례는 {', '.join(top_reasons)} 기준으로 근접했습니다."
+        if excluded_reason:
+            base += f" ※ {excluded_reason}."
         return base
 
 

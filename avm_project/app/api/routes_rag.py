@@ -35,6 +35,11 @@ class SimilarCaseResponse(BaseModel):
     hammer_price: int
     hammer_rate: float
     similarity: float
+    type_matched: bool = Field(default=True, description="본건과 같은 자산유형 사례인지")
+    evidence: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="근거 축별 차이(axis, diff) — 자산유형에 맞는 축이 우선한다",
+    )
 
 
 class ConfidenceDetail(BaseModel):
@@ -52,6 +57,10 @@ class EstimateWithExplanationResponse(BaseModel):
     confidence: ConfidenceDetail = Field(..., description="신뢰도")
     explanation: str = Field(..., description="감정평가 설명")
     similar_cases: List[SimilarCaseResponse] = Field(..., description="유사 사례")
+    excluded_reason: Optional[str] = Field(
+        default=None,
+        description="유사 사례 중 본건과 다른 자산유형이 섞여 들어간 경우의 사유",
+    )
 
 
 class HealthResponse(BaseModel):
@@ -118,10 +127,12 @@ async def estimate_with_explanation(request: PropertyRequest):
             rag_result = rag.process(property_info, result)
             explanation = rag_result['explanation']
             similar_cases = rag_result['similar_cases']
+            excluded_reason = rag_result.get('excluded_reason')
         except Exception as e:
             logger.warning(f"[API] RAG 처리 오류, 대체 설명 사용: {e}")
             explanation = "[RAG 처리 오류] 기본 설명만 제공됩니다."
             similar_cases = []
+            excluded_reason = None
 
         # 4. 신뢰도 계산
         scorer = ConfidenceScorer()
@@ -151,9 +162,12 @@ async def estimate_with_explanation(request: PropertyRequest):
                     'hammer_price': case['hammer_price'],
                     'hammer_rate': case['hammer_rate'],
                     'similarity': case['similarity'],
+                    'type_matched': case.get('type_matched', True),
+                    'evidence': case.get('evidence', []),
                 }
                 for case in similar_cases[:5]
             ],
+            'excluded_reason': excluded_reason,
         }
 
         logger.info(
