@@ -8,7 +8,11 @@ import numpy as np
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from avm_project.scripts.phase13_2_gpu_trainer import (
+# torch는 Phase 13.2 GPU 학습 전용 의존성이라 requirements.txt에 없다 — 없는
+# 환경에서 수집 오류로 스위트 전체를 멈추는 대신 이 모듈만 skip한다.
+pytest.importorskip("torch", reason="Phase 13.2 GPU 학습 테스트는 torch가 필요합니다")
+
+from avm_project.scripts.phase13_2_gpu_trainer import (  # noqa: E402
     GPUModelTrainer,
     train_country,
 )
