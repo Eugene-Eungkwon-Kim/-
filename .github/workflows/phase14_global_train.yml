@@ -1,0 +1,69 @@
+name: Phase 14 - Global Model Retraining
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'  # 월 1회 (매월 1일 자정 UTC)
+  workflow_dispatch:     # 수동 트리거
+
+defaults:
+  run:
+    working-directory: avm_project
+
+jobs:
+  retrain-all-countries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -q numpy pandas scikit-learn xgboost lightgbm openpyxl
+
+      - name: Retrain 8 countries (parallel)
+        # KR은 여기 없다: phase13_global_pipeline.py의 --country choices에
+        # KR이 없어(한국 전용 파이프라인은 phase13_korea_model_trainer.py로
+        # 별도 분리돼 있다, korea_monthly_retrain.yml 참고) 항상 argparse
+        # 오류로 실패했다. 한국 재학습은 그 워크플로우가 전담한다.
+        run: |
+          python scripts/phase13_global_pipeline.py --country BR &
+          python scripts/phase13_global_pipeline.py --country SG &
+          python scripts/phase13_global_pipeline.py --country HK &
+          python scripts/phase13_global_pipeline.py --country UK &
+          python scripts/phase13_global_pipeline.py --country DE &
+          python scripts/phase13_global_pipeline.py --country AU &
+          python scripts/phase13_global_pipeline.py --country CA &
+          python scripts/phase13_global_pipeline.py --country TH &
+          wait
+        continue-on-error: true
+
+      - name: Archive models
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrained-models
+          path: avm_project/output/models/
+          retention-days: 30
+
+      - name: Check MAPE targets
+        run: |
+          python scripts/phase14_monitor.py check-mape --threshold 0.105
+
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Monthly retraining failed. Check logs.'
+            })

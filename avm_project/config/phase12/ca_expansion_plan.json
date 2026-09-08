@@ -1,0 +1,26 @@
+{
+  "country": "Canada",
+  "market_code": "CA",
+  "currency": "CAD",
+  "timestamp": "2026-06-25",
+  "data_collection": {
+    "primary": "Canadian Real Estate Association",
+    "data_volume_gb": 6
+  },
+  "sample_properties": [
+    {
+      "property_id": "CA_TOR_001",
+      "address": "123 Bay Street, Toronto",
+      "area": 3800,
+      "old_price": 850000,
+      "new_price": 900000
+    },
+    {
+      "property_id": "CA_VAN_001",
+      "address": "456 Burrard Street, Vancouver",
+      "area": 3500,
+      "old_price": 950000,
+      "new_price": 1000000
+    }
+  ]
+}

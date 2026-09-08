@@ -1,0 +1,26 @@
+{
+  "country": "Thailand",
+  "market_code": "TH",
+  "currency": "THB",
+  "timestamp": "2026-06-25",
+  "data_collection": {
+    "primary": "Thai Land Department",
+    "data_volume_gb": 3
+  },
+  "sample_properties": [
+    {
+      "property_id": "TH_BKK_001",
+      "address": "123 Sukhumvit Road, Bangkok",
+      "area": 2800,
+      "old_price": 12000000,
+      "new_price": 12800000
+    },
+    {
+      "property_id": "TH_CMH_001",
+      "address": "456 Nimmanhaemin Road, Chiang Mai",
+      "area": 2200,
+      "old_price": 4500000,
+      "new_price": 4800000
+    }
+  ]
+}

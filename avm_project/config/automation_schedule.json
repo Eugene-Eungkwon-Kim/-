@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-06-24T02:11:13.052319",
+  "platform": "Linux",
+  "jobs": {
+    "weekly_data_collection": {
+      "schedule": "0 10 * * 4",
+      "description": "주간 데이터 수집 (Track A)",
+      "command": "python3 /home/user/-/avm_project/scripts/track_a_data_integration.py",
+      "log_file": "/home/user/-/avm_project/logs/cron/weekly_data_collection.log"
+    },
+    "monthly_model_retrain": {
+      "schedule": "0 11 1-7 * 1",
+      "description": "월간 모델 재학습 (Track B)",
+      "command": "python3 /home/user/-/avm_project/scripts/retrain_models_track_b.py",
+      "log_file": "/home/user/-/avm_project/logs/cron/monthly_model_retrain.log"
+    },
+    "daily_monitoring": {
+      "schedule": "0 23 * * *",
+      "description": "일일 모니터링 및 로그 수집",
+      "command": "python3 /home/user/-/avm_project/scripts/daily_monitoring.py",
+      "log_file": "/home/user/-/avm_project/logs/cron/daily_monitoring.log"
+    }
+  }
+}

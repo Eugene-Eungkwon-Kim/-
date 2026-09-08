@@ -1,0 +1,38 @@
+[
+  {
+    "rule_id": "DW-0001",
+    "query_sido": "경기도",
+    "query_sigungu": "화성시",
+    "candidate_sido": "경기도",
+    "candidate_sigungu": "화성만세구",
+    "evidence_property_count": 54,
+    "evidence_comparable_count": 45,
+    "match_basis": "normalized_sigungu_prefix",
+    "review_status": "NEEDS_REVIEW",
+    "customer_safe": false
+  },
+  {
+    "rule_id": "DW-0002",
+    "query_sido": "경기도",
+    "query_sigungu": "화성시",
+    "candidate_sido": "경기도",
+    "candidate_sigungu": "화성효행구",
+    "evidence_property_count": 54,
+    "evidence_comparable_count": 5,
+    "match_basis": "normalized_sigungu_prefix",
+    "review_status": "NEEDS_REVIEW",
+    "customer_safe": false
+  },
+  {
+    "rule_id": "DW-0003",
+    "query_sido": "경기도",
+    "query_sigungu": "화성시 만세구",
+    "candidate_sido": "경기도",
+    "candidate_sigungu": "화성시",
+    "evidence_property_count": 12,
+    "evidence_comparable_count": 43,
+    "match_basis": "normalized_sigungu_prefix",
+    "review_status": "NEEDS_REVIEW",
+    "customer_safe": false
+  }
+]

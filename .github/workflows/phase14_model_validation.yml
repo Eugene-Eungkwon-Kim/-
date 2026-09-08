@@ -1,0 +1,120 @@
+name: Phase 14 - Model Validation & ONNX Conversion
+
+on:
+  push:
+    paths:
+      # 이 파일들은 저장소 루트가 아니라 avm_project/ 아래에 있다 — 접두사가
+      # 없으면 이 트리거가 실제로는 절대 일치하지 않는다.
+      - 'avm_project/output/models/**_production_*.pkl'
+      - 'avm_project/scripts/phase13_stacking_converter.py'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: avm_project
+
+jobs:
+  validate-and-convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      matrix:
+        # GitHub Actions 표현식에는 파이프(|)나 lower() 필터가 없다(Jinja/Ansible
+        # 문법이지 GHA 문법이 아니다) — 소문자 파일명이 필요한 각 항목마다
+        # country_lower 를 matrix에 직접 명시해 해결한다.
+        include:
+          - country: KR
+            country_lower: kr
+          - country: BR
+            country_lower: br
+          - country: SG
+            country_lower: sg
+          - country: HK
+            country_lower: hk
+          - country: UK
+            country_lower: uk
+          - country: DE
+            country_lower: de
+          - country: AU
+            country_lower: au
+          - country: CA
+            country_lower: ca
+          - country: TH
+            country_lower: th
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -q numpy pandas scikit-learn xgboost lightgbm onnxruntime skl2onnx onnxmltools openpyxl
+
+      - name: Convert to ONNX (${{ matrix.country }})
+        run: |
+          python scripts/phase13_stacking_converter.py \
+            --model output/models/${{ matrix.country_lower }}_production_v1.0.pkl \
+            --data data/processed/${{ matrix.country }}_engineered.csv \
+            --output output/converted_models/${{ matrix.country_lower }}_production_v1.0.onnx \
+            --leak-patterns "price_local,indexed_price"
+        continue-on-error: true
+
+      - name: Validate ONNX conversion (${{ matrix.country }})
+        run: |
+          python scripts/phase14_monitor.py validate-onnx \
+            --model output/converted_models/${{ matrix.country_lower }}_production_v1.0.onnx \
+            --min-match-rate 0.99 \
+            --country ${{ matrix.country }}
+        continue-on-error: true
+
+      - name: Run inference benchmark (${{ matrix.country }})
+        run: |
+          python scripts/phase13_inference_engine.py \
+            --model output/converted_models/${{ matrix.country_lower }}_production_v1.0.onnx \
+            --output output/benchmark_results_${{ matrix.country }}.json
+        continue-on-error: true
+
+      - name: Upload conversion report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conversion-reports-${{ matrix.country }}
+          path: avm_project/output/converted_models/${{ matrix.country_lower }}_production_*.json
+          retention-days: 30
+
+  merge-results:
+    needs: validate-and-convert
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all reports
+        uses: actions/download-artifact@v4
+        with:
+          path: avm_project/reports/
+
+      - name: Generate validation summary
+        run: |
+          python scripts/phase14_monitor.py summarize-reports \
+            --reports-dir reports/ \
+            --output output/validation_summary.json
+
+      - name: Check SLA (single-inference <5ms)
+        run: |
+          python scripts/phase14_monitor.py check-sla \
+            --summary output/validation_summary.json \
+            --target-latency-ms 5.0
+
+      - name: Archive summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-summary
+          path: avm_project/output/validation_summary.json
+          retention-days: 90

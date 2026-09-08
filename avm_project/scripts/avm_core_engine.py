@@ -1,0 +1,256 @@
+"""WP 2.6: AVM Core Engine - 5단계 가치평가 파이프라인 통합."""
+
+import json
+import logging
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+
+from scripts.avm_feature_engineering import AVMFeatureEngineer
+from scripts.avm_ensemble_engine import AVMEnsembleEngine
+from scripts.avm_correction_layer import CorrectionLayer
+from scripts.avm_validation_engine import ValidationEngine
+from scripts.avm_auction_module import AuctionModule
+from scripts.avm_geo_grading import grade_from_coords
+
+log = logging.getLogger(__name__)
+
+DEFAULT_CONFIG = {
+    'model_dir': 'output/models_ir',
+    'trained_models_dir': 'output/trained_models',
+    'data_dir': 'data/raw',
+}
+
+# 입력 가드레일 경계 (한국 부동산 범위)
+KR_LAT_BOUNDS = (33.0, 38.5)
+KR_LNG_BOUNDS = (124.0, 132.0)
+AREA_BOUNDS = (10.0, 1000.0)            # ㎡
+PRICE_BOUNDS = (10_000_000.0, 50_000_000_000.0)  # 원 (1천만 ~ 500억)
+OOD_CONFIDENCE_PENALTY = 0.50           # 경계 밖 입력 시 신뢰도 ×0.5
+
+
+class AVMCoreEngine:
+    """통합 AVM 엔진 - 부동산 자동 가치평가."""
+
+    VERSION = 'v1.0-ensemble'
+
+    def __init__(self, config_path: str = 'config/avm_config.json') -> None:
+        self.config = self._load_config(config_path)
+        self.feature_engineer = AVMFeatureEngineer()
+        self.ensemble = AVMEnsembleEngine(self.config['model_dir'])
+        self.corrections = CorrectionLayer()
+        self.validator = ValidationEngine()
+        self.auction = AuctionModule()
+        self._start_time = time.time()
+        self._perf_log: List[Dict] = []
+        self._coldstart = None   # 지연 로드 (valuate_coldstart 첫 호출 시)
+        self._fit_validator()
+        log.info(f"AVMCoreEngine {self.VERSION} ready")
+
+    def _load_config(self, config_path: str) -> Dict:
+        """설정 파일 로드 (실패시 기본값 사용)."""
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                cfg = json.load(f)
+            return {**DEFAULT_CONFIG, **cfg}
+        except Exception:
+            log.warning(f"Config not found at {config_path}, using defaults")
+            return DEFAULT_CONFIG.copy()
+
+    def _fit_validator(self) -> None:
+        """학습 데이터로 이상탐지 모델 초기화 (정규화 후 fit)."""
+        try:
+            data_dir = Path(self.config['data_dir'])
+            csv_files = list(data_dir.glob('*_data.csv'))
+            if not csv_files:
+                return
+            dfs = [pd.read_csv(f) for f in csv_files[:3]]
+            df = pd.concat(dfs, ignore_index=True)
+            cols = ['area_sqm', 'old_price', 'latitude', 'longitude', 'property_type']
+            available = [c for c in cols if c in df.columns]
+            if len(available) >= 5:
+                X_raw = df[available[:5]].dropna().values.astype(np.float32)
+                if len(X_raw) > 10:
+                    # 추론과 동일한 정규화 적용 (배치 단위, 불일치 방지)
+                    fmin, fmax = self.feature_engineer.feature_min, self.feature_engineer.feature_max
+                    X = np.clip((X_raw - fmin) / (fmax - fmin), 0.0, 1.0).astype(np.float32)
+                    self.validator.fit(X)
+                    log.info(f"Validator fitted on {len(X)} normalized samples")
+        except Exception as e:
+            log.warning(f"Validator fit skipped: {e}")
+
+    @staticmethod
+    def _validate_inputs(
+        area_sqm: float, old_price: float,
+        latitude: float, longitude: float,
+    ) -> List[str]:
+        """입력 가드레일. 불가능 입력은 ValueError, 의심 입력은 경고 리스트 반환."""
+        if old_price <= 0:
+            raise ValueError(f"old_price must be positive, got {old_price}")
+        if area_sqm <= 0:
+            raise ValueError(f"area_sqm must be positive, got {area_sqm}")
+
+        warnings: List[str] = []
+        if not (KR_LAT_BOUNDS[0] <= latitude <= KR_LAT_BOUNDS[1]) or \
+           not (KR_LNG_BOUNDS[0] <= longitude <= KR_LNG_BOUNDS[1]):
+            warnings.append(f"coordinates ({latitude},{longitude}) outside Korea — low confidence")
+        if not (AREA_BOUNDS[0] <= area_sqm <= AREA_BOUNDS[1]):
+            warnings.append(f"area_sqm {area_sqm} outside typical range {AREA_BOUNDS}")
+        if not (PRICE_BOUNDS[0] <= old_price <= PRICE_BOUNDS[1]):
+            warnings.append(f"old_price {old_price:,.0f} outside typical range")
+        return warnings
+
+    def valuate(
+        self,
+        area_sqm: float,
+        old_price: float,
+        latitude: float,
+        longitude: float,
+        property_type: str,
+        district_grade: str = 'auto',
+        public_appraisal_price: Optional[float] = None,
+        market_condition: str = 'normal',
+        reference_year: int = 2024,
+    ) -> Dict[str, Any]:
+        """5단계 부동산 가치평가.
+
+        district_grade='auto'(기본) 시 위·경도로부터 권역 등급을 산정해
+        보정 레이어에 전달한다. 명시적으로 '1'~'6'을 주면 그 값을 사용한다.
+        불가능 입력(음수 가격/면적)은 ValueError, 경계 밖 입력은 경고+신뢰도 하향.
+        """
+        start = time.perf_counter()
+
+        input_warnings = self._validate_inputs(area_sqm, old_price, latitude, longitude)
+
+        if district_grade == 'auto':
+            district_grade = grade_from_coords(latitude, longitude)
+
+        # Step 1: 특성 엔지니어링
+        input_dict = {
+            'area_sqm': area_sqm, 'old_price': old_price,
+            'latitude': latitude, 'longitude': longitude,
+            'property_type': property_type,
+        }
+        features = self.feature_engineer.transform(input_dict)
+
+        # Step 2: 앙상블 예측
+        base_price, confidence, _ = self.ensemble.predict(features)
+
+        # Step 3: 보정값 적용
+        corrected_price = self.corrections.apply_corrections(
+            base_price, property_type, district_grade, reference_year
+        )
+
+        # Step 4: 검증 (앙상블 불일치도를 보정 스케일로 환산해 신뢰구간에 반영)
+        scale = (corrected_price / base_price) if base_price else 1.0
+        price_std = self.ensemble.last_prediction_std * scale
+        validation = self.validator.validate(
+            features, corrected_price, public_appraisal_price, price_std=price_std,
+        )
+
+        # Step 5: 낙찰가 추정
+        auction = self.auction.estimate_auction_price(
+            corrected_price, property_type, district_grade, market_condition
+        )
+
+        # 최종 신뢰도 조정
+        if not validation['is_valid']:
+            confidence *= 0.70
+        if input_warnings:
+            confidence *= OOD_CONFIDENCE_PENALTY
+
+        latency_ms = (time.perf_counter() - start) * 1000.0
+        self._perf_log.append({'latency_ms': latency_ms, 'confidence': confidence})
+
+        log.info(
+            f"Valuation: {corrected_price:,.0f} KRW "
+            f"(conf={confidence:.1%}, {latency_ms:.1f}ms)"
+        )
+
+        return {
+            'base_price': float(base_price),
+            'corrected_price': float(corrected_price),
+            'confidence': float(confidence),
+            'district_grade': district_grade,
+            'input_warnings': input_warnings,
+            'validation_status': validation['is_valid'],
+            'validation': validation,
+            'auction_forecast': auction,
+            'latency_ms': float(latency_ms),
+            'model_version': self.VERSION,
+            'timestamp': datetime.now().isoformat(),
+        }
+
+    def batch_valuate(self, properties: List[Dict]) -> List[Dict]:
+        """대량 가치평가."""
+        return [self.valuate(**p) for p in properties]
+
+    def valuate_coldstart(
+        self,
+        area_sqm: float,
+        latitude: float,
+        longitude: float,
+        property_type: str = 'apartment',
+        floor: int = 5,
+        construction_year: int = 2005,
+        district_grade: str = 'auto',
+        reference_year: int = 2024,
+    ) -> Dict[str, Any]:
+        """직전가 없이 펀더멘털만으로 평가 (담보에 최근 실거래가 없을 때).
+
+        메인 valuate()보다 부정확하므로(MAPE↑) 신뢰도를 보수적으로 낮춘다.
+        콜드스타트 모델 미학습 시 ValueError.
+        """
+        start = time.perf_counter()
+        self._validate_inputs(area_sqm, 1.0, latitude, longitude)  # 가격 가드레일 제외
+
+        if self._coldstart is None:
+            from scripts.avm_coldstart import ColdStartEstimator
+            self._coldstart = ColdStartEstimator(self.config['trained_models_dir'])
+        if not self._coldstart.is_ready:
+            raise ValueError("ColdStart 모델 없음 — scripts/avm_coldstart.py 먼저 실행")
+
+        if district_grade == 'auto':
+            district_grade = grade_from_coords(latitude, longitude)
+
+        base_price = self._coldstart.estimate(area_sqm, latitude, longitude, floor, construction_year)
+        corrected_price = self.corrections.apply_corrections(
+            base_price, property_type, district_grade, reference_year
+        )
+        latency_ms = (time.perf_counter() - start) * 1000.0
+
+        return {
+            'base_price': float(base_price),
+            'corrected_price': float(corrected_price),
+            'confidence': 0.65,   # 펀더멘털만 → 보수적 고정 신뢰도
+            'district_grade': district_grade,
+            'method': 'coldstart_fundamentals',
+            'note': '직전가 미사용 추정 — valuate()보다 부정확',
+            'latency_ms': float(latency_ms),
+            'model_version': self.VERSION,
+            'timestamp': datetime.now().isoformat(),
+        }
+
+    def get_engine_stats(self) -> Dict[str, Any]:
+        """엔진 상태 및 성능 통계."""
+        uptime_h = (time.time() - self._start_time) / 3600
+        latencies = [p['latency_ms'] for p in self._perf_log] or [0.0]
+        confidences = [p['confidence'] for p in self._perf_log] or [0.0]
+
+        return {
+            'version': self.VERSION,
+            'status': 'ready' if self.ensemble.models else 'degraded',
+            'uptime_hours': round(uptime_h, 2),
+            'predictions_count': self.ensemble.predictions_count,
+            'models': self.ensemble.get_model_stats(),
+            'performance': {
+                'avg_latency_ms': round(float(np.mean(latencies)), 2),
+                'p95_latency_ms': round(float(np.percentile(latencies, 95)), 2),
+                'avg_confidence': round(float(np.mean(confidences)), 4),
+                'cache_hit_rate': round(self.ensemble.cache_hit_rate, 4),
+            },
+        }

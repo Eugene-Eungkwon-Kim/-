@@ -1,0 +1,118 @@
+# Logs
+logs/
+*.log
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+.env.prod
+
+# API Keys & Credentials
+*.key
+*.pem
+secrets/
+
+# Data
+data/raw/*.csv
+data/processed/*.csv
+data/raw/*.json
+data/processed/*.json
+data/*.sqlite
+data/*.sqlite3
+data/milvus_lite.db/
+
+# scripts/export_comparable_sales_excel.py 기본 출력 (실행 산출물, 소스 아님)
+comparable_sales_export.xlsx
+
+# Models
+models/*.pkl
+models/*.joblib
+
+# Output
+output/*.csv
+output/*.json
+output/orchestration_report_*.json
+output/hyperparameter_tuning_*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.cover
+.tox/
+
+# Virtual environments
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Legacy documentation (previous sessions)
+docs/PHASE_*.md
+docs/DAY_*.md
+docs/DAY2-7_*.md
+docs/NEXT_*.md
+docs/REVISED_*.md
+docs/EXECUTIVE_SUMMARY.md
+docs/FINAL_*.md
+docs/INDEPENDENT_*.md
+docs/*_REPORT.md
+docs/*_PLAN.md
+docs/*_SPECIFICATION.md
+docs/*_WBS.md
+docs/00_*.md
+docs/comprehensive_*.md
+docs/gpu_*.md
+docs/nvidia_*.md
+docs/research_*.md
+docs/REBAR_*.md
+docs/LG_*.md
+docs/Loan4U_*.md
+docs/MODEL_*.md
+docs/CLEAN_*.md
+docs/CODE_*.md
+docs/BACKEND_*.md
+docs/DEV_*.md
+docs/EXECUTION_*.md
+docs/TRACK_*.md
+
+docs/AVM_PROJECT_STATUS_*.md
+docs/OFFICIAL_*.md
+docs/PROJECT_EXECUTION_*.md
+data/*checkpoint*.json
+_FICTION_QUARANTINE/
+data/test/

@@ -1,0 +1,127 @@
+name: Korea Monthly Model Retraining
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'  # 1st of each month at 00:00 UTC
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+defaults:
+  run:
+    # 이 워크플로우가 참조하는 requirements.txt/scripts/ 는 전부
+    # avm_project/ 아래에 있다. 예전 버전은 이 지정이 없어 저장소
+    # 루트에서 실행돼 매 스텝이 "파일 없음"으로 죽었다.
+    working-directory: avm_project
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Step 1 - Data Collection
+        id: data_collection
+        continue-on-error: true
+        env:
+          VWORLD_API_KEY: ${{ secrets.VWORLD_API_KEY }}
+          BOK_API_KEY: ${{ secrets.BOK_API_KEY }}
+          FISIS_API_KEY: ${{ secrets.FISIS_API_KEY }}
+          ADDRESS_AUTH_KEY: ${{ secrets.ADDRESS_AUTH_KEY }}
+        run: |
+          # 스크립트 자체 기본 출력 경로는 data/raw/KR_raw.csv 로 고정되어
+          # 있다(phase13_real_data_kr.py) — 커맨드라인으로 바꿀 수 없다.
+          python scripts/phase13_real_data_kr.py --records 20000
+          echo "data_collection_success=true" >> "$GITHUB_OUTPUT"
+          echo "✅ Data collection completed"
+
+      - name: Step 2 - Quality Validation
+        continue-on-error: true
+        run: |
+          python scripts/phase13_quality_monitor.py \
+            --reports-dir data/raw \
+            --output reports/korea/quality_dashboard.html \
+            --window 30
+          echo "✅ Quality validation completed"
+
+      - name: Step 3 - Model Training
+        id: model_training
+        continue-on-error: true
+        run: |
+          # --data 생략 시 기본값이 data/raw/KR_raw.csv 라 Step 1 산출물과
+          # 그대로 맞는다.
+          python scripts/phase13_korea_model_trainer.py --mode all
+          echo "model_training_success=true" >> "$GITHUB_OUTPUT"
+          echo "✅ Model training completed"
+
+      - name: Step 4 - Performance Analysis
+        continue-on-error: true
+        run: |
+          python scripts/phase14_kr_performance_analyzer.py \
+            --models-dir output/models/korea \
+            --output reports/korea/performance_report.html
+          echo "✅ Performance analysis completed"
+
+      - name: Step 5 - Model Comparison
+        continue-on-error: true
+        run: |
+          python scripts/phase14_kr_model_comparison.py \
+            --current-models output/models/korea \
+            --output reports/korea/model_comparison.json
+          echo "✅ Model comparison completed"
+
+      - name: Step 6 - Threshold Checking
+        id: threshold_check
+        continue-on-error: true
+        run: |
+          python scripts/phase14_kr_threshold_checker.py \
+            --models-dir output/models/korea \
+            --mape-target 0.11 \
+            --r2-minimum 0.50 \
+            --output reports/korea/threshold_check.json
+          echo "✅ Threshold checking completed"
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: korea_models_and_reports
+          path: |
+            avm_project/data/raw/
+            avm_project/output/models/korea/
+            avm_project/reports/korea/
+          retention-days: 90
+
+      - name: Summary Report
+        if: always()
+        run: |
+          echo "## 🎯 Korea Monthly Retraining Pipeline" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Data Collection: ${{ steps.data_collection.outputs.data_collection_success || 'failed' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Model Training: ${{ steps.model_training.outputs.model_training_success || 'failed' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "reports/korea/threshold_check.json" ]; then
+            echo "### Threshold Check Results" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat reports/korea/threshold_check.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Artifacts**: Available for 90 days" >> "$GITHUB_STEP_SUMMARY"

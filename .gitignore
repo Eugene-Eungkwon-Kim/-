@@ -24,3 +24,16 @@ data/*.db
 data/*.db-*
 test-results.xml
 dump.rdb
+
+# --- AVM Project - Data and generated files ---
+avm_project/data/raw/
+avm_project/data/processed/
+avm_project/output/
+avm_project/models/
+output/
+models_ir/
+*.csv
+*.pkl
+*.onnx
+*.joblib
+*.json

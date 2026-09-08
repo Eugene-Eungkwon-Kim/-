@@ -1,0 +1,125 @@
+{
+  "country": "United Kingdom",
+  "market_code": "GB",
+  "currency": "GBP",
+  "timestamp": "2026-06-25",
+  "data_collection": {
+    "primary_source": "HM Land Registry",
+    "api_endpoints": {
+      "official_copy": "/api/property/{uprn}/official-copy",
+      "price_paid": "/api/transactions/bulk?date_from=YYYY-MM-DD",
+      "address_search": "/api/addresses/search?postcode=XX###XX"
+    },
+    "data_fields": 25,
+    "target_volume_months": 3,
+    "estimated_transactions": 2000000,
+    "data_volume_gb": 6,
+    "critical_fields": [
+      "UPRN",
+      "Property Type",
+      "Price",
+      "Area",
+      "Location",
+      "Building Age",
+      "Lease Term",
+      "Council Tax Band",
+      "EPC Rating"
+    ]
+  },
+  "model_development": {
+    "base_models": 4,
+    "advanced_models": 2,
+    "ensemble_strategy": "Voting Regressor",
+    "weights": {
+      "XGBoost": 0.4,
+      "LightGBM": 0.35,
+      "GradientBoosting": 0.25
+    },
+    "feature_engineering": {
+      "original_features": 25,
+      "derived_features": 15,
+      "total_features": 40,
+      "key_transformations": [
+        "Log(Price), Log(Area)",
+        "Price per m²",
+        "Distance-based features",
+        "Temporal features",
+        "Lease remaining ratio"
+      ]
+    },
+    "validation": {
+      "strategy": "Time Series Split",
+      "folds": 5,
+      "target_r2": 0.9,
+      "target_rmse_gbp": 30000,
+      "target_mape": 0.08
+    }
+  },
+  "api_specification": {
+    "endpoints": [
+      {
+        "method": "POST",
+        "path": "/api/v1/uk/predict",
+        "description": "Property valuation prediction",
+        "response_time_ms": 100,
+        "expected_tpm": 800
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/uk/market/{postcode}",
+        "description": "Market analysis data",
+        "response_time_ms": 100
+      }
+    ],
+    "cache_strategy": "Redis TTL 24h",
+    "load_testing": "2K requests/day"
+  },
+  "b2b_partnerships": {
+    "target_count": -2,
+    "priority_partners": [
+      {
+        "name": "HSBC",
+        "sector": "Banking",
+        "use_case": "Mortgage underwriting",
+        "estimated_tpm": 30000,
+        "price_per_transaction": "£0.50"
+      },
+      {
+        "name": "Barclays",
+        "sector": "Banking",
+        "use_case": "Risk assessment",
+        "estimated_tpm": 20000
+      },
+      {
+        "name": "Rightmove",
+        "sector": "PropertyTech",
+        "use_case": "Valuation estimates",
+        "estimated_tpm": 50000,
+        "price_per_transaction": "£0.20"
+      }
+    ]
+  },
+  "milestone_timeline": {
+    "week_1_2": "Data collection & validation",
+    "week_3_4": "Model development & tuning",
+    "week_5_6": "API development & testing",
+    "week_7_8": "Production deployment & partnerships",
+    "week_9_12": "Ramp-up to monthly target"
+  },
+  "sample_properties": [
+    {
+      "property_id": "UK_LON_001",
+      "address": "123 Oxford Street, London",
+      "area": 150,
+      "old_price": 850000,
+      "new_price": 875000
+    },
+    {
+      "property_id": "UK_MAN_001",
+      "address": "456 Market Street, Manchester",
+      "area": 120,
+      "old_price": 450000,
+      "new_price": 468000
+    }
+  ]
+}
