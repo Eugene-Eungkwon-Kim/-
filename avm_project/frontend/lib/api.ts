@@ -78,11 +78,14 @@ export const modelAPI = {
 // ============================================
 // 데이터 분석 API
 // ============================================
+// /data/quality, /data/price-distribution, /data/region-distribution 은 고정
+// 예시값을 돌려주는 deprecated 엔드포인트다 — 수집 파이프라인이 적재한 실측값을
+// 같은 응답 모양으로 주는 /data/comparable-sales/* 를 쓴다.
 export const dataAPI = {
-  getDataQuality: () => api.get('/data/quality'),
-  getPriceDistribution: () => api.get('/data/price-distribution'),
-  getRegionDistribution: () => api.get('/data/region-distribution'),
-  getDataSummary: () => api.get('/data/summary'),
+  getDataQuality: () => api.get('/data/comparable-sales/quality'),
+  getPriceDistribution: () => api.get('/data/comparable-sales/price-distribution'),
+  getRegionDistribution: () => api.get('/data/comparable-sales/region-distribution'),
+  getDataSummary: () => api.get('/data/comparable-sales/summary'),
 }
 
 // ============================================

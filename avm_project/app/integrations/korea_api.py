@@ -23,6 +23,8 @@ from typing import Optional
 
 import requests
 
+from app.integrations.rtms_paging import fetch_all_pages, is_cancelled
+
 logger = logging.getLogger(__name__)
 
 
@@ -154,36 +156,15 @@ class KoreaLandAPI:
         if not service:
             raise ValueError(f"지원하지 않는 property_type: {property_type}")
 
-        url = f"{self.BASE_URL}/{service}"
-        params = {
-            "serviceKey": self.api_key,
-            "LAWD_CD": sgg_code,
-            "DEAL_YMD": f"{year}{month:02d}",
-            "pageNo": 1,
-            "numOfRows": 10000,
-        }
-
-        last_error = None
-        for attempt in range(self.retry):
-            try:
-                resp = self.session.get(url, params=params, timeout=self.timeout)
-                resp.raise_for_status()
-                records = self._parse_xml(resp.text, sgg_code, property_type)
-                logger.debug(
-                    f"[API] {property_type} {sgg_code} {year}-{month:02d}: "
-                    f"{len(records)}건"
-                )
-                return records
-            except requests.RequestException as e:
-                last_error = e
-                logger.warning(
-                    f"API 오류 (시도 {attempt+1}/{self.retry}): {self._safe_error(e)}"
-                )
-                time.sleep(1 * (attempt + 1))
-
-        message = f"API 최대 재시도 초과: {sgg_code} {year}-{month:02d} [{property_type}]"
-        logger.error(message)
-        raise RuntimeError(message) from last_error
+        params = {"serviceKey": self.api_key, "LAWD_CD": sgg_code, "DEAL_YMD": f"{year}{month:02d}"}
+        pages = fetch_all_pages(
+            self.session, f"{self.BASE_URL}/{service}", params,
+            timeout=self.timeout, retry=self.retry,
+            label=f"{sgg_code} {year}-{month:02d} [{property_type}]",
+        )
+        records = [rec for xml in pages for rec in self._parse_xml(xml, sgg_code, property_type)]
+        logger.debug(f"[API] {property_type} {sgg_code} {year}-{month:02d}: {len(records)}건")
+        return records
 
     def _parse_xml(self, xml_text: str, sgg_code: str,
                    property_type: str) -> list[TransactionRecord]:
@@ -197,7 +178,7 @@ class KoreaLandAPI:
 
         # 응답 코드 확인
         result_code = root.findtext(".//resultCode", "")
-        if result_code != "00":
+        if result_code not in ("00", "000"):
             result_msg = root.findtext(".//resultMsg", "")
             raise RuntimeError(f"API 오류 응답: {result_code} - {result_msg}")
 
@@ -235,6 +216,9 @@ class KoreaLandAPI:
                 return float(val)
             except (ValueError, TypeError):
                 return default
+
+        if is_cancelled(item):
+            return None
 
         # 거래금액 파싱 (필수)
         price_str = text("거래금액", text("dealAmount"))

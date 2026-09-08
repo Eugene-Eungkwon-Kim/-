@@ -20,13 +20,14 @@ korea_api.py 가 쓰는 짧은 UUID 형식 DATAGOVKR_API_KEY 와는 다른 키�
 """
 
 import logging
-import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
 import requests
+
+from app.integrations.rtms_paging import fetch_all_pages, is_cancelled
 
 logger = logging.getLogger(__name__)
 
@@ -84,30 +85,13 @@ class KoreaIndustrialTradeAPI:
 
     def fetch(self, sgg_code: str, year: int, month: int,
              debug: bool = False) -> list[IndustrialTransactionRecord]:
-        url = f"{self.BASE_URL}/{self.SERVICE}"
-        params = {
-            "serviceKey": self.api_key,
-            "LAWD_CD": sgg_code,
-            "DEAL_YMD": f"{year}{month:02d}",
-            "pageNo": 1,
-            "numOfRows": 10000,
-        }
-
-        last_error = None
-        for attempt in range(self.retry):
-            try:
-                resp = self.session.get(url, params=params, timeout=self.timeout)
-                resp.raise_for_status()
-                if debug:
-                    logger.info(f"[DEBUG] 원본 응답(앞 2000자):\n{resp.text[:2000]}")
-                return self._parse_xml(resp.text, sgg_code)
-            except requests.RequestException as e:
-                last_error = e
-                time.sleep(1 * (attempt + 1))
-
-        raise RuntimeError(
-            f"API 최대 재시도 초과: {sgg_code} {year}-{month:02d} [공장/창고]"
-        ) from last_error
+        params = {"serviceKey": self.api_key, "LAWD_CD": sgg_code, "DEAL_YMD": f"{year}{month:02d}"}
+        pages = fetch_all_pages(
+            self.session, f"{self.BASE_URL}/{self.SERVICE}", params,
+            timeout=self.timeout, retry=self.retry,
+            label=f"{sgg_code} {year}-{month:02d} [공장/창고]", debug=debug,
+        )
+        return [rec for xml in pages for rec in self._parse_xml(xml, sgg_code)]
 
     def _parse_xml(self, xml_text: str, sgg_code: str) -> list[IndustrialTransactionRecord]:
         try:
@@ -149,6 +133,9 @@ class KoreaIndustrialTradeAPI:
                 return float(raw) if raw else None
             except ValueError:
                 return None
+
+        if is_cancelled(item):
+            return None
 
         price = int_val("거래금액", "dealAmount")
         if price <= 0:

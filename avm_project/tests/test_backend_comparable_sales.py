@@ -134,3 +134,57 @@ class TestComparableSalesEndpoints:
         client = TestClient(bm.app)
         r = client.get("/data/comparable-sales/summary")
         assert r.status_code == 401
+
+    def test_region_distribution_counts_by_sigungu(self, db_session, auth_headers):
+        from app.db.models import ComparableSale
+
+        for sgg in ("강남구", "강남구", "송파구"):
+            db_session.add(ComparableSale(
+                case_index=1, address_sido="서울", address_sigungu=sgg, property_type="아파트",
+                building_area=84.0, trade_date=date(2025, 12, 1), trade_amount=1_000_000_000,
+            ))
+        db_session.commit()
+
+        client, headers = auth_headers
+        r = client.get("/data/comparable-sales/region-distribution", headers=headers)
+
+        assert r.status_code == 200
+        assert r.json()["data"] == [{"name": "강남구", "value": 2}, {"name": "송파구", "value": 1}]
+
+    def test_quality_counts_missing_and_outliers_from_db(self, db_session, auth_headers):
+        """고정값 0.992 가 아니라 실제 결측·이상치로 점수를 낸다."""
+        from app.db.models import ComparableSale
+
+        rows = [
+            dict(building_area=84.0, trade_amount=1_000_000_000),   # 정상
+            dict(building_area=None, land_area=None, trade_amount=500_000_000),  # 면적 결측
+            dict(building_area=84.0, trade_amount=1_000),           # ㎡당 12원 → 이상치
+            dict(land_area=1000.0, trade_amount=900_000_000),        # 토지: 대지면적 기준 정상
+        ]
+        for extra in rows:
+            db_session.add(ComparableSale(case_index=1, property_type="아파트",
+                                          trade_date=date(2025, 12, 1), **extra))
+        db_session.commit()
+
+        client, headers = auth_headers
+        body = client.get("/data/comparable-sales/quality", headers=headers).json()
+
+        assert body["total_rows"] == 4
+        assert body["missing_values"] == 1
+        assert body["outliers"] == 1
+        assert body["quality_score"] == 0.5
+        assert body["status"] == "needs_review"
+
+    def test_quality_on_empty_db_reports_no_data(self, db_session, auth_headers):
+        client, headers = auth_headers
+        body = client.get("/data/comparable-sales/quality", headers=headers).json()
+        assert body == {
+            "total_rows": 0, "missing_values": 0, "missing_percentage": 0.0,
+            "outliers": 0, "outlier_percentage": 0.0, "quality_score": 0.0, "status": "no_data",
+        }
+
+    def test_legacy_fixed_value_endpoints_are_marked_deprecated(self):
+        import backend.main as bm
+
+        deprecated = {r.path for r in bm.app.routes if getattr(r, "deprecated", False)}
+        assert {"/data/quality", "/data/price-distribution", "/data/region-distribution"} <= deprecated

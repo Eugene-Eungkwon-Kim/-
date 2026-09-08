@@ -360,9 +360,9 @@ async def delete_model(model_id: str, token: str = Depends(verify_token)):
 # ============================================
 # 데이터 분석 API
 # ============================================
-@app.get("/data/quality", tags=["Data"])
+@app.get("/data/quality", tags=["Data"], deprecated=True)
 async def get_data_quality(token: str = Depends(verify_token)):
-    """데이터 품질 정보"""
+    """데이터 품질 정보 — 고정 예시값. 실측은 /data/comparable-sales/quality."""
     return {
         "total_rows": 5000,
         "missing_values": 15,
@@ -374,9 +374,9 @@ async def get_data_quality(token: str = Depends(verify_token)):
     }
 
 
-@app.get("/data/price-distribution", tags=["Data"])
+@app.get("/data/price-distribution", tags=["Data"], deprecated=True)
 async def get_price_distribution(token: str = Depends(verify_token)):
-    """거래금액 분포"""
+    """거래금액 분포 — 고정 예시값. 실측은 /data/comparable-sales/price-distribution."""
     return {
         "data": [
             {"range": "1-5억", "count": 850},
@@ -388,9 +388,9 @@ async def get_price_distribution(token: str = Depends(verify_token)):
     }
 
 
-@app.get("/data/region-distribution", tags=["Data"])
+@app.get("/data/region-distribution", tags=["Data"], deprecated=True)
 async def get_region_distribution(token: str = Depends(verify_token)):
-    """지역별 분포"""
+    """지역별 분포 — 고정 예시값. 실측은 /data/comparable-sales/region-distribution."""
     return {
         "data": [
             {"name": "강남구", "value": 1200},
@@ -469,6 +469,71 @@ async def get_comparable_sales_price_distribution(token: str = Depends(verify_to
         return {"data": data}
     finally:
         db.close()
+
+
+@app.get("/data/comparable-sales/region-distribution", tags=["Data"])
+async def get_comparable_sales_region_distribution(token: str = Depends(verify_token)):
+    """시군구별 실거래 건수(실측). /data/region-distribution 과 같은 응답 모양."""
+    from sqlalchemy import func
+    from app.db.models import ComparableSale
+
+    db = _comparable_sales_session()
+    try:
+        rows = (
+            db.query(ComparableSale.address_sigungu, func.count(ComparableSale.id))
+            .group_by(ComparableSale.address_sigungu)
+            .order_by(func.count(ComparableSale.id).desc()).all()
+        )
+        return {"data": [{"name": sgg or "미상", "value": count} for sgg, count in rows]}
+    finally:
+        db.close()
+
+
+@app.get("/data/comparable-sales/quality", tags=["Data"])
+async def get_comparable_sales_quality(token: str = Depends(verify_token)):
+    """수집 데이터 품질(실측). /data/quality 와 같은 키를 쓰되 DB에서 계산한다.
+
+    missing_values: 면적(건물·대지 모두)이나 거래금액이 비어 있는 행.
+    outliers: 거래금액이 0 이하이거나 ㎡당 단가가 상식 범위(1만~5억 원)를 벗어난 행.
+    """
+    from sqlalchemy import or_
+    from app.db.models import ComparableSale
+
+    db = _comparable_sales_session()
+    try:
+        total = db.query(ComparableSale).count()
+        missing = db.query(ComparableSale).filter(or_(
+            ComparableSale.trade_amount.is_(None),
+            (ComparableSale.building_area.is_(None)) & (ComparableSale.land_area.is_(None)),
+        )).count()
+        outliers = sum(
+            1 for s in db.query(ComparableSale).filter(ComparableSale.trade_amount.isnot(None))
+            if _is_price_outlier(s)
+        )
+        problems = missing + outliers
+        score = round(1 - problems / total, 4) if total else 0.0
+        status = "no_data" if not total else "excellent" if score >= 0.99 else "good" if score >= 0.95 else "needs_review"
+        return {
+            "total_rows": total,
+            "missing_values": missing,
+            "missing_percentage": round(missing / total * 100, 2) if total else 0.0,
+            "outliers": outliers,
+            "outlier_percentage": round(outliers / total * 100, 2) if total else 0.0,
+            "quality_score": score,
+            "status": status,
+        }
+    finally:
+        db.close()
+
+
+def _is_price_outlier(sale) -> bool:
+    amount = float(sale.trade_amount)
+    if amount <= 0:
+        return True
+    area = sale.building_area or sale.land_area
+    if not area:
+        return False
+    return not (10_000 <= amount / float(area) <= 500_000_000)
 
 
 # ============================================

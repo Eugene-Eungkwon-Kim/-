@@ -466,3 +466,32 @@ json`·`crontab_entries.txt`·`monitoring_setup.json` 세 파일의 타임스탬
 4개 수집기의 응답 필드 태그명(샌드박스가 apis.data.go.kr 을 차단). 첫
 실행은 반드시 `--debug` 로 원본 XML을 확인할 것.
 
+## 13. 수집기 공통 페이지네이션·해제거래 처리 + 관리자 화면 실측 연결 (2026-09-08)
+
+명세서(다음 진행작업) 1번 중 실응답 없이도 할 수 있는 부분과 6번을 처리했다.
+
+- **페이지가 잘리고 있었다**: 네 수집기 전부 `pageNo=1, numOfRows=10000`
+  한 번만 호출했다. data.go.kr 계열은 한 페이지 상한(보편 1,000)이 있어
+  거래가 많은 시군구·월은 뒷부분이 **조용히** 빠졌을 것이다. 공통 모듈
+  `app/integrations/rtms_paging.py` 로 모아 `totalCount` 만큼 `pageNo` 를
+  넘기고(페이지 크기 1,000 — 저장소의 `collect_kr_data_local.py` 도 같은
+  값), 빈 페이지가 오면 멈춘다. 재시도·serviceKey 마스킹도 여기로 통일.
+- **해제된 거래가 비교사례로 들어갈 수 있었다**: 토지 수집기에만 있던
+  `해제여부`/`cdealType == 'O'` 제외를 네 수집기 전부에 적용. 주거용
+  파서는 `resultCode` 를 `"00"` 만 받아 신형 API 의 `"000"` 을 오류로
+  취급했을 것이라 함께 고쳤다.
+- **관리자 화면이 고정값을 보고 있었다**: `frontend/lib/api.ts` 의
+  `dataAPI` 4개 getter 가 전부 고정 예시값 엔드포인트(`/data/quality`
+  등)와, 백엔드에 존재하지도 않는 `/data/summary` 를 가리켰다. 실측
+  엔드포인트 `/data/comparable-sales/{summary,price-distribution}` 에
+  같은 응답 모양의 `region-distribution`, `quality` 를 추가하고 프론트를
+  그쪽으로 돌렸다. 고정값 3개는 `deprecated=True` 로 표시(OpenAPI 문서에
+  드러남). `quality` 는 결측(면적·금액)과 이상치(㎡당 1만~5억 원 밖)를
+  실제로 세어 점수를 낸다 — 데이터가 0건이면 `no_data` 를 준다.
+
+**검증**: `tests/test_rtms_paging.py` 9건(페이지 순회, 빈 페이지 중단,
+재시도 후 키 미노출, 네 수집기 공통 동작), 백엔드 4건 추가. 프론트는
+TypeScript 빌드 환경이 없어 문자열 변경만 했고 미빌드.
+**여전히 라이브 미검증**: 실제 페이지 상한이 1,000이 아니면 상한값만
+`PAGE_SIZE` 에서 바꾸면 된다.
+

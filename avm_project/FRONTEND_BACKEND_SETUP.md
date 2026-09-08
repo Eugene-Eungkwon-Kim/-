@@ -292,10 +292,24 @@ DELETE /models/{id}          - 모델 삭제
 
 ### 데이터 (Data)
 
+수집 파이프라인(`scripts/collect_all_transactions.py` 등)이 `comparable_sales`
+테이블에 적재한 **실측값**을 돌려준다. 프론트(`frontend/lib/api.ts` `dataAPI`)는
+이 경로를 쓴다.
+
 ```
-GET    /data/quality         - 데이터 품질
-GET    /data/price-distribution - 거래금액 분포
-GET    /data/region-distribution - 지역별 분포
+GET    /data/comparable-sales/summary             - 총 건수, 자산유형별·시도별 건수
+GET    /data/comparable-sales/price-distribution  - 거래금액 구간별 건수
+GET    /data/comparable-sales/region-distribution - 시군구별 건수
+GET    /data/comparable-sales/quality             - 결측·이상치 기반 품질 점수 (0건이면 status=no_data)
+```
+
+아래 3개는 고정 예시값을 돌려주는 **deprecated** 엔드포인트다(OpenAPI 문서에
+deprecated 로 표시됨). 새 코드에서 쓰지 말 것.
+
+```
+GET    /data/quality             - (deprecated) 고정값
+GET    /data/price-distribution  - (deprecated) 고정값
+GET    /data/region-distribution - (deprecated) 고정값
 ```
 
 ### 설정 (Settings)
