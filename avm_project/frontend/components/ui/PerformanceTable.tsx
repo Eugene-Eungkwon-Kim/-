@@ -4,10 +4,10 @@ import { CheckCircle, AlertCircle, Eye, Download } from 'lucide-react'
 interface PerformanceTableProps {
   data: Array<{
     date: string
-    status: 'success' | 'warning' | 'error'
-    r2: number
-    rmse: number
-    duration: string
+    status: string
+    r2: number | null
+    rmse: number | null
+    duration: string | null
   }>
 }
 
@@ -92,13 +92,13 @@ export default function PerformanceTable({ data }: PerformanceTableProps) {
                 </div>
               </td>
               <td className="px-4 py-3 text-sm text-right font-semibold text-neutral-900">
-                {row.r2.toFixed(4)}
+                {row.r2 != null ? row.r2.toFixed(4) : '—'}
               </td>
               <td className="px-4 py-3 text-sm text-right text-neutral-700">
-                {Math.round(row.rmse).toLocaleString()}
+                {row.rmse != null ? Math.round(row.rmse).toLocaleString() : '—'}
               </td>
               <td className="px-4 py-3 text-sm text-neutral-700">
-                {row.duration}
+                {row.duration ?? '—'}
               </td>
               <td className="px-4 py-3">
                 <div className="flex items-center justify-center gap-2">

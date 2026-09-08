@@ -37,8 +37,10 @@ export default function R2LineChart({ data }: LineChartProps) {
           stroke="#757575"
           style={{ fontSize: '12px' }}
         />
+        {/* 0.80~0.85 로 고정돼 있었다 — 실측 R²가 이 범위 밖이면 선이
+            그래프 밖으로 잘려 안 보였을 것이다. 데이터에 맞춰 자동 스케일. */}
         <YAxis
-          domain={[0.80, 0.85]}
+          domain={['auto', 'auto']}
           stroke="#757575"
           style={{ fontSize: '12px' }}
         />

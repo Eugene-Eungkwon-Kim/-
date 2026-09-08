@@ -4,7 +4,7 @@ import { TrendingUp, TrendingDown, BarChart3, Target, Zap } from 'lucide-react'
 interface SummaryCardProps {
   title: string
   value: string
-  change: number
+  change?: number | null
   icon: 'chart' | 'trending' | 'target'
   color: 'blue' | 'green' | 'purple'
 }
@@ -40,7 +40,7 @@ export default function SummaryCard({
     target: Target,
   }[icon]
 
-  const isPositive = change >= 0
+  const isPositive = (change ?? 0) >= 0
 
   return (
     <div className={`rounded-lg border p-6 ${bgColor} hover:shadow-md transition-shadow`}>
@@ -54,25 +54,28 @@ export default function SummaryCard({
         </div>
       </div>
 
-      {/* Change Indicator */}
-      <div className="flex items-center gap-2">
-        {isPositive ? (
-          <>
-            <TrendingUp className="w-4 h-4 text-success-500" />
-            <span className="text-sm font-medium text-success-700">
-              +{change.toFixed(2)}%
-            </span>
-          </>
-        ) : (
-          <>
-            <TrendingDown className="w-4 h-4 text-error-500" />
-            <span className="text-sm font-medium text-error-700">
-              {change.toFixed(2)}%
-            </span>
-          </>
-        )}
-        <span className="text-sm text-neutral-600">이전 대비</span>
-      </div>
+      {/* Change Indicator — 이전 학습 기록이 없으면(change == null) 지어낸
+          비교값을 보여주지 않고 그냥 생략한다. */}
+      {change != null && (
+        <div className="flex items-center gap-2">
+          {isPositive ? (
+            <>
+              <TrendingUp className="w-4 h-4 text-success-500" />
+              <span className="text-sm font-medium text-success-700">
+                +{change.toFixed(2)}%
+              </span>
+            </>
+          ) : (
+            <>
+              <TrendingDown className="w-4 h-4 text-error-500" />
+              <span className="text-sm font-medium text-error-700">
+                {change.toFixed(2)}%
+              </span>
+            </>
+          )}
+          <span className="text-sm text-neutral-600">이전 대비</span>
+        </div>
+      )}
     </div>
   )
 }

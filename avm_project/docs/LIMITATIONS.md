@@ -600,3 +600,76 @@ B1(파서 보정) 착수. `collect_monthly`는 스케줄 실행이 되려면 이
 저장소 default_branch여야 한다(그 전까지는 `workflow_dispatch` 수동
 실행만 가능).
 
+## 17. 관리자 화면 4개 페이지가 실제 백엔드를 호출한 적이 없던 문제 (2026-09-08, 수정됨)
+
+§15에서 "데이터 분석" 페이지 하나를 고쳤는데, 같은 문제가 대시보드·모델
+상세·설정 페이지에도 그대로 있었다 — 더 심각한 건, 그 페이지들이 부르는
+백엔드 엔드포인트(`/dashboard/*`, `/models*`, `/settings`, `/retraining/*`)
+자체가 전부 고정 예시값(R²=0.8450 등)을 돌려주고 있었다는 점이다. 그런데
+그 뒤에서 실제로 동작하는 컴포넌트들은 이미 다 만들어져 있었다:
+
+- `retraining_monitor.RetrainingMonitor`(`monitor`) — `logs/retrain_history.
+  jsonl`을 실제로 읽어 추세·통계·성능저하 감지를 계산. 웹소켓 브로드캐스트
+  루프(`broadcast_dashboard_updates`, 30초마다, `@app.on_event("startup")`
+  으로 이미 실행되고 있었다)만 이걸 썼다.
+- `ml_models.ModelManager`(`model_manager`) — `models/*.joblib`을 실제로
+  로드. `backend/main.py`에 이미 임포트돼 있었는데 단 한 번도 호출되지
+  않았다.
+- `config/schedule_config.json` — `retraining_monitor.py`(성능 임계값)와
+  `weekly_retrain_scheduler.py`(재학습 스케줄)가 이미 참조하는 실제 설정
+  파일. `/settings`는 이 파일과 무관한 자기만의 가짜 응답을 돌려주고
+  있었다.
+
+REST 엔드포인트가 이 셋을 그대로 부르도록 연결했다:
+
+- `/dashboard/summary·trend·recent-trainings·statistics` → `monitor` /
+  `history_manager`(같은 jsonl을 읽는 `database.py`의 또 다른 매니저).
+  학습 이력이 없으면(이 환경의 현재 상태) `status: "no_data"`로 정직하게
+  응답 — 가짜 R²를 보여주지 않는다.
+- `/models`, `/models/{id}`, `/models/{id}/feature-importance` →
+  `model_manager`. 특성 중요도는 트리 기반 모델의 실제
+  `feature_importances_`를 쓰고, `config/schedule_config.json`의
+  `feature_columns`와 개수가 맞을 때만 그 이름을 쓴다(안 맞으면
+  `feature_0` 식으로 정직하게 — 있지도 않은 컬럼명을 지어내지 않는다).
+- `/settings` GET/PUT → `schedule_config.json`을 그대로 읽고 쓴다. 관리자
+  화면에서 성능 임계값을 바꾸면 실제로 `retraining_monitor.py`가 다음에
+  읽는 값이 바뀐다.
+- `/retraining/status·history` → 같은 `monitor`/`history_manager`.
+
+프론트 4개 페이지(`Dashboard.tsx`, `ModelDetails.tsx`, `Settings.tsx`,
+그리고 A2의 `DataAnalysis.tsx`)를 이 엔드포인트를 실제로 부르도록
+재작성했다. 그 과정에서 두 가지가 더 드러났다:
+
+- **`ModelDetails`/`Settings` 페이지 자체가 `app/page.tsx`의 라우터에
+  없었다** — 사이드바 메뉴는 있었는데 클릭해도 빈 화면만 나왔다(A2에서
+  고친 "데이터 분석"과 같은 종류의 누락, 이번엔 라우팅 단계에서). 추가.
+- `LineChart.tsx`의 Y축이 `[0.80, 0.85]`로 고정돼 있었다 — 실측 R²가 그
+  범위 밖이면 선이 그래프 밖으로 잘려 안 보였을 것이다. `auto`로 변경.
+
+**부수 발견**: `pip install playwright`(다른 검증 작업 중 이 세션에
+설치)로 `tests/test_ui_performance.py` 전체가 "패키지 없음"으로 조용히
+skip되던 상태에서 벗어나 실제로 실행되기 시작했는데, 이 파일은 서버가
+없으면 skip이 아니라 `net::ERR_CONNECTION_REFUSED`로 하드 실패하도록
+쓰여 있었다(서버 가용성 가드 없음) — 9개 테스트에 스킵 가드를 추가했다.
+또한 이 파일의 대시보드 방문 테스트들이 로그인 없이 방문해, 이번에 실제
+인증이 필요해진 API 호출이 401을 내는 것을 "네트워크 실패"로 오탐하고
+있었다 — `browser_context`에 `localStorage.auth_token`을 미리 심어
+실제 로그인된 방문을 재현하도록 고쳤다.
+
+**검증**: 신규 백엔드 테스트 22건(`test_backend_admin_endpoints.py`) +
+프론트 테스트 3건 그대로 통과. 실제로 uvicorn·next dev를 띄우고 진짜
+모델 파일(`.joblib`)과 `retrain_history.jsonl`을 만들어 Playwright로
+스크린샷 확인(대시보드 R²/추세/통계/최근학습표, 모델 상세의 특성
+중요도, 설정 저장→파일 반영까지 전부 실측치로 정상 렌더링) 후 테스트
+아티팩트 원복. `test_ui_performance.py` 10/10 통과(인증된 실제 서버
+기준). 전체 pytest 622 passed.
+
+**남은 것**: `/retraining/start`, `/models/{id}/deploy`,
+`/models/{id}` DELETE 는 손대지 않았다 — 실제 학습 작업을 백그라운드로
+띄우거나 실제 모델 파일을 지우는 부수효과가 있는 액션이라, "가짜
+데이터 읽기"를 "가짜 아닌 것"으로 바꾸는 이번 범위와 달리 잘못 실행하면
+되돌릴 수 없다. Settings.tsx에서 "자동 재학습 스케줄 선택"·"데이터
+설정(전처리/Feature Engineering)" 섹션은 뺐다 — 원래도 어떤 실제 필드에도
+연결되지 않는 순수 UI였고, 실제로 저장되는 것처럼 남겨두는 게 더
+나쁘다고 판단했다.
+
