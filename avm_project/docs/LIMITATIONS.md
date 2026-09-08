@@ -531,3 +531,45 @@ Record`에는 이 필드들이 있지만 벡터 차원에 아직 반영 안 됨)
 유입되고 이 근거의 세밀도가 부족하다고 판단되면 `FEATURE_DIM`을 늘려야
 한다 — 지금은 인덱스 재구축 없이 코드만 바꿔서 되는 범위가 아니다.
 
+## 15. 프론트엔드가 지금까지 한 번도 빌드/렌더된 적이 없던 문제 (2026-09-08, 수정됨)
+
+이번 세션 전까지 `frontend/`는 `node_modules`가 설치된 적조차 없었다 —
+즉 `npm run build`도, `npx jest`도, 브라우저 렌더도 아무도 실행해 본
+적이 없는 상태였다. `npm install` 후 직접 돌려보니 실제로 두 가지가
+막혀 있었다:
+
+- **`next build`가 항상 실패했다**: `styles/globals.css`와 여러
+  페이지 컴포넌트가 `hover:bg-error-700`, `bg-success-50`,
+  `text-info-900` 같은 색상 셰이드를 이미 쓰고 있었는데,
+  `tailwind.config.js`에는 색상당 셰이드가 1~2개(대부분 500 하나)만
+  정의돼 있었다. 기존에 정의된 값(예: `primary-500: #2196F3`)은 전혀
+  건드리지 않고 빠진 셰이드만 채웠다 — success/error/info는 기존 500
+  값이 공식 Material 팔레트와 정확히 일치해 그 팔레트를 그대로 확장.
+- **`npx jest`로 "@/" 임포트를 쓰는 테스트는 전부 모듈을 못 찾았다**:
+  `jest.config.js`의 `moduleNameMapper`가 `"@/*" -> "<rootDir>/src/$1"`
+  였는데, 이 프로젝트엔 `src/` 디렉터리가 없다(`app/`, `components/`,
+  `lib/`가 전부 루트). `tsconfig.json`은 이미 `"./*"`로 올바르게
+  매핑돼 있어 `tsc`는 문제없었지만 jest는 별도 설정이라 어긋나 있었다.
+  `<rootDir>/$1`로 맞췄다. 여기에 recharts의 `ResponsiveContainer`가
+  요구하는 `ResizeObserver`가 jsdom에 없어 recharts를 쓰는 컴포넌트는
+  렌더 자체가 죽는 문제도 있어(`jest.setup.js`에 최소 폴리필 추가)
+  같이 고쳤다 — 이것도 지금까지 recharts 컴포넌트 테스트가 하나도
+  없어 드러나지 않았던 문제다.
+
+같은 세션에서 "데이터 분석" 페이지(`DataAnalysis.tsx`)가 `lib/api.ts`의
+`dataAPI`를 한 번도 호출하지 않고 하드코딩된 데모값(총 5,000행 등)만
+보여주던 것도 실제 호출로 교체했다 — §13에서 백엔드에 실측 엔드포인트를
+만들어 뒀지만 프론트가 그걸 쓴 적이 없었다.
+
+**검증**: 신규 `.github/workflows/frontend_ci.yml`(push마다 tsc →
+jest → build). 직접 uvicorn 백엔드를 띄우고 Playwright 헤드리스
+브라우저로 로그인 → "데이터 분석" 진입 → 0건 상태 확인 →
+`ComparableSale` 4건을 실제 DB에 임시로 넣고 자산유형 배지·거래금액
+분포·시군구 분포·품질 점수가 전부 실측치로 정확히 뜨는 것을 스크린샷
+으로 확인 → 시딩 데이터 삭제로 원복.
+
+**여전히 남은 것**: `next lint`(ESLint)는 이번에 돌려보지 않았다 —
+CI에도 넣지 않았다. `npm audit`에서 9개의 high severity 취약점이
+보고되는데(전부 `npm install`이 끌어온 전이 의존성), 이번 범위(타입
+안전성 확보)와 무관해 손대지 않았다 — 별도로 검토 필요.
+
