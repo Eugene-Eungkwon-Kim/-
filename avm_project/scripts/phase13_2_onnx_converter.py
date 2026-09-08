@@ -8,6 +8,8 @@ pkl → ONNX → OpenVINO IR 변환.
     python scripts/phase13_2_onnx_converter.py --model all --country all
 """
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Dict, Optional, Tuple
