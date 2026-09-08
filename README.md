@@ -4,6 +4,37 @@
 
 ---
 
+## 이 브랜치에는 MAARS 플랫폼도 함께 있습니다
+
+이 브랜치(`claude/maars-platform`)는 위 파이썬 도구와 별개로, `src/` 아래에 MAARS(부동산 금융) 백엔드·프론트엔드가 통째로 들어 있습니다. 서로 의존하지 않는 두 프로젝트가 한 브랜치에 있을 뿐이니, 아래 안내는 `src/`·`test/`·`docs/` 등 MAARS 쪽에만 해당합니다.
+
+**요구사항:** Node 18 또는 20, `maars_test`라는 이름의 PostgreSQL 데이터베이스, Redis (테스트·알림 기능에 필요). 접속 정보 기본값은 `localhost:5432`·사용자 `postgres`·비밀번호 없음이며, 다르면 `PG_HOST`/`PG_PORT`/`PG_USER`/`PG_PASSWORD`로 재정의한다. 전체 환경변수 목록은 `.github/workflows/test.yml` 참고.
+
+```bash
+createdb maars_test   # 최초 1회
+npm ci
+
+# 테스트
+REDIS_URL=redis://localhost:6379 npm run test:ci
+
+# 타입 체크
+npm run type-check
+
+# API 서버 + 프론트엔드 동시 실행
+npm run dev:all
+```
+
+무엇이 있는지 한눈에 보려면:
+
+- `src/server/app.ts` — Fastify 라우트 전체와 인증·권한 방식
+- `src/notifications/` — 실시간 알림(SSE) 파이프라인: 판정 → 저장 → 팬아웃 → 스트림
+- `docs/` — 마이그레이션·성능·캐싱 설계 문서
+- `PERFORMANCE.md` — 성능 기준선과 목표치
+
+`src/db/migrations/`의 마이그레이션은 SQLite/PostgreSQL 양쪽에서 그대로 유효한 SQL 부분집합으로 쓰고, `src/db/migrationRunner.ts`의 변환기가 타임스탬프 기본값과 부동소수 타입만 치환한다 — 새 마이그레이션을 추가할 때 참고할 것.
+
+---
+
 ## 📋 세 가지 스크립트
 
 | 스크립트 | 용도 | 대상 |

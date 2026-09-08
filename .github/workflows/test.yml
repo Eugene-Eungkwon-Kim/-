@@ -1,0 +1,106 @@
+name: Test Suite & Coverage
+
+on:
+  # 브랜치 목록을 하드코딩하면 새 작업 브랜치를 만들 때마다 여기 추가해야 하고,
+  # 잊으면 CI가 조용히 안 돌아 "테스트 통과"를 아무도 확인하지 못한 채 넘어간다
+  # (claude/maars-platform이 실제로 이렇게 됐다). 필터 없이 모든 push와 PR에서 돈다.
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    # PostgreSQL as a Docker service. The container is initialized with a known
+    # password (POSTGRES_PASSWORD), so password authentication for the `postgres`
+    # role works — unlike a host install where the postgres role has no password.
+    # The job runs directly on the runner (not inside a container), so the service
+    # is reached at localhost via the mapped port, NOT via the service hostname.
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_DB: maars_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      PG_HOST: localhost
+      PG_PORT: 5432
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_TEST_DATABASE: maars_test
+      PGPASSWORD: postgres
+      REDIS_URL: redis://localhost:6379
+      NODE_ENV: test
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || 'test-encryption-key-for-ci' }}
+      # secrets 컨텍스트는 step의 if에서 쓸 수 없으므로 job env로 올려 env로 판정한다.
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci --verbose
+
+    - name: Verify PostgreSQL connection
+      run: pg_isready -h localhost -p 5432 -U postgres
+
+    - name: Run full test suite
+      run: npm run test:ci
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results-${{ matrix.node-version }}
+        path: test-results.xml
+
+    # codecov-action v4부터 토큰 없는 업로드가 거부된다("Token required - not
+    # valid tokenless upload"). 시크릿이 없으면 이 단계는 조용히 실패만 하고
+    # 커버리지 추이가 기록되지 않는다 — 빌드는 fail_ci_if_error: false 덕에 통과하므로
+    # 눈치채기 어렵다. 저장소 소유자가 Settings > Secrets에 CODECOV_TOKEN을
+    # 추가하면 그때부터 동작한다. 시크릿이 없는 포크 PR에서는 건너뛴다.
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
+      if: always() && env.CODECOV_TOKEN != ''
+      with:
+        token: ${{ env.CODECOV_TOKEN }}
+        files: ./coverage/coverage-final.json
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+    # 이 단계는 오랫동안 continue-on-error였다 — 레거시 파일에 타입 에러가 남아
+    # 있다는 이유였는데, 실제로 세어보니 남은 것은 미사용 임포트 8건뿐이었고
+    # 모두 정리했다. continue-on-error는 실패해도 success로 보고하므로 게이트가
+    # 아니라 장식이었다. 이제 타입 에러가 파이프라인을 실제로 막는다.
+    - name: Type check
+      run: npm run type-check

@@ -1,3 +1,4 @@
+# --- 휴대폰 파일 정리 스크립트 (파이썬) ---
 test_output/
 test_phone/
 migration_output/
@@ -8,3 +9,18 @@ iphone_output/
 iphone_test2/
 iphone_output2/
 scratchpad/
+
+# --- MAARS 플랫폼 (Node/TypeScript) ---
+node_modules/
+dist/
+coverage/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+data/*.db
+data/*.db-*
+test-results.xml
+dump.rdb
