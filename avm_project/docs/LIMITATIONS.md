@@ -317,3 +317,46 @@ backend.main 신규 엔드포인트)을 참조하는 곳이 없었고, 최초 �
 직접 작성 없이 바로 적재하고, 학습된 P6 모델 파일을 찾아
 `models/`(engine.py 가 이미 보는 위치)로 복사한다.
 
+## 9. GitHub Actions 워크플로우 4종 실행 불가 버그 (2026-09-08, 수정됨)
+
+`.github/workflows/`는 저장소 루트에 있는 파일만 GitHub이 실제로
+인식한다 — `avm_project/.github/workflows/*.yml` 8개는 애초에
+디스커버리 대상이 아니었다(경로 착오). 실제로 발동 가능한 건 루트의
+4개(`korea_monthly_retrain.yml`, `phase14_deploy.yml`,
+`phase14_global_train.yml`, `phase14_model_validation.yml`)뿐이었고,
+전부 `working-directory` 미지정으로 모든 스텝이 "파일 없음"으로
+죽는 상태였다 — 4개 전부 수정.
+
+이후 실제 스크립트의 `argparse` 정의와 대조해 CLI 인자까지 정밀
+검증한 결과, 추가로 3건의 실행 차단 버그를 발견·수정했다:
+
+- **GHA 표현식 문법 오류**: `phase14_model_validation.yml`이
+  `${{ matrix.country | lower }}`를 사용했다 — GitHub Actions
+  표현식에는 파이프(`|`)나 `lower()` 함수 자체가 없다(Jinja/Ansible
+  문법과 혼동). ONNX 변환·검증·추론 3개 스텝이 9개국 전부에서 항상
+  실패하는 구조였다 — `matrix.include`로 `country_lower`를 값으로
+  직접 명시하는 방식으로 교체.
+- **존재하지 않는 argparse choice**: `phase14_global_train.yml`이
+  `phase13_global_pipeline.py --country KR`을 호출했는데, 이 스크립트의
+  `--country choices`에는 KR이 없다(한국은 `phase13_korea_model_
+  trainer.py`/`korea_monthly_retrain.yml`로 완전히 분리된 전용
+  파이프라인). 항상 argparse 오류로 실패하던 호출이라 제거.
+- **JSON이 아닌 파일에 `.json` 확장자**: `phase13_model_registry.py`의
+  `__main__`이 사람이 읽는 텍스트를 `print`하는데, `phase14_deploy.yml`이
+  이 stdout을 그대로 `model_registry_status.json`으로 리다이렉트해
+  커밋·아티팩트로 보관하고 있었다 — `json.dumps(get_model_summary())`로
+  교체.
+
+**검증**: 4개 워크플로우 YAML 전부 재파싱 성공, `avm_project` 전체
+pytest 스위트 결과가 수정 전/후 정확히 동일(490 passed / 50 failed /
+22 errors, 전부 `torch` 미설치·`ModelMetadata` 임포트 누락 등 이번
+변경과 무관한 기존 문제임을 `git stash` 대조로 확인) — 회귀 없음.
+
+**아직 막혀 있는 것**: 이 4개 워크플로우는 이제 코드상으로는 정상
+동작하지만, 저장소 `default_branch`가 이 작업 브랜치
+(`claude/eloquent-meitner-lqxu9r`)가 아닌 `claude/mobile-file-
+organization-AuPIl`로 설정돼 있어 `workflow_dispatch` 수동 실행이
+404로 거부된다. `default_branch` 변경 또는 이 브랜치 병합 중 하나가
+필요하며, 저장소 설정을 세션이 임의로 바꾸지 않는다는 원칙에 따라
+사용자 결정을 기다리는 중이다.
+
