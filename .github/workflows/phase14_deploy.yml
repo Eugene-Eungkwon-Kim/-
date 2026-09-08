@@ -6,6 +6,12 @@ on:
     types: [completed]
   workflow_dispatch:
 
+defaults:
+  run:
+    # scripts/, output/ 는 전부 avm_project/ 아래에 있다 — 지정이 없으면
+    # 저장소 루트에서 실행돼 "파일 없음"으로 죽는다.
+    working-directory: avm_project
+
 jobs:
   deploy-models:
     runs-on: ubuntu-latest
@@ -28,7 +34,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: validation-summary
-          path: output/
+          # download/upload-artifact 는 working-directory 기본값의 영향을
+          #받지 않고 항상 저장소 루트 기준이다 — 명시적으로 경로를 맞춘다.
+          path: avm_project/output/
 
       - name: Verify all models passed validation
         run: |
@@ -76,5 +84,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: deployment-log
-          path: output/model_registry_status.json
+          path: avm_project/output/model_registry_status.json
           retention-days: 90

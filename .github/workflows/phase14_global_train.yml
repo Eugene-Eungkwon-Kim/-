@@ -5,6 +5,10 @@ on:
     - cron: '0 0 1 * *'  # 월 1회 (매월 1일 자정 UTC)
   workflow_dispatch:     # 수동 트리거
 
+defaults:
+  run:
+    working-directory: avm_project
+
 jobs:
   retrain-all-countries:
     runs-on: ubuntu-latest
@@ -42,7 +46,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: retrained-models
-          path: output/models/
+          path: avm_project/output/models/
           retention-days: 30
 
       - name: Check MAPE targets

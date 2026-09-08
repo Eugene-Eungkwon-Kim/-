@@ -3,9 +3,15 @@ name: Phase 14 - Model Validation & ONNX Conversion
 on:
   push:
     paths:
-      - 'output/models/**_production_*.pkl'
-      - 'scripts/phase13_stacking_converter.py'
+      # 이 파일들은 저장소 루트가 아니라 avm_project/ 아래에 있다 — 접두사가
+      # 없으면 이 트리거가 실제로는 절대 일치하지 않는다.
+      - 'avm_project/output/models/**_production_*.pkl'
+      - 'avm_project/scripts/phase13_stacking_converter.py'
   workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: avm_project
 
 jobs:
   validate-and-convert:
@@ -57,7 +63,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: conversion-reports-${{ matrix.country }}
-          path: output/converted_models/${{ matrix.country | lower }}_production_*.json
+          path: avm_project/output/converted_models/${{ matrix.country | lower }}_production_*.json
           retention-days: 30
 
   merge-results:
@@ -71,7 +77,7 @@ jobs:
       - name: Download all reports
         uses: actions/download-artifact@v4
         with:
-          path: reports/
+          path: avm_project/reports/
 
       - name: Generate validation summary
         run: |
@@ -89,5 +95,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: validation-summary
-          path: output/validation_summary.json
+          path: avm_project/output/validation_summary.json
           retention-days: 90
