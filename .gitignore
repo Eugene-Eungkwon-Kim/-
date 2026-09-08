@@ -1,9 +1,31 @@
+# --- 휴대폰 파일 정리 스크립트 (파이썬) ---
 test_output/
 test_phone/
+migration_output/
 __pycache__/
 *.pyc
+iphone_test/
+iphone_output/
+iphone_test2/
+iphone_output2/
+scratchpad/
 
-# AVM Project - Data and generated files
+# --- MAARS 플랫폼 (Node/TypeScript) ---
+node_modules/
+dist/
+coverage/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+data/*.db
+data/*.db-*
+test-results.xml
+dump.rdb
+
+# --- AVM Project - Data and generated files ---
 avm_project/data/raw/
 avm_project/data/processed/
 avm_project/output/

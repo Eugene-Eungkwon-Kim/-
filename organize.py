@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """휴대폰 파일 정리 스크립트 - 종류별/날짜별 분류, 이름 정리, 중복 제거"""
 
-import os
 import re
 import sys
 import shutil
@@ -41,7 +40,7 @@ def get_exif_date(path: Path) -> datetime | None:
         return None
     try:
         img = Image.open(path)
-        exif_data = img._getexif()
+        exif_data = dict(img.getexif())
         if not exif_data:
             return None
         for tag_id, value in exif_data.items():
@@ -117,11 +116,10 @@ def organize(source: Path, dest: Path, dry_run: bool = False) -> dict:
             new_name = make_new_filename(path, date)
             new_path = month_dir / new_name
 
-            # 파일명 충돌 처리
+            base_stem = new_path.stem
             counter = 1
             while new_path.exists() and get_file_hash(new_path) != file_hash:
-                stem = new_path.stem
-                new_path = month_dir / f"{stem}_{counter}{new_path.suffix}"
+                new_path = month_dir / f"{base_stem}_{counter}{new_path.suffix}"
                 counter += 1
 
             print(f"  [이동] {path.relative_to(source)}  →  {new_path.relative_to(dest)}")

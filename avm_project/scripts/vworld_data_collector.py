@@ -4,15 +4,24 @@ Vworld API를 이용한 부동산 지리정보 데이터 수집
 Korean GIS Data Collection via Vworld API
 """
 
+import os
+import sys
 import requests
 import pandas as pd
 import json
-import os
 import time
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
 import logging
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.integrations.http_client import (  # noqa: E402
+    AuthFetchError,
+    SchemaFetchError,
+    TransientFetchError,
+    get_json_with_retry,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +46,9 @@ class VworldDataCollector:
         self.session = requests.Session()
         self.rate_limit = 0.3
         self.timeout = 10
+        # 스키마 오류(응답 구조 변경 등)로 건너뛴 요청 수 — 인증 오류와 달리
+        # 실행을 막지는 않지만, 끝에 검토가 필요하다고 알려야 한다.
+        self.schema_error_count = 0
 
     def address_to_coordinate(self, address: str) -> Tuple[Optional[float], Optional[float]]:
         """
@@ -47,40 +59,48 @@ class VworldDataCollector:
 
         Returns:
             (위도, 경도) 튜플 또는 (None, None)
+
+        Raises:
+            AuthFetchError: 인증/쿼터 오류. 재시도로 해결되지 않으므로
+                호출자가 전체 실행을 중단해야 한다.
         """
+        params = {
+            'service': 'address',
+            'request': 'getcoord',
+            'crs': 'EPSG:4326',
+            'address': address,
+            'format': 'json',
+            'errorMessage': 'true',
+            'key': self.api_key
+        }
+
         try:
-            params = {
-                'service': 'address',
-                'request': 'getcoord',
-                'crs': 'EPSG:4326',
-                'address': address,
-                'format': 'json',
-                'errorMessage': 'true',
-                'key': self.api_key
-            }
-
-            response = self.session.get(
-                self.address_url,
-                params=params,
-                timeout=self.timeout
+            data = get_json_with_retry(
+                self.session, self.address_url, params=params, timeout=self.timeout
             )
-            response.raise_for_status()
+        except AuthFetchError:
+            raise  # 재시도로 해결 안 됨 — 호출자가 전체 실행을 멈춰야 한다
+        except TransientFetchError as e:
+            logger.warning(f"지오코딩 실패(일시적 오류 소진, {address}): {e}")
+            return None, None
+        except SchemaFetchError as e:
+            logger.warning(f"지오코딩 실패(응답 구조 오류, 검토 필요, {address}): {e}")
+            self.schema_error_count += 1
+            return None, None
+        finally:
+            time.sleep(self.rate_limit)
 
-            data = response.json()
-
+        try:
             if data.get('response', {}).get('status') == '200':
                 coords = data['response']['result']['point']['coordinates']
                 return float(coords[1]), float(coords[0])
-            else:
-                logger.debug(f"주소 변환 실패: {address}")
-                return None, None
-
-        except Exception as e:
-            logger.debug(f"지오코딩 오류 ({address}): {e}")
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            logger.warning(f"지오코딩 응답 항목 구조가 예상과 다릅니다(검토 필요, {address}): {e}")
+            self.schema_error_count += 1
             return None, None
 
-        finally:
-            time.sleep(self.rate_limit)
+        logger.debug(f"주소 변환 실패: {address}")
+        return None, None
 
     def get_building_info(self, x: float, y: float) -> Dict:
         """
@@ -92,30 +112,33 @@ class VworldDataCollector:
 
         Returns:
             건물 정보 딕셔너리
+
+        Raises:
+            AuthFetchError: 인증/쿼터 오류. 재시도로 해결되지 않으므로
+                호출자가 전체 실행을 중단해야 한다.
         """
+        params = {
+            'service': 'data',
+            'request': 'GetFeature',
+            'data': 'LT_C_LFAN_B',
+            'bbox': f'{x},{y},{x+0.01},{y+0.01}',
+            'format': 'json',
+            'key': self.api_key
+        }
+
         try:
-            params = {
-                'service': 'data',
-                'request': 'GetFeature',
-                'data': 'LT_C_LFAN_B',
-                'bbox': f'{x},{y},{x+0.01},{y+0.01}',
-                'format': 'json',
-                'key': self.api_key
-            }
-
-            response = self.session.get(
-                self.base_url,
-                params=params,
-                timeout=self.timeout
+            return get_json_with_retry(
+                self.session, self.base_url, params=params, timeout=self.timeout
             )
-            response.raise_for_status()
-
-            return response.json()
-
-        except Exception as e:
-            logger.debug(f"건물 정보 조회 오류: {e}")
+        except AuthFetchError:
+            raise  # 재시도로 해결 안 됨 — 호출자가 전체 실행을 멈춰야 한다
+        except TransientFetchError as e:
+            logger.warning(f"건물 정보 조회 실패(일시적 오류 소진): {e}")
             return {}
-
+        except SchemaFetchError as e:
+            logger.warning(f"건물 정보 조회 실패(응답 구조 오류, 검토 필요): {e}")
+            self.schema_error_count += 1
+            return {}
         finally:
             time.sleep(self.rate_limit)
 
@@ -180,6 +203,8 @@ class VworldDataCollector:
         print(f"\n✅ 좌표 변환 완료:")
         print(f"   성공: {success_count}/{len(unique_regions)}")
         print(f"   데이터에 추가된 행: {df['위도'].notna().sum()}")
+        if self.schema_error_count:
+            print(f"   ⚠️ 검토 필요(응답 구조 오류로 건너뜀): {self.schema_error_count}건")
 
         df.to_csv(output_path, index=False, encoding='utf-8')
         print(f"\n💾 저장 완료: {output_path}")
@@ -245,7 +270,10 @@ class VworldDataCollector:
 def main():
     """메인 실행 함수"""
 
-    api_key = os.environ.get("VWORLD_API_KEY", "")
+    api_key = os.environ.get("VWORLD_API_KEY")
+    if not api_key:
+        print("❌ 오류: 환경변수 VWORLD_API_KEY 가 설정되어 있지 않습니다.")
+        return 1
 
     collector = VworldDataCollector(api_key)
 
@@ -253,19 +281,19 @@ def main():
     print("✅ Vworld 데이터 수집 시작")
     print("="*80)
 
-    if not collector.test_collection():
-        print("\n❌ API 테스트 실패. 종료합니다.")
-        return False
-
-    input_file = "avm_project/data/raw/real_estate_2024.csv"
-    output_file = "avm_project/data/raw/real_estate_2024_vworld_enriched.csv"
-
-    if not Path(input_file).exists():
-        print(f"\n⚠️ 입력 파일 없음: {input_file}")
-        print("Phase D-1을 먼저 완료하세요.")
-        return False
-
     try:
+        if not collector.test_collection():
+            print("\n❌ API 테스트 실패. 종료합니다.")
+            return 1
+
+        input_file = "avm_project/data/raw/real_estate_2024.csv"
+        output_file = "avm_project/data/raw/real_estate_2024_vworld_enriched.csv"
+
+        if not Path(input_file).exists():
+            print(f"\n⚠️ 입력 파일 없음: {input_file}")
+            print("Phase D-1을 먼저 완료하세요.")
+            return 1
+
         enriched_df = collector.enrich_real_estate_data(input_file, output_file)
 
         print("\n" + "="*80)
@@ -282,13 +310,19 @@ def main():
         print(f"   경도 있는 행: {enriched_df['경도'].notna().sum()}")
 
         print("\n✅ Vworld 데이터 수집 완료")
-        return True
+        if collector.schema_error_count:
+            return 3  # 응답 구조 오류 있었음 — 검토 필요 (CLAUDE.md 종료코드 규약)
+        return 0
+
+    except AuthFetchError as e:
+        print(f"\n❌ 인증/쿼터 오류: {e}")
+        print("재시도로 해결되지 않습니다 — API 키 또는 호출량 한도를 확인하세요.")
+        return 2
 
     except Exception as e:
         print(f"\n❌ 오류 발생: {e}")
-        return False
+        return 1
 
 
 if __name__ == "__main__":
-    success = main()
-    exit(0 if success else 1)
+    exit(main())

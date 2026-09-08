@@ -1,294 +1,207 @@
-# Loan4U Automatic Valuation Model (AVM) - Phase 12-13 Development
+# 저장소 개요
 
-**Status**: Phase 12 (70% complete) → Phase 13 (10% complete)  
-**Current Branch**: `claude/eloquent-meitner-lqxu9r`  
-**Next Milestone**: 2026-07-14 (Phase 13 completion with GPU/NPU optimization)
+이 저장소에는 서로 의존하지 않는 세 프로젝트가 함께 있습니다.
 
-## 📋 Quick Start
+| 프로젝트 | 위치 | 설명 |
+|---|---|---|
+| 모바일 파일 정리 도구 | 루트 (`organize.py`, `migrate.py`, `iphone_migrate.py`) | 아래 "모바일 기기 데이터 마이그레이션 & 정리 도구" 참고 |
+| MAARS 플랫폼 | `src/`, `test/`, `docs/` 등 | 부동산 금융 백엔드·프론트엔드 (Node/TypeScript) |
+| AVM 프로젝트 | `avm_project/` | Loan4U 자동감정가 모델 (Python) — 상세는 [`avm_project/README.md`](./avm_project/README.md) |
 
-### For Development
-```bash
-# Clone and navigate
-cd /home/user/-/avm_project
-
-# Install dependencies
-pip install -r requirements.txt  # Full stack
-# OR
-pip install -r requirements-minimal.txt  # Quick start
-
-# Run Phase 12 pipeline
-python scripts/loan4u_phase12_pipeline.py
-
-# Check compliance
-python -m py_compile scripts/loan4u_phase12_pipeline.py
-```
-
-### For Agents Joining This Project
-1. **Read** [CLAUDE.md](./CLAUDE.md) - Environment & standards (START HERE)
-2. **Read** [.claude/EXECUTION_POLICY.md](./.claude/EXECUTION_POLICY.md) - Complete policy (MANDATORY)
-3. **Review** [avm_project/scripts/loan4u_phase12_pipeline.py](./avm_project/scripts/loan4u_phase12_pipeline.py) - Reference implementation
-4. **Follow** Code Quality Standards (Section 3 below)
-
-## 🎯 Project Overview
-
-**Loan4U AVM** is an automated valuation model expansion project targeting 8 international markets (UK, SG, JP, DE, AU, CA, TH, HK) with GPU/NPU optimization for production deployment.
-
-### Phase 12: Data Validation & Integration (70% complete)
-- ✅ Core pipeline: 417-line unified Excel/PDF generator
-- ✅ Price validation: 4-grade conformity classifier (적정/확인필요/편차주의/추가확인)
-- ✅ Country expansion: 8 countries × 2 sheets each
-- ⏳ PDF generation: In progress (Phase 12.G)
-- ⏳ Validation module: In progress (Phase 12.H)
-
-**Deliverable**: 21-sheet workbook + PDF report (1000+ records)
-
-### Phase 13: Model Development & Deployment (10% complete)
-- ⏳ Data collection: 1M+ records across 8 countries
-- ⏳ Feature engineering: 30-35 features per country
-- ⏳ GPU training: XGBoost, LightGBM, Gradient Boosting (RTX 5050)
-- ⏳ NPU optimization: ONNX → OpenVINO IR conversion
-- ⏳ API deployment: FastAPI + NPU inference engine
-
-**Target**: Production ML pipeline with 7-8x training acceleration (GPU) + 10x inference acceleration (NPU)
-
-## 🏗️ Project Structure
-
-```
-/home/user/-/
-├── avm_project/                          # Main project directory
-│   ├── scripts/
-│   │   ├── loan4u_phase12_pipeline.py    # ✅ 417 lines, reference implementation
-│   │   ├── phase12_pdf_generator.py      # 🚧 Phase 12.G
-│   │   ├── phase12_validator.py          # 🚧 Phase 12.H
-│   │   ├── phase13_data_collector.py     # 🚧 Phase 13.1
-│   │   ├── phase13_model_trainer.py      # 🚧 Phase 13.2
-│   │   └── phase13_model_converter.py    # 🚧 Phase 13.2.5 (NEW)
-│   ├── config/
-│   │   └── avm_config.json               # 26 configuration items
-│   ├── data/
-│   │   ├── raw/                          # Input data
-│   │   └── processed/                    # Processed data
-│   ├── output/                           # Generated deliverables
-│   ├── docs/
-│   │   ├── PHASE_12_IMPLEMENTATION_SPEC.md
-│   │   ├── PHASE_12_CODE_INDEX.md
-│   │   ├── GPU_NPU_OPTIMIZATION_STRATEGY.md
-│   │   └── NEXT_DEVELOPMENT_DETAILED_REPORT.md
-│   ├── README.md                         # Project-specific README
-│   ├── requirements.txt                  # Full dependencies
-│   └── requirements-minimal.txt          # Quick start dependencies
-│
-├── CLAUDE.md                             # ✅ Agent configuration guide
-├── README.md                             # This file
-├── .gitignore                            # Git ignore rules
-│
-└── .claude/
-    ├── EXECUTION_POLICY.md               # ✅ Development policy (MANDATORY)
-    ├── settings.json                     # Agent settings
-    └── settings.local.json               # Local overrides
-```
-
-## 🔧 Code Quality Standards
-
-**These apply to ALL code in this repository** (see `.claude/EXECUTION_POLICY.md` Section 1 for details):
-
-### Mandatory Requirements
-| Requirement | Standard | Verification |
-|-------------|----------|--------------|
-| Function size | Max 50 lines (100 for complex logic only) | Manual review |
-| Type hints | 100% on all function signatures | `mypy` check |
-| Principles | SRP + DRY (no 3+ repeated lines) | Code review |
-| Comments | Only for WHY (non-obvious logic), never WHAT | Visual check |
-| Dead code | Delete completely (no stubs) | Git review |
-
-### Pre-Commit Checklist
-```
-- [ ] No function > 50 lines (or justified 100)
-- [ ] All functions have complete type hints
-- [ ] Single Responsibility Principle met
-- [ ] No code repetition (3+ identical lines extracted)
-- [ ] No debug prints or commented code
-- [ ] Comments explain WHY, not WHAT
-```
-
-### Reference Implementation
-See [loan4u_phase12_pipeline.py](./avm_project/scripts/loan4u_phase12_pipeline.py) (417 lines) for compliant code example:
-- Type hints: ✅ All functions annotated
-- SRP: ✅ Each function has single responsibility
-- DRY: ✅ Reusable utilities (normalize_*, style_*, autofit_*)
-- Comments: ✅ Only on complex logic (e.g., column index handling)
-
-## 📊 Development Schedule
-
-### Phase 12: Data Validation (Target: 2026-07-03)
-| Phase | Task | Status | Time |
-|-------|------|--------|------|
-| 12.A-F | Core pipeline | ✅ Done | 5 days |
-| 12.G | PDF generation | ⏳ In progress | 2 days |
-| 12.H | Validation & finalization | ⏳ In progress | 2 days |
-| **Total** | | **70% complete** | **9 days** |
-
-### Phase 13: Model Development (Target: 2026-07-14)
-| Phase | Task | Status | Time |
-|-------|------|--------|------|
-| 13.1 | Data collection + feature engineering | ⏳ Queue | 5 days |
-| 13.2 | GPU model training (XGBoost, LightGBM, GB) | ⏳ Queue | 4 days |
-| 13.2.5 | **NEW** Model conversion (ONNX→OpenVINO IR) | ⏳ Queue | 1 day |
-| 13.3 | Model validation (R²>0.84, MAPE<10.5%) | ⏳ Queue | 2 days |
-| 13.4 | NPU deployment + API | ⏳ Queue | 3 days |
-| **Total** | | **10% complete** | **15 days** |
-
-### GPU/NPU Optimization (RTX 5050 + Onboard NPU)
-- **Training**: 7-8x faster with GPU (XGBoost 35min→5min)
-- **Inference**: 10x faster with NPU (5-10ms→1ms latency)
-- **Power**: 70% reduction with NPU
-- **Accuracy**: R² >0.84, MAPE <10.5%
-
-## 🌍 International Markets
-
-**8 Target Countries with High Data Maturity:**
-
-| Country | Code | Tolerance | Data Source | Status |
-|---------|------|-----------|-------------|--------|
-| United Kingdom | UK | ±5% | HM Land Registry, Rightmove | ✅ Ready |
-| Singapore | SG | ±8% | URA, PropertyGuru | ✅ Ready |
-| Japan | JP | ±5% | REIT-DB, MLIT | ✅ Ready |
-| Germany | DE | ±8% | Zillium, Berlin Property Register | ✅ Ready |
-| Australia | AU | ±10% | ABS, RP Data | ✅ Ready |
-| Canada | CA | ±10% | StatsCan, RE/MAX | ✅ Ready |
-| Thailand | TH | ±15% | TREB, Proppy | ✅ Ready |
-| Hong Kong | HK | ±8% | Centaline, RICS | ✅ Ready |
-
-## 📈 Key Metrics
-
-### Phase 12 Output (Workbook)
-| Metric | Value |
-|--------|-------|
-| Total sheets | 21 (5 domestic + 8×2 country + 1 report) |
-| Total records | 1,000+ properties |
-| Validation grades | 4-tier: 적정/확인필요/편차주의/추가확인 |
-| File size | ~2.3 MB |
-
-### Phase 13 Target (Model)
-| Metric | Target |
-|--------|--------|
-| R² Score | >0.84 |
-| MAPE | <10.5% |
-| Training time | 35→5 min (GPU, 7x speedup) |
-| Inference time | 5-10ms→1ms (NPU, 10x speedup) |
-| Power consumption | 70% reduction (NPU) |
-
-## 🚀 Work Reporting Policy
-
-After completing any phase, use this template (see `.claude/EXECUTION_POLICY.md` Section 2):
-
-```markdown
-### [Phase X.Y] [작업명 - Work Title]
-
-**[목표]** Objectives  
-Brief goal (1-2 sentences)
-
-**[대상]** Target Scope  
-Affected files/modules
-
-**[범위 포함]** Included  
-- Deliverable 1 ✓
-- Deliverable 2 ✓
-
-**[범위 제외]** Excluded  
-- Known limitations
-
-**[완료 기준]** Completion Criteria  
-- Tests passing ✓
-- Code review done ✓
-
-**[일정]** Schedule  
-- Actual: X hours vs Y estimate
-
-**[참고자료]** References  
-- Documentation files
-
-**[추가 정보]** Notes  
-- Performance metrics
-- Next phase recommendations
-```
-
-## 🔐 Git Commit Policy
-
-All commits must follow atomic, policy-compliant format:
-
-```bash
-git commit -m "[Phase X.Y] Brief description (under 70 chars)
-
-Detailed explanation (wrapped at 72 chars):
-- What changed and why
-- Impact on next phase
-
-Completion checklist:
-- Code quality standards met ✓
-- Type hints complete ✓
-- Tests passing ✓
-
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_..."
-```
-
-See `.claude/EXECUTION_POLICY.md` Section 3 for complete git standards.
-
-## 📚 Documentation
-
-| Document | Purpose | Lines |
-|----------|---------|-------|
-| [CLAUDE.md](./CLAUDE.md) | Agent config & quick reference | 242 |
-| [.claude/EXECUTION_POLICY.md](./.claude/EXECUTION_POLICY.md) | Complete development policy | 234 |
-| [PHASE_12_IMPLEMENTATION_SPEC.md](./avm_project/docs/PHASE_12_IMPLEMENTATION_SPEC.md) | Technical specification | 156 |
-| [PHASE_12_CODE_INDEX.md](./avm_project/docs/PHASE_12_CODE_INDEX.md) | Architecture reference | 204 |
-| [GPU_NPU_OPTIMIZATION_STRATEGY.md](./avm_project/docs/GPU_NPU_OPTIMIZATION_STRATEGY.md) | Hardware optimization plan | 736 |
-| [NEXT_DEVELOPMENT_DETAILED_REPORT.md](./avm_project/docs/NEXT_DEVELOPMENT_DETAILED_REPORT.md) | Phase 13 roadmap | 385 |
-
-## 🛠️ Development Commands
-
-```bash
-# Check syntax compliance
-python -m py_compile avm_project/scripts/loan4u_phase12_pipeline.py
-
-# Run pipeline
-python avm_project/scripts/loan4u_phase12_pipeline.py --base data/raw/before_fill.xlsx --config config/phase12 --output output/corrected.xlsx
-
-# View git history
-git log --oneline -10
-
-# Check branch status
-git status
-
-# Verify policy compliance
-cat CLAUDE.md              # Quick reference
-cat .claude/EXECUTION_POLICY.md  # Complete policy
-```
-
-## ❓ FAQ & Escalation
-
-### Code Quality Questions
-→ See `.claude/EXECUTION_POLICY.md` Section 1
-
-### Schedule Changes
-→ Document in work report Section [추가 정보]
-
-### Technical Blockers
-→ Commit as debugging step with issue notes
-
-### Policy Conflicts
-→ Raise with team lead (send report using work reporting template)
-
-## 📞 Support & Contact
-
-- **Project Lead**: Loan4U AVM Development Team
-- **Current Session**: Claude Code with Sonnet 4.6 model
-- **Policy File**: `.claude/EXECUTION_POLICY.md` (complete reference)
-- **Configuration**: [CLAUDE.md](./CLAUDE.md) (agent setup)
+에이전트 작업 원칙(파이썬 퍼스트, 오류 분류 규약, AVM 전용 코드 표준)은 [`CLAUDE.md`](./CLAUDE.md)를 참고하세요.
 
 ---
 
-**Last Updated**: 2026-06-26  
-**Policy Version**: 1.0  
-**All agents must read** [.claude/EXECUTION_POLICY.md](./.claude/EXECUTION_POLICY.md) **before starting work**
+## 모바일 기기 데이터 마이그레이션 & 정리 도구
+
+휴대폰(iPhone 13 Pro, Android)에서 내보낸 파일을 **종류별 + 날짜별**로 자동 분류하고, 파일명을 정리하며, 중복 파일을 제거합니다.
+
+### 세 가지 스크립트
+
+| 스크립트 | 용도 | 대상 |
+|----------|------|------|
+| `organize.py` | 기본 파일 정리 | 모든 기기 (일반) |
+| `migrate.py` | 모바일 마이그레이션 | Android (ADB) 또는 로컬 폴더 |
+| `iphone_migrate.py` | iPhone 전용 | iPhone 13 Pro (HEIC, Live Photo 지원) |
+
+### 주요 기능
+
+**모든 스크립트 공통**
+- **종류별 분류**: 사진, 동영상, 음악, 문서, 압축파일, APK, 기타
+- **날짜별 분류**: `카테고리/YYYY/MM/` 구조로 정리
+- **파일명 정리**: `YYYYMMDD_HHMMSS_원본이름.확장자` 형식으로 통일
+- **중복 제거**: MD5 해시로 동일 파일 감지 후 자동 삭제
+- **EXIF 날짜**: 사진의 실제 촬영일 기준 정렬 (Pillow 설치 시)
+
+**iPhone 전용 (`iphone_migrate.py`)**
+- **HEIC/HEIF** 포맷 완벽 지원
+- **Live Photo** 자동 감지: HEIC + MOV 쌍 → `라이브포토/` 폴더로 분리
+- **슬로모션**: `SloMo` 파일명 패턴 인식 → `슬로모션/` 폴더
+- **타임랩스**: `TimeLapse` 패턴 인식 → `타임랩스/` 폴더
+- **카테고리별 통계**: `iphone_migration_report.json` 자동 생성
+
+**Android 전용 (`migrate.py`)**
+- **ADB 직접 연결**: USB 디버깅으로 기기 파일 자동 추출
+- **로컬 폴더 지원**: 기존 백업 폴더 정리
+- **상세 보고서**: `migration_report.json` 생성
+
+### 설치
+
+**필수 요구사항**
+- Python 3.10 이상
+- macOS, Linux, Windows
+
+**의존성 설치**
+```bash
+pip install Pillow   # 선택 사항 (EXIF 날짜 사용 시 권장)
+```
+
+### 사용법
+
+**1️⃣ iPhone 13 Pro (macOS에서 실행)**
+```bash
+# 1. 저장소 클론
+git clone https://github.com/eugene-eungkwon-kim/-
+cd -
+
+# 2. iPhone을 USB-C로 연결
+# 3. 사진 앱에서 전체 내보내기 또는 Finder에서 DCIM 폴더 복사
+
+# 4. 미리보기
+python iphone_migrate.py ~/Desktop/iPhone_내보내기 ~/Desktop/정리결과 --dry-run
+
+# 5. 실제 실행
+python iphone_migrate.py ~/Desktop/iPhone_내보내기 ~/Desktop/정리결과
+```
+
+**2️⃣ Android (ADB 사용, Windows/Mac/Linux)**
+```bash
+# 1. Android SDK 설치
+# 2. 기기를 USB로 연결 → 개발자 옵션 활성화 → USB 디버깅 허용
+
+# 3. 미리보기
+python migrate.py --android ./마이그레이션결과 --dry-run
+
+# 4. 실제 실행
+python migrate.py --android ./마이그레이션결과
+```
+
+**3️⃣ 로컬 폴더 정리 (어떤 기기든 가능)**
+```bash
+# 기본 정리
+python organize.py /path/to/phone_files ./정리결과
+
+# 또는 migrate.py 사용
+python migrate.py --source /path/to/phone_files ./정리결과
+
+# 미리보기
+python organize.py /path/to/phone_files ./정리결과 --dry-run
+```
+
+### 결과 구조
+
+```
+정리결과/
+├── 사진/
+│   ├── 2024/01/
+│   │   ├── 20240115_143022_IMG_1234.heic
+│   │   └── 20240120_090500_photo.jpg
+│   └── 2025/03/
+├── 동영상/
+│   └── 2024/05/
+├── 라이브포토/        (iPhone에서 HEIC+MOV 쌍)
+│   └── 2024/03/
+├── 슬로모션/          (iPhone SloMo 영상)
+├── 타임랩스/          (iPhone TimeLapse 영상)
+├── 음악/
+├── 문서/
+├── 압축파일/
+├── APK/
+├── 기타/
+├── iphone_migration_report.json   (iPhone: 통계)
+└── migration_report.json           (Android: 통계)
+```
+
+### 옵션
+
+| 옵션 | 설명 |
+|------|------|
+| `--dry-run` | 미리보기 모드 (파일 실제 변경 없음) |
+| `--android` | ADB로 Android 기기에서 직접 가져오기 (migrate.py) |
+| `--source` | 로컬 폴더 경로 지정 (migrate.py) |
+
+### 주의사항
+
+1. **백업 필수**: 원본 파일은 **이동**됩니다. 반드시 미리 백업하세요.
+2. **미리보기 권장**: `--dry-run` 옵션으로 먼저 결과를 확인하세요.
+3. **중복 제거**: MD5 해시로 동일 파일을 감지하며, **원본만 남기고 나머지는 삭제**합니다.
+4. **저장 공간**: 정리 전 충분한 여유 공간 필요 (원본 용량의 2배 이상)
+
+### 상세 기능
+
+**Live Photo (iPhone)** — HEIC 및 해당 MOV 파일이 **같은 이름**일 때 자동 감지:
+```
+DCIM/100APPLE/IMG_0001.HEIC  + IMG_0001.MOV  → 라이브포토/2024/01/
+```
+
+**파일명 충돌 처리** — 같은 날짜, 같은 이름의 다른 파일:
+```
+20240115_143022_photo.jpg
+20240115_143022_photo_1.jpg  (충돌)
+20240115_143022_photo_2.jpg  (충돌)
+```
+
+**EXIF 날짜** (Pillow 설치 시) — 사진의 실제 촬영일 기준으로 분류 → 더 정확한 정렬
+
+### 버그 수정 이력
+
+- ✅ 파일명 충돌 시 `file_1_2_3` 형태 무한 증가 → 수정
+- ✅ `_getexif()` deprecated → `getexif()` API로 교체
+- ✅ Live Photo 크로스-디렉토리 감지 검증 완료
+
+---
+
+## MAARS 플랫폼
+
+`src/` 아래에 MAARS(부동산 금융) 백엔드·프론트엔드가 통째로 들어 있습니다. 위 파이썬 도구, 아래 AVM 프로젝트와 서로 의존하지 않는 별개 프로젝트입니다.
+
+**요구사항:** Node 18 또는 20, `maars_test`라는 이름의 PostgreSQL 데이터베이스, Redis (테스트·알림 기능에 필요). 접속 정보 기본값은 `localhost:5432`·사용자 `postgres`·비밀번호 없음이며, 다르면 `PG_HOST`/`PG_PORT`/`PG_USER`/`PG_PASSWORD`로 재정의한다. 전체 환경변수 목록은 `.github/workflows/test.yml` 참고.
+
+```bash
+createdb maars_test   # 최초 1회
+npm ci
+
+# 테스트
+REDIS_URL=redis://localhost:6379 npm run test:ci
+
+# 타입 체크
+npm run type-check
+
+# API 서버 + 프론트엔드 동시 실행
+npm run dev:all
+```
+
+무엇이 있는지 한눈에 보려면:
+
+- `src/server/app.ts` — Fastify 라우트 전체와 인증·권한 방식
+- `src/notifications/` — 실시간 알림(SSE) 파이프라인: 판정 → 저장 → 팬아웃 → 스트림
+- `docs/` — 마이그레이션·성능·캐싱 설계 문서
+- `PERFORMANCE.md` — 성능 기준선과 목표치
+
+`src/db/migrations/`의 마이그레이션은 SQLite/PostgreSQL 양쪽에서 그대로 유효한 SQL 부분집합으로 쓰고, `src/db/migrationRunner.ts`의 변환기가 타임스탬프 기본값과 부동소수 타입만 치환한다 — 새 마이그레이션을 추가할 때 참고할 것.
+
+---
+
+## AVM 프로젝트
+
+Loan4U 자동감정가 모델(AVM) 개발 프로젝트입니다. 파이프라인·API·테스트는 동작하지만, **아직 실거래 데이터로 검증되지 않았습니다.**
+
+자세한 현재 상태, 남은 작업, 알려진 한계는 [`avm_project/README.md`](./avm_project/README.md)와 `avm_project/docs/LIMITATIONS.md`를 참고하세요. 이 프로젝트에서 작업하는 에이전트는 `CLAUDE.md`의 "AVM 프로젝트 전용" 절과 `avm_project/README.md`의 "Claude 에이전트 주목" 절을 먼저 읽어야 합니다.
+
+---
+
+## 문의
+
+버그 또는 기능 요청: GitHub Issues
+
+MIT License (모바일 파일 정리 도구 기준 — MAARS·AVM은 각 프로젝트 문서 참고)

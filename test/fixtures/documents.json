@@ -1,0 +1,58 @@
+[
+  {
+    "id": "doc-001",
+    "name": "employment-certificate.pdf",
+    "type": "application/pdf",
+    "size": 1048576,
+    "category": "income"
+  },
+  {
+    "id": "doc-002",
+    "name": "tax-return-2024.pdf",
+    "type": "application/pdf",
+    "size": 2097152,
+    "category": "income"
+  },
+  {
+    "id": "doc-003",
+    "name": "bank-statement.pdf",
+    "type": "application/pdf",
+    "size": 1572864,
+    "category": "financial"
+  },
+  {
+    "id": "doc-004",
+    "name": "property-deed.pdf",
+    "type": "application/pdf",
+    "size": 3145728,
+    "category": "asset"
+  },
+  {
+    "id": "doc-005",
+    "name": "id-front.jpg",
+    "type": "image/jpeg",
+    "size": 524288,
+    "category": "identity"
+  },
+  {
+    "id": "doc-006",
+    "name": "id-back.jpg",
+    "type": "image/jpeg",
+    "size": 524288,
+    "category": "identity"
+  },
+  {
+    "id": "doc-007",
+    "name": "property-photo.png",
+    "type": "image/png",
+    "size": 2097152,
+    "category": "asset"
+  },
+  {
+    "id": "doc-008",
+    "name": "credit-report.pdf",
+    "type": "application/pdf",
+    "size": 1048576,
+    "category": "credit"
+  }
+]

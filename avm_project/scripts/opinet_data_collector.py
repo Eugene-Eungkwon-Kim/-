@@ -4,15 +4,24 @@ Opinet API를 이용한 주유소 정보 및 가격 데이터 수집
 Korean Gas Station Price Information via Opinet API
 """
 
+import os
+import sys
 import requests
 import pandas as pd
 import json
-import os
 import time
 from typing import Dict, List, Tuple, Optional
 from datetime import datetime
 import logging
 from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from app.integrations.http_client import (  # noqa: E402
+    AuthFetchError,
+    SchemaFetchError,
+    TransientFetchError,
+    get_json_with_retry,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +46,9 @@ class OpimetDataCollector:
         self.session = requests.Session()
         self.rate_limit = 0.5
         self.timeout = 10
+        # 스키마 오류(응답 구조 변경 등)로 건너뛴 좌표 수 — 인증 오류와 달리
+        # 실행을 막지는 않지만, 끝에 검토가 필요하다고 알려야 한다.
+        self.schema_error_count = 0
 
     def get_nearby_gas_stations(
         self,
@@ -54,37 +66,39 @@ class OpimetDataCollector:
 
         Returns:
             주유소 정보 리스트
+
+        Raises:
+            AuthFetchError: 인증/쿼터 오류. 재시도로 해결되지 않으므로
+                호출자가 전체 실행을 중단해야 한다.
         """
+        params = {
+            'code': 'F',
+            'out': 'json',
+            'lat': latitude,
+            'lon': longitude,
+            'radius': radius,
+            'apikey': self.api_key
+        }
+
         try:
-            params = {
-                'code': 'F',
-                'out': 'json',
-                'lat': latitude,
-                'lon': longitude,
-                'radius': radius,
-                'apikey': self.api_key
-            }
-
-            response = self.session.get(
-                self.base_url,
-                params=params,
-                timeout=self.timeout
+            data = get_json_with_retry(
+                self.session, self.base_url, params=params, timeout=self.timeout
             )
-            response.raise_for_status()
-
-            data = response.json()
-
-            if 'result' in data and data['result']:
-                return data['result']
-            else:
-                return []
-
-        except Exception as e:
-            logger.debug(f"주유소 조회 오류: {e}")
+        except AuthFetchError:
+            raise  # 재시도로 해결 안 됨 — 호출자가 전체 실행을 멈춰야 한다
+        except TransientFetchError as e:
+            logger.warning(f"주유소 조회 실패(일시적 오류 소진): {e}")
             return []
-
+        except SchemaFetchError as e:
+            logger.warning(f"주유소 조회 실패(응답 구조 오류, 검토 필요): {e}")
+            self.schema_error_count += 1
+            return []
         finally:
             time.sleep(self.rate_limit)
+
+        if 'result' in data and data['result']:
+            return data['result']
+        return []
 
     def calculate_nearby_gas_stations(
         self,
@@ -183,29 +197,21 @@ class OpimetDataCollector:
                 })
                 continue
 
-            try:
-                stats = self.calculate_nearby_gas_stations(lat, lon)
-                nearby_stats.append({
-                    'nearby_gas_stations': stats['nearby_count'],
-                    'avg_gas_price': stats['avg_price'],
-                    'min_gas_price': stats['min_price'],
-                    'max_gas_price': stats['max_price'],
-                    'gas_station_density': stats['station_density']
-                })
-                success_count += 1
+            # AuthFetchError(인증/쿼터 오류)는 여기서 잡지 않는다 — 재시도로
+            # 해결되지 않으므로 나머지 행을 계속 조회해봐야 의미가 없고,
+            # 호출자가 전체 실행을 즉시 중단할 수 있게 그대로 전파한다.
+            stats = self.calculate_nearby_gas_stations(lat, lon)
+            nearby_stats.append({
+                'nearby_gas_stations': stats['nearby_count'],
+                'avg_gas_price': stats['avg_price'],
+                'min_gas_price': stats['min_price'],
+                'max_gas_price': stats['max_price'],
+                'gas_station_density': stats['station_density']
+            })
+            success_count += 1
 
-                if (i + 1) % 500 == 0 or (i + 1) == len(df):
-                    print(f"   [{i+1}/{len(df)}] {success_count} 성공")
-
-            except Exception as e:
-                logger.debug(f"주유소 정보 수집 실패: {e}")
-                nearby_stats.append({
-                    'nearby_gas_stations': None,
-                    'avg_gas_price': None,
-                    'min_gas_price': None,
-                    'max_gas_price': None,
-                    'gas_station_density': None
-                })
+            if (i + 1) % 500 == 0 or (i + 1) == len(df):
+                print(f"   [{i+1}/{len(df)}] {success_count} 성공")
 
         stats_df = pd.DataFrame(nearby_stats)
         df = pd.concat([df, stats_df], axis=1)
@@ -213,6 +219,8 @@ class OpimetDataCollector:
         print(f"\n✅ Opinet 강화 완료:")
         print(f"   수집된 행: {success_count}/{len(df)}")
         print(f"   추가 컬럼: 5개")
+        if self.schema_error_count:
+            print(f"   ⚠️ 검토 필요(응답 구조 오류로 건너뜀): {self.schema_error_count}건")
 
         df.to_csv(output_path, index=False, encoding='utf-8')
         print(f"\n💾 저장 완료: {output_path}")
@@ -262,7 +270,10 @@ class OpimetDataCollector:
 def main():
     """메인 실행 함수"""
 
-    api_key = os.environ.get("OPINET_API_KEY", "")
+    api_key = os.environ.get("OPINET_API_KEY")
+    if not api_key:
+        print("❌ 오류: 환경변수 OPINET_API_KEY 가 설정되어 있지 않습니다.")
+        return 1
 
     collector = OpimetDataCollector(api_key)
 
@@ -270,17 +281,17 @@ def main():
     print("✅ Opinet 데이터 수집 시작")
     print("="*80)
 
-    if not collector.test_collection():
-        print("\n⚠️ 테스트 실패. 계속 진행합니다.")
-
-    input_file = "avm_project/data/raw/real_estate_2024.csv"
-    output_file = "avm_project/data/raw/real_estate_2024_opinet_enriched.csv"
-
-    if not Path(input_file).exists():
-        print(f"\n❌ 입력 파일 없음: {input_file}")
-        return False
-
     try:
+        if not collector.test_collection():
+            print("\n⚠️ 테스트 실패. 계속 진행합니다.")
+
+        input_file = "avm_project/data/raw/real_estate_2024.csv"
+        output_file = "avm_project/data/raw/real_estate_2024_opinet_enriched.csv"
+
+        if not Path(input_file).exists():
+            print(f"\n❌ 입력 파일 없음: {input_file}")
+            return 1
+
         enriched_df = collector.enrich_real_estate_data(input_file, output_file)
 
         print("\n" + "="*80)
@@ -292,13 +303,19 @@ def main():
         print(f"   주유소 정보 있는 행: {enriched_df['nearby_gas_stations'].notna().sum()}")
 
         print("\n✅ Opinet 데이터 수집 완료")
-        return True
+        if collector.schema_error_count:
+            return 3  # 응답 구조 오류 있었음 — 검토 필요 (CLAUDE.md 종료코드 규약)
+        return 0
+
+    except AuthFetchError as e:
+        print(f"\n❌ 인증/쿼터 오류: {e}")
+        print("재시도로 해결되지 않습니다 — API 키 또는 호출량 한도를 확인하세요.")
+        return 2
 
     except Exception as e:
         print(f"\n❌ 오류: {e}")
-        return False
+        return 1
 
 
 if __name__ == "__main__":
-    success = main()
-    exit(0 if success else 1)
+    exit(main())

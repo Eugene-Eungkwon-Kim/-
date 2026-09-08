@@ -1,0 +1,50 @@
+[
+  {
+    "id": "score-001",
+    "creditScore": 850,
+    "grade": "A",
+    "description": "신용도 우수"
+  },
+  {
+    "id": "score-002",
+    "creditScore": 800,
+    "grade": "A",
+    "description": "신용도 우수"
+  },
+  {
+    "id": "score-003",
+    "creditScore": 750,
+    "grade": "B",
+    "description": "신용도 양호"
+  },
+  {
+    "id": "score-004",
+    "creditScore": 700,
+    "grade": "B",
+    "description": "신용도 양호"
+  },
+  {
+    "id": "score-005",
+    "creditScore": 670,
+    "grade": "C",
+    "description": "신용도 보통"
+  },
+  {
+    "id": "score-006",
+    "creditScore": 650,
+    "grade": "C",
+    "description": "신용도 보통"
+  },
+  {
+    "id": "score-007",
+    "creditScore": 600,
+    "grade": "D",
+    "description": "신용도 불량"
+  },
+  {
+    "id": "score-008",
+    "creditScore": 500,
+    "grade": "D",
+    "description": "신용도 불량"
+  }
+]
