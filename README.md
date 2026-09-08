@@ -23,8 +23,10 @@
 | `organize.py` | 기본 파일 정리 | 모든 기기 (일반) |
 | `migrate.py` | 모바일 마이그레이션 | Android (ADB) 또는 로컬 폴더 |
 | `iphone_migrate.py` | iPhone 전용 | Live Photo / 슬로모션 / 편집본 구분 |
+| `cleanup.py` | 저장공간 분석·회수 | 기본은 읽기 전용 분석, `--apply`로 중복·캐시·빈폴더 삭제 |
+| `battery.py` | 배터리 효율 진단 | 읽기 전용, ADB(Android)·libimobiledevice(iPhone) |
 
-공통 로직은 `phonesort/` 패키지에 있고, 세 스크립트는 그 위에 얹은 얇은 CLI입니다.
+공통 로직은 `phonesort/` 패키지에 있고, 앞의 세 스크립트는 그 위에 얹은 얇은 CLI입니다. `cleanup.py`/`battery.py`는 독립 실행되는 진단 도구입니다.
 
 ### 주요 기능
 
