@@ -29,6 +29,20 @@ def client():
     return TestClient(api_server.app, raise_server_exceptions=False)
 
 
+def _model_available(model_name: str) -> bool:
+    return any(api_server.MODELS_DIR.glob(f"{model_name}_*.pkl")) or any(
+        api_server.MODELS_DIR.glob(f"{model_name}_*.joblib")
+    )
+
+
+def requires_model(model_name: str):
+    """models/ 에 실학습 산출물이 없는 환경에서는 예측 테스트를 이유와 함께 skip한다."""
+    return pytest.mark.skipif(
+        not _model_available(model_name),
+        reason=f"models/{model_name}_* 학습 산출물 없음 — 실데이터 학습 필요",
+    )
+
+
 @pytest.fixture
 def valid_property():
     """예제 부동산 데이터 (단위: 만원)"""
@@ -63,6 +77,7 @@ class TestInfoEndpoints:
 
 
 class TestPredictEndpoint:
+    @requires_model("LGBMRegressor")
     def test_predict_returns_price(self, client, valid_property):
         r = client.post(
             "/predict",
@@ -87,6 +102,7 @@ class TestPredictEndpoint:
 
 
 class TestConfidenceEndpoint:
+    @requires_model("RandomForestRegressor")
     def test_confidence_interval(self, client, valid_property):
         r = client.post(
             "/predict/confidence?confidence=0.95",

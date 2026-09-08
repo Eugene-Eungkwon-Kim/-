@@ -28,7 +28,13 @@ KR_TEST_CASES = [
 @pytest.fixture(scope='module')
 def engine():
     from scripts.avm_core_engine import AVMCoreEngine
-    return AVMCoreEngine()
+    eng = AVMCoreEngine()
+    if not eng.ensemble.models:
+        pytest.skip(
+            "학습된 모델 없음 — python scripts/generate_kr_realistic_data.py 후 "
+            "python scripts/train_kr_model.py 로 output/trained_models/ 를 만들어야 한다"
+        )
+    return eng
 
 
 class TestKRValuation:

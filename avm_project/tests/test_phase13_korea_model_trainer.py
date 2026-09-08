@@ -28,10 +28,24 @@ class TestKoreaModelTrainer(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        """Create test data for all tests"""
+        """data/raw/KR_raw.csv가 있으면 그것을, 없으면 합성 데이터를 한 번 생성해 쓴다."""
         cls.test_data_path = Path('data/raw/KR_raw.csv')
-        if not cls.test_data_path.exists():
-            raise FileNotFoundError(f"Test data not found: {cls.test_data_path}")
+        cls._generated_dir = None
+        if cls.test_data_path.exists():
+            return
+
+        # phase13_real_data_kr.py는 네트워크 없이 도는 합성 생성기다 — 수집
+        # 산출물이 없는 환경(CI, 새 체크아웃)에서도 테스트가 자급자족하게 한다.
+        from phase13_real_data_kr import KoreaCollector
+
+        cls._generated_dir = tempfile.TemporaryDirectory()
+        cls.test_data_path = Path(cls._generated_dir.name) / 'KR_raw.csv'
+        KoreaCollector().collect_enriched(n_records=3000).to_csv(cls.test_data_path, index=False)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls._generated_dir is not None:
+            cls._generated_dir.cleanup()
 
     def setUp(self) -> None:
         """Create trainer instance with temp models directory"""

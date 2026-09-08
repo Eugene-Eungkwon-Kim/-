@@ -4,9 +4,9 @@ Loan4U Phase 12 Validation Module
 Validates 21-sheet workbook structure, data, and styling.
 """
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -71,10 +71,38 @@ class Phase12Validator:
     PRICE_MAX = 10_000_000_000
     COUNTRIES = {'UK', 'SG', 'JP', 'DE', 'AU', 'CA', 'TH', 'HK', 'KR'}
 
-    def __init__(self, workbook_path: str) -> None:
-        self.workbook_path = Path(workbook_path)
+    def __init__(self, workbook_path: Optional[str] = None) -> None:
+        self.workbook_path = Path(workbook_path) if workbook_path else None
         self.results: List[ValidationResult] = []
         self.sheet_validations: List[SheetValidation] = []
+
+    def validate_workbook(self, workbook_path: str) -> Dict[str, Any]:
+        """Validate one workbook and return a structured summary dict."""
+        path = Path(workbook_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Workbook not found: {path}")
+
+        self.workbook_path = path
+        self.results = []
+        self.sheet_validations = []
+        passed, counts = self.validate_all()
+
+        wb = load_workbook(path, read_only=True)
+        sheet_names = list(wb.sheetnames)
+        wb.close()
+
+        return {
+            'passed': passed,
+            'summary': counts,
+            'total_sheets': len(sheet_names),
+            'sheet_names': sheet_names,
+            'report_sheet_valid': 'Report' in sheet_names and not self._sheet_has_errors('Report'),
+            'validation_results': [asdict(r) for r in self.results],
+            'sheet_validations': [asdict(s) for s in self.sheet_validations],
+        }
+
+    def _sheet_has_errors(self, sheet_name: str) -> bool:
+        return any(r.severity == 'error' and sheet_name in r.message for r in self.results)
 
     def validate_all(self) -> Tuple[bool, Dict[str, int]]:
         """Run complete validation suite."""

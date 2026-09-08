@@ -513,14 +513,16 @@ async def predict_with_confidence(request: PredictionRequest, confidence: float 
     - confidence: 0.90 / 0.95 / 0.99 중 선택 (기본 0.95)
     """
     try:
-        model = load_model(request.model_name)
-        if model is None:
-            raise ModelNotFoundError(f"모델을 로드할 수 없음: {request.model_name}")
-
+        # 입력 검증이 모델 로드보다 먼저다 — 잘못된 confidence는 모델 유무와
+        # 무관하게 400이어야 하는데, 순서가 반대라 모델이 없으면 404가 먼저 났다.
         if confidence not in ConfidenceEstimator.Z:
             raise InvalidInputError(
                 f"confidence는 {list(ConfidenceEstimator.Z)} 중 하나여야 합니다"
             )
+
+        model = load_model(request.model_name)
+        if model is None:
+            raise ModelNotFoundError(f"모델을 로드할 수 없음: {request.model_name}")
 
         X = prepare_prediction_data(request.property_data)
         estimator = ConfidenceEstimator(model, confidence=confidence)

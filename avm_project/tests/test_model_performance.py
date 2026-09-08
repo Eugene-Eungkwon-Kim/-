@@ -21,6 +21,16 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
 
 from ml_models import model_manager
 
+# models/*.joblib 실학습 산출물이 없으면 ModelManager가 17특성 데모 LinearRegression
+# 하나로 폴백한다 — 그 위에서 돌리는 성능 수치는 의미가 없으니 통째로 skip한다.
+if not model_manager.models or all(
+    meta.get('is_demo') for meta in model_manager.model_metadata.values()
+):
+    pytest.skip(
+        "models/*.joblib 실학습 모델 없음 (ModelManager 데모 폴백) — 실데이터 학습 산출물 필요",
+        allow_module_level=True,
+    )
+
 # Get actual feature names from a loaded model
 _sample_model = next(iter(model_manager.models.values())) if model_manager.models else None
 _feature_names = list(_sample_model.feature_names_in_) if hasattr(_sample_model, 'feature_names_in_') else []

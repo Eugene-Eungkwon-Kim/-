@@ -14,13 +14,21 @@
 import time
 import logging
 import sqlite3
+import sys
 import psutil
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, Any, List
 from dataclasses import dataclass, asdict
 
-from avm_paths import DB_PATH, LEDGER_PATH
+# avm_paths는 scripts/ 안의 형제 모듈이다. `python scripts/tier2_monitoring.py`로
+# 실행하면 scripts/가 sys.path에 오르지만, 테스트처럼
+# `avm_project.scripts.tier2_monitoring` 패키지 경로로 임포트하면 오르지 않아
+# ModuleNotFoundError가 났다 — 두 경로 모두에서 찾히도록 직접 올린다.
+sys.path.insert(0, str(Path(__file__).parent))
+
+from avm_paths import DB_PATH, LEDGER_PATH  # noqa: E402
 
 log = logging.getLogger(__name__)
 logging.basicConfig(
@@ -74,135 +82,84 @@ class MetricsCollector:
 
         return self.metrics
 
+    def _record(self, name: str, value: float, unit: str, threshold: float) -> None:
+        self.metrics.append(Metric(
+            name=name, value=value, unit=unit, threshold=threshold,
+            status="OK" if value < threshold else "WARNING",
+            measured_at=datetime.now().isoformat(),
+        ))
+
+    def _record_unavailable(self, name: str, unit: str, threshold: float, error: Exception) -> None:
+        # 측정 실패를 조용히 빠뜨리면 보고서에서 그 메트릭 자체가 사라져 장애를
+        # 못 본다 — UNAVAILABLE 상태로 남겨 5개 메트릭이 항상 보고되게 한다.
+        log.warning(f"{name} 측정 실패: {error}")
+        self.metrics.append(Metric(
+            name=name, value=0.0, unit=unit, threshold=threshold,
+            status="UNAVAILABLE", measured_at=datetime.now().isoformat(),
+        ))
+
+    @staticmethod
+    def _connect_readonly() -> sqlite3.Connection:
+        # 모니터링은 읽기 전용이다 — 기본 connect()는 DB가 없으면 빈 파일을 만들어 버린다.
+        return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+
+    def _query_scalar(self, sql: str) -> Any:
+        conn = self._connect_readonly()
+        try:
+            row = conn.execute(sql).fetchone()
+        finally:
+            conn.close()
+        return row[0] if row else None
+
     def _collect_collection_latency(self) -> None:
         """데이터 수집 지연시간 (ms)."""
         try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT CAST((julianday(MAX(collected_at)) - julianday(MIN(collected_at))) * 24 * 60 * 1000 AS INTEGER)
-                FROM layer1_search20
-                """
+            latency_ms = self._query_scalar(
+                "SELECT CAST((julianday(MAX(collected_at)) - julianday(MIN(collected_at)))"
+                " * 24 * 60 * 1000 AS INTEGER) FROM layer1_search20"
             )
-            result = cursor.fetchone()
-            conn.close()
-
-            latency_ms = result[0] if result[0] else 0
-
-            metric = Metric(
-                name="collection_latency",
-                value=latency_ms,
-                unit="ms",
-                threshold=60000,  # 60초
-                status="OK" if latency_ms < 60000 else "WARNING",
-                measured_at=datetime.now().isoformat(),
-            )
-            self.metrics.append(metric)
-
+            self._record("collection_latency", latency_ms or 0, "ms", 60000)  # 60초
         except Exception as e:
-            log.warning(f"수집 지연시간 측정 실패: {e}")
+            self._record_unavailable("collection_latency", "ms", 60000, e)
 
     def _collect_api_error_rate(self) -> None:
         """API 오류율 (%)."""
         try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM api_call_log WHERE http_status != 200")
-            error_count = cursor.fetchone()[0]
-
-            cursor.execute("SELECT COUNT(*) FROM api_call_log")
-            total_count = cursor.fetchone()[0]
-            conn.close()
-
-            error_rate = (error_count / total_count * 100) if total_count > 0 else 0
-
-            metric = Metric(
-                name="api_error_rate",
-                value=error_rate,
-                unit="%",
-                threshold=5.0,  # 5% 임계값
-                status="OK" if error_rate < 5.0 else "WARNING",
-                measured_at=datetime.now().isoformat(),
-            )
-            self.metrics.append(metric)
-
+            error_count = self._query_scalar("SELECT COUNT(*) FROM api_call_log WHERE http_status != 200")
+            total_count = self._query_scalar("SELECT COUNT(*) FROM api_call_log")
+            error_rate = (error_count / total_count * 100) if total_count else 0
+            self._record("api_error_rate", error_rate, "%", 5.0)  # 5% 임계값
         except Exception as e:
-            log.warning(f"API 오류율 측정 실패: {e}")
+            self._record_unavailable("api_error_rate", "%", 5.0, e)
 
     def _collect_p99_latency(self) -> None:
         """P99 응답시간 (ms)."""
         try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-
-            # 상위 1% 응답시간 (P99)
-            cursor.execute(
-                """
-                SELECT CAST(call_time_ms AS FLOAT) FROM api_call_log
-                WHERE call_time_ms IS NOT NULL
-                ORDER BY call_time_ms DESC
-                LIMIT 1 OFFSET (SELECT COUNT(*) / 100 FROM api_call_log)
-                """
+            p99_ms = self._query_scalar(
+                "SELECT CAST(call_time_ms AS FLOAT) FROM api_call_log"
+                " WHERE call_time_ms IS NOT NULL ORDER BY call_time_ms DESC"
+                " LIMIT 1 OFFSET (SELECT COUNT(*) / 100 FROM api_call_log)"
             )
-            result = cursor.fetchone()
-            conn.close()
-
-            p99_ms = result[0] if result else 0
-
-            metric = Metric(
-                name="p99_latency",
-                value=p99_ms,
-                unit="ms",
-                threshold=300,  # 300ms 목표
-                status="OK" if p99_ms < 300 else "WARNING",
-                measured_at=datetime.now().isoformat(),
-            )
-            self.metrics.append(metric)
-
+            self._record("p99_latency", p99_ms or 0, "ms", 300)  # 300ms 목표
         except Exception as e:
-            log.warning(f"P99 지연시간 측정 실패: {e}")
+            self._record_unavailable("p99_latency", "ms", 300, e)
 
     def _collect_memory_usage(self) -> None:
         """메모리 사용량 (MB)."""
         try:
             memory_mb = self.process.memory_info().rss / (1024 * 1024)
-
-            metric = Metric(
-                name="memory_usage",
-                value=memory_mb,
-                unit="MB",
-                threshold=200.0,  # 200MB 임계값
-                status="OK" if memory_mb < 200 else "WARNING",
-                measured_at=datetime.now().isoformat(),
-            )
-            self.metrics.append(metric)
-
+            self._record("memory_usage", memory_mb, "MB", 200.0)  # 200MB 임계값
         except Exception as e:
-            log.warning(f"메모리 사용량 측정 실패: {e}")
+            self._record_unavailable("memory_usage", "MB", 200.0, e)
 
     def _collect_db_connection_pool(self) -> None:
-        """DB 연결 풀 (활성 연결 수)."""
+        """DB 연결 상태 (SQLite는 연결 풀이 없어 파일 크기 + 접근 성공 여부로 판정)."""
         try:
-            # SQLite는 단순 카운트 (연결 풀 없음)
-            # 대신 DB 파일 크기 및 접근 성공 여부로 판정
             db_size_mb = DB_PATH.stat().st_size / (1024 * 1024)
-
-            conn = sqlite3.connect(DB_PATH)
-            conn.close()
-
-            metric = Metric(
-                name="db_connection_status",
-                value=db_size_mb,
-                unit="MB",
-                threshold=50.0,  # 50MB 제한
-                status="OK" if db_size_mb < 50 else "WARNING",
-                measured_at=datetime.now().isoformat(),
-            )
-            self.metrics.append(metric)
-
+            self._connect_readonly().close()
+            self._record("db_connection_status", db_size_mb, "MB", 50.0)  # 50MB 제한
         except Exception as e:
-            log.warning(f"DB 연결 상태 측정 실패: {e}")
+            self._record_unavailable("db_connection_status", "MB", 50.0, e)
 
     def report(self) -> Dict[str, Any]:
         """메트릭 보고서 생성.
@@ -212,6 +169,7 @@ class MetricsCollector:
         """
         ok_count = sum(1 for m in self.metrics if m.status == "OK")
         warning_count = sum(1 for m in self.metrics if m.status == "WARNING")
+        unavailable_count = sum(1 for m in self.metrics if m.status == "UNAVAILABLE")
 
         return {
             "timestamp": datetime.now().isoformat(),
@@ -219,7 +177,8 @@ class MetricsCollector:
                 "total_metrics": len(self.metrics),
                 "ok": ok_count,
                 "warning": warning_count,
-                "health": "OK" if warning_count == 0 else "WARNING",
+                "unavailable": unavailable_count,
+                "health": "OK" if warning_count + unavailable_count == 0 else "WARNING",
             },
             "metrics": [asdict(m) for m in self.metrics],
         }

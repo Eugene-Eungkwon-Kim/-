@@ -53,6 +53,7 @@ pymilvus[milvus_lite]==3.0.1
 # Testing
 pytest==7.4.3
 pytest-cov==4.1.0
+pytest-benchmark==4.0.0
 httpx==0.25.0
 
 # Utilities

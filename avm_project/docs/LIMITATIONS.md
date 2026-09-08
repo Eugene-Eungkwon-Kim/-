@@ -386,3 +386,52 @@ yml`, `phase13_inference_api.py`가 사용)는 그대로 두고 `registry_dir`�
 `test_phase13_korea_model_trainer.py`/`test_model_performance.py`의
 사전 학습 모델 파일 부재 등 무관한 기존 문제) — 회귀 없음.
 
+## 11. 남아 있던 49 failed / 22 errors 정리 (2026-09-08, 수정됨)
+
+섹션 8.3·10에서 "기존 문제"로 남겨 뒀던 실패를 원인별로 갈라 전부
+처리했다. 결과: **555 passed / 9 skipped / 0 failed / 0 errors**
+(`test_phase13_2_gpu_training.py` 는 `torch` 미설치 환경이라 제외).
+
+코드 버그였던 것(수정):
+
+- `tier2_monitoring.py`: 형제 모듈 `avm_paths` 를 flat 임포트해
+  패키지 경로(`avm_project.scripts.…`)로 임포트하면 죽었다. 또 DB 기반
+  메트릭 4개가 측정 실패 시 예외를 삼키고 메트릭 자체를 빠뜨려
+  "5개 메트릭 보고"가 실제로는 1개만 나왔다 — 실패도 `UNAVAILABLE`
+  상태로 남기게 바꾸고, 기본 `sqlite3.connect()` 가 DB가 없으면 빈
+  파일을 만들어 버리던 것을 읽기 전용 URI 연결로 막았다.
+- `phase12_validator.py`: 테스트와 파이프라인이 기대하는
+  `Phase12Validator().validate_workbook(path) -> dict` API가 없고
+  `Phase12Validator(path).validate_all()` 만 있었다(ModelRegistry와 같은
+  "두 설계가 합쳐지지 않은" 패턴). 기존 API는 그대로 두고 추가.
+- `api_server.py` `/predict/confidence`: 모델 로드를 입력 검증보다
+  먼저 해서 잘못된 `confidence` 가 모델 없는 환경에선 400 대신 404로
+  나왔다 — 순서 교정.
+- `requirements.txt` 에 `pytest-benchmark` 누락(backend 쪽에만 있었다).
+
+데이터·산출물 부재였던 것(테스트를 자급자족/명시적 skip으로):
+
+- `test_phase13_korea_model_trainer.py` 16건: `data/raw/KR_raw.csv` 가
+  없으면 즉시 에러였다. `phase13_real_data_kr.py` 가 실제로는 네트워크
+  없이 도는 합성 생성기이므로, 파일이 없을 때 그걸로 임시 CSV를 만들어
+  쓰게 했다 — 18/18 통과(스태킹 학습이라 약 4분).
+- `test_kr_valuation.py`/`test_avm_engine.py` 34건: `output/trained_
+  models/` 가 비어 있었다. 프로젝트 자체 파이프라인
+  (`generate_kr_realistic_data.py` → `train_kr_model.py` →
+  `avm_coldstart.py`, 전부 합성 데이터)으로 만들면 80/80 통과한다.
+  산출물은 `.gitignore` 대상이라 커밋되지 않으므로, 모델이 없는
+  환경에서는 "가격 ≤ 0" 같은 오해할 실패 대신 생성 명령을 적은 skip이
+  나오게 픽스처를 고쳤다. 학습 결과(3/3 모델 목표 미달, MAPE 11~13%)는
+  섹션 1·5의 정직한 현황과 일치한다 — 새 문제가 아니다.
+- `test_model_performance.py`/`test_api_endpoints.py` 예측 3건:
+  `models/*.joblib` 은 **실데이터**(외장하드의 real_estate_2024·signal)로
+  학습한 산출물이라 이 환경에서 만들 수 없다(합성으로 만들면 "real"
+  모델을 위조하는 셈). 산출물이 없으면 이유를 적어 skip.
+
+**재현되지 않은 것**: 첫 전체 실행 직후 `config/automation_schedule.
+json`·`crontab_entries.txt`·`monitoring_setup.json` 세 파일의 타임스탬프가
+바뀌어 있었다. 쓰는 스크립트(`setup_cron_automation.py`,
+`production_monitoring_setup.py`)를 테스트에서 부르는 경로는 없고, 이후
+파일별 실행 1회 + 전체 실행 5회에서 재현되지 않았다. 원인 미상으로
+남기며, 전체 실행 후 `git status config/` 확인을 습관으로 둔다.
+
