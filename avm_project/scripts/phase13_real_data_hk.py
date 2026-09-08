@@ -11,6 +11,7 @@ import argparse
 import logging
 from typing import Dict, List
 
+import numpy as np
 import pandas as pd
 
 from phase13_real_data_base import RealDataCollector

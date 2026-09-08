@@ -10,6 +10,8 @@ Phase 14.1.KR - Regional Models ONNX Conversion & Quantization
       --output-dir output/models/korea/quantized_lite
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime
@@ -17,6 +19,11 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
+
+try:
+    import lightgbm as lgb
+except ImportError:
+    lgb = None  # export_onnx의 타입힌트만 참조 — 실제 변환 시점엔 register_gbm_converters()가 다시 임포트한다.
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
@@ -38,7 +45,7 @@ def register_gbm_converters() -> None:
     )
 
 
-def export_onnx(model: 'lgb.LGBMRegressor', n_features: int, output_path: Path) -> float:
+def export_onnx(model: lgb.LGBMRegressor, n_features: int, output_path: Path) -> float:
     """LightGBM → ONNX 변환."""
     from skl2onnx import convert_sklearn
     from skl2onnx.common.data_types import FloatTensorType

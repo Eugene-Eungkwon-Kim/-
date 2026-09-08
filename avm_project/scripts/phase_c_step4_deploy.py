@@ -4,6 +4,7 @@ Step 4: 배포 및 API 서버 실행
 REST API + 실시간 대시보드
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
