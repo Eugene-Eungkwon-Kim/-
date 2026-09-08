@@ -1,0 +1,84 @@
+name: RTMS Live Probe
+
+# 이 저장소 개발 샌드박스는 apis.data.go.kr 아웃바운드가 조직 정책으로
+# 차단돼 있어(egress 403), 4개 수집기(app/integrations/korea_api*.py)의
+# 실제 응답 필드 태그명과 토지 서비스 코드(RTMSDataSvcLandTrade, 후보값
+# — 모듈 docstring 참고)를 그 환경에서는 검증할 수 없었다. GitHub Actions
+# 러너는 외부 인터넷이 열려 있으므로, 여기서 --debug 로 원본 XML을 받아
+# 아티팩트로 남긴다 — 이 로그가 docs/LIMITATIONS.md §8.2/§12/§13 의
+# "라이브 미검증" 항목을 닫는 근거가 된다.
+#
+# 확정 데이터가 있는 과거 월을 조회한다(당월은 집계가 안 끝나 0건일 수
+# 있어 태그명 확인이 안 됨). 필요하면 workflow_dispatch 입력으로 바꿔서
+# 재실행할 수 있다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sgg:
+        description: '법정동코드 5자리 (기본: 서울 강남구)'
+        default: '11680'
+      year:
+        description: '조회 연도'
+        default: '2025'
+      month:
+        description: '조회 월 (1~12)'
+        default: '6'
+
+defaults:
+  run:
+    working-directory: avm_project
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Check secret is registered
+        id: check_secret
+        run: |
+          if [ -z "${{ secrets.DATAGOVKR_DECODING_KEY }}" ]; then
+            echo "❌ DATAGOVKR_DECODING_KEY 시크릿이 등록되지 않았습니다."
+            echo "   Settings → Secrets and variables → Actions 에서 등록 후 재실행하세요."
+            echo "has_secret=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_secret=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Probe 4 collectors (--debug)
+        if: steps.check_secret.outputs.has_secret == 'true'
+        env:
+          DATAGOVKR_DECODING_KEY: ${{ secrets.DATAGOVKR_DECODING_KEY }}
+        # 실패해도(서비스 코드가 틀렸거나 필수 파라미터가 다르면 API가
+        # 오류 응답을 준다) 그 자체가 조사 대상이므로 잡을 빨갛게 만들지
+        # 않는다 — 로그를 남기는 것이 이 워크플로우의 목적이다.
+        continue-on-error: true
+        run: |
+          python scripts/collect_all_transactions.py \
+            --sgg ${{ github.event.inputs.sgg }} \
+            --year ${{ github.event.inputs.year }} \
+            --month ${{ github.event.inputs.month }} \
+            --debug 2>&1 | tee probe_debug.log
+
+      - name: Upload probe log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtms-probe-log
+          path: avm_project/probe_debug.log
+          retention-days: 7
+          if-no-files-found: ignore

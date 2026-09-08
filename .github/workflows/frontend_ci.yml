@@ -1,0 +1,39 @@
+name: Frontend CI
+
+on:
+  push:
+    paths:
+      - 'avm_project/frontend/**'
+      - '.github/workflows/frontend_ci.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: avm_project/frontend
+
+jobs:
+  typecheck-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: avm_project/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check (tsc --noEmit)
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npx jest --ci
+
+      - name: Production build
+        run: npm run build

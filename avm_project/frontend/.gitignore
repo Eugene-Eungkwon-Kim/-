@@ -7,3 +7,5 @@ build/
 .env.*.local
 .vscode/
 .DS_Store
+*.tsbuildinfo
+coverage/
