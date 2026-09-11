@@ -4,11 +4,12 @@ AVM Dashboard Backend API
 FastAPI 기반 REST API 서버
 """
 
+import logging
 import os
 import sys
 import json
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Set
 from enum import Enum
@@ -25,9 +26,11 @@ import uvicorn
 try:
     from backend.ml_models import model_manager
     from backend.retraining_monitor import monitor
+    from backend.database import history_manager
 except ImportError:
     from ml_models import model_manager
     from retraining_monitor import monitor
+    from database import history_manager
 
 # ============================================
 # 앱 설정
@@ -52,6 +55,11 @@ app.add_middleware(
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 LOGS_DIR = PROJECT_ROOT / "logs"
+# retraining_monitor.RetrainingMonitor가 이미 이 파일에서 performance_threshold를
+# 읽고 있다 — /settings 도 새 저장소를 만들지 않고 같은 파일을 읽고 쓴다.
+SCHEDULE_CONFIG_FILE = PROJECT_ROOT / "config" / "schedule_config.json"
+
+logger = logging.getLogger(__name__)
 
 # ============================================
 # WebSocket 메시지 타입
@@ -217,61 +225,79 @@ async def get_current_user(token: str = Depends(verify_token)):
 # ============================================
 # 대시보드 API
 # ============================================
+# /dashboard/*, /models*, /settings, /retraining/* 는 전부 고정 예시값을
+# 돌려주고 있었다 — logs/retrain_history.jsonl 을 실제로 읽는 monitor
+# (retraining_monitor.RetrainingMonitor)와 실제 모델 파일을 로드하는
+# model_manager 는 이미 만들어져 있었지만(웹소켓 브로드캐스트 루프만
+# 이걸 썼다), REST 엔드포인트는 아무도 이 둘을 호출한 적이 없었다.
+# 아래는 그 둘을 그대로 연결한다 — 학습 이력이 없으면(이 환경의 현재
+# 상태) 가짜 숫자 대신 status="no_data" 를 정직하게 돌려준다.
 @app.get("/dashboard/summary", tags=["Dashboard"])
 async def get_dashboard_summary(token: str = Depends(verify_token)):
-    """대시보드 요약 정보"""
+    """대시보드 요약 정보 (실측: logs/retrain_history.jsonl 최신 기록)"""
+    latest = monitor.get_latest_result()
+    if latest is None:
+        return {
+            "status": "no_data",
+            "ensemble_r2": None, "ensemble_rmse": None, "ensemble_mae": None,
+            "last_updated": None, "previous_r2": None, "change_rate": None,
+        }
+
+    previous = monitor.get_previous_result()
+    ensemble = latest.get("ensemble", {})
+    prev_r2 = previous.get("ensemble", {}).get("r2") if previous else None
+    change_rate = (
+        round((ensemble.get("r2", 0) - prev_r2) / prev_r2 * 100, 2)
+        if prev_r2 else None
+    )
+
     return {
-        "ensemble_r2": 0.8450,
-        "ensemble_rmse": 55200000,
-        "ensemble_mae": 42300000,
-        "status": "healthy",
-        "last_updated": datetime.now().isoformat(),
-        "previous_r2": 0.8420,
-        "change_rate": 0.12
+        "ensemble_r2": ensemble.get("r2"),
+        "ensemble_rmse": ensemble.get("rmse"),
+        "ensemble_mae": ensemble.get("mae"),
+        "status": latest.get("status", "unknown"),
+        "last_updated": latest.get("timestamp"),
+        "previous_r2": prev_r2,
+        "change_rate": change_rate,
     }
 
 
 @app.get("/dashboard/trend", tags=["Dashboard"])
 async def get_trend_data(weeks: int = 10, token: str = Depends(verify_token)):
-    """R² 추세 데이터"""
-    trend_data = []
-    base_r2 = 0.8200
-
-    for i in range(weeks):
-        r2 = base_r2 + (i * 0.0025)
-        trend_data.append({
-            "week": f"{i+1}주",
-            "r2": round(r2, 4)
-        })
-
-    return {"data": trend_data}
+    """R² 추세 데이터 (실측)"""
+    return {"data": monitor.get_trend_data(weeks=weeks)}
 
 
 @app.get("/dashboard/recent-trainings", tags=["Dashboard"])
 async def get_recent_trainings(limit: int = 10, token: str = Depends(verify_token)):
-    """최근 재학습 기록"""
+    """최근 재학습 기록 (실측)"""
+    history = history_manager.get_history(limit=limit)
     trainings = [
         {
-            "date": (datetime.now() - timedelta(days=i*7)).strftime("%Y-%m-%d"),
-            "status": "success" if i % 3 != 0 else "warning",
-            "r2": 0.8450 - (i * 0.003),
-            "rmse": 55200000 + (i * 600000),
-            "duration": f"{11 + i}분"
+            "date": r.get("timestamp"),
+            "status": r.get("status", "unknown"),
+            "r2": r.get("ensemble", {}).get("r2"),
+            "rmse": r.get("ensemble", {}).get("rmse"),
+            "duration": (
+                f"{r['duration_minutes']}분" if r.get("duration_minutes") is not None else None
+            ),
         }
-        for i in range(min(limit, 5))
+        for r in reversed(history)  # 최신순
     ]
-
     return {"data": trainings}
 
 
 @app.get("/dashboard/statistics", tags=["Dashboard"])
 async def get_statistics(token: str = Depends(verify_token)):
-    """통계 정보"""
+    """통계 정보 (실측)"""
+    stats = monitor.get_statistics()
+    if not stats:
+        return {"highest_r2": None, "average_r2": None, "improvement": None, "training_count": 0}
     return {
-        "highest_r2": 0.8450,
-        "average_r2": 0.8325,
-        "improvement": "2.7%",
-        "training_count": 52
+        "highest_r2": stats.get("max_r2"),
+        "average_r2": stats.get("average_r2"),
+        "improvement": f"{stats.get('success_rate', 0)}%",
+        "training_count": stats.get("total_trainings", 0),
     }
 
 
@@ -280,62 +306,69 @@ async def get_statistics(token: str = Depends(verify_token)):
 # ============================================
 @app.get("/models", tags=["Models"])
 async def list_models(token: str = Depends(verify_token)):
-    """모델 목록"""
-    return {
-        "data": [
-            {
-                "id": "xgboost_001",
-                "name": "XGBoost",
-                "r2": 0.8420,
-                "created": "2026-06-19T10:00:00",
-                "status": "active"
-            },
-            {
-                "id": "lightgbm_001",
-                "name": "LightGBM",
-                "r2": 0.8410,
-                "created": "2026-06-19T10:00:00",
-                "status": "active"
-            }
-        ]
-    }
+    """모델 목록 (실측: models/*.joblib — model_manager가 로드한 것)"""
+    return {"data": model_manager.get_available_models()}
 
 
 @app.get("/models/{model_id}", tags=["Models"])
 async def get_model_details(model_id: str, token: str = Depends(verify_token)):
-    """모델 상세 정보"""
+    """모델 상세 정보 (실측)"""
+    meta = model_manager.get_model_metadata(model_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail=f"모델을 찾을 수 없음: {model_id}")
+
+    perf = model_manager.get_model_performance(model_id) or {}
     return {
         "id": model_id,
-        "name": "XGBoost v20260619_100000",
-        "type": "Gradient Boosting",
-        "created": "2026-06-19T10:00:00",
-        "last_training": "2026-06-19T10:15:00",
-        "data_size": 5000,
-        "features": 17,
-        "r2": 0.8420,
-        "mae": 42500000,
-        "rmse": 55800000,
-        "mape": 0.052
+        "name": meta.get("display_name"),
+        "type": meta.get("type"),
+        "file": meta.get("file"),
+        "version": meta.get("version"),
+        "loaded_at": meta.get("loaded_at"),
+        "is_demo": meta.get("is_demo", False),
+        "is_real_data": meta.get("is_real_data", False),
+        "r2": perf.get("r2"),
+        "mae": perf.get("mae"),
+        "rmse": perf.get("rmse"),
+        "mape": perf.get("mape"),
     }
+
+
+def _feature_names(count: int) -> List[str]:
+    """config/schedule_config.json의 feature_columns를 재사용한다 — 개수가
+    맞지 않으면(설정이 실제 학습 특성과 어긋난 경우) 정직하게 feature_0 스타일로
+    돌려준다. 없는 컬럼명을 지어내지 않는다."""
+    try:
+        with open(SCHEDULE_CONFIG_FILE, "r", encoding="utf-8") as f:
+            columns = json.load(f).get("feature_columns", [])
+    except (OSError, json.JSONDecodeError):
+        columns = []
+    if len(columns) == count:
+        return columns
+    return [f"feature_{i}" for i in range(count)]
 
 
 @app.get("/models/{model_id}/feature-importance", tags=["Models"])
 async def get_feature_importance(model_id: str, token: str = Depends(verify_token)):
-    """특성 중요도"""
-    features = [
-        {"name": "면적", "importance": 38.2},
-        {"name": "지역", "importance": 28.5},
-        {"name": "거래일", "importance": 15.8},
-        {"name": "위도", "importance": 8.0},
-        {"name": "경도", "importance": 4.7},
-        {"name": "주변_주유소", "importance": 3.2},
-        {"name": "건축년도", "importance": 2.5},
-        {"name": "평균_가격", "importance": 0.8},
-        {"name": "층수", "importance": 0.3},
-        {"name": "주차장", "importance": 0.1},
-    ]
+    """특성 중요도 (실측 — 트리 기반 모델의 feature_importances_)"""
+    model = model_manager.get_model(model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail=f"모델을 찾을 수 없음: {model_id}")
 
-    return {"data": features}
+    if not hasattr(model, "feature_importances_"):
+        return {"data": [], "message": f"{type(model).__name__}은 특성 중요도를 지원하지 않습니다."}
+
+    importances = model.feature_importances_
+    names = _feature_names(len(importances))
+    total = float(sum(importances)) or 1.0
+    features = sorted(
+        (
+            {"name": name, "importance": round(float(value) / total * 100, 2)}
+            for name, value in zip(names, importances)
+        ),
+        key=lambda item: -item["importance"],
+    )
+    return {"data": features[:10]}
 
 
 @app.post("/models/{model_id}/deploy", tags=["Models"])
@@ -538,29 +571,71 @@ def _is_price_outlier(sale) -> bool:
 
 # ============================================
 # 설정 API
+#
+# config/schedule_config.json 은 retraining_monitor.py(성능 임계값)와
+# weekly_retrain_scheduler.py(스케줄)가 이미 실제로 참조하는 설정 파일이다
+# — 별도 설정 저장소를 새로 만들지 않고 이 파일을 그대로 읽고 쓴다. 그래야
+# 관리자 화면에서 바꾼 값이 실제 재학습 스케줄/임계값에 반영된다.
 # ============================================
+def _load_schedule_config() -> Dict[str, Any]:
+    try:
+        with open(SCHEDULE_CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.warning(f"schedule_config.json 로드 실패, 기본값 사용: {e}")
+        return {}
+
+
+def _settings_view(config: Dict[str, Any]) -> Dict[str, Any]:
+    schedule = config.get("schedule", {})
+    alert = config.get("alert_config", {})
+    return {
+        "retrain_schedule": {
+            "day_of_week": schedule.get("day_of_week", "thursday"),
+            "hour": schedule.get("hour", 10),
+            "minute": schedule.get("minute", 0),
+        },
+        "performance_threshold": config.get("performance_threshold", 0.95),
+        "email_alert": alert.get("enable_email", False),
+        "email_address": alert.get("email_address") or "",
+        "slack_alert": alert.get("enable_slack", False),
+        "log_level": config.get("logging", {}).get("level", "INFO"),
+    }
+
+
 @app.get("/settings", tags=["Settings"])
 async def get_settings(token: str = Depends(verify_token)):
-    """설정 조회"""
-    return {
-        "auto_retrain": True,
-        "retrain_schedule": "thursday_10:00",
-        "performance_threshold": 0.95,
-        "email_alert": True,
-        "email_address": "admin@avm.com",
-        "slack_alert": False,
-        "log_level": "INFO"
-    }
+    """설정 조회 (실측: config/schedule_config.json)"""
+    return _settings_view(_load_schedule_config())
 
 
 @app.put("/settings", tags=["Settings"])
 async def update_settings(settings: Dict[str, Any], token: str = Depends(verify_token)):
-    """설정 업데이트"""
-    return {
-        "status": "success",
-        "message": "Settings updated successfully",
-        "settings": settings
-    }
+    """설정 업데이트 (실측 — config/schedule_config.json에 반영)"""
+    config = _load_schedule_config()
+
+    if "performance_threshold" in settings:
+        config["performance_threshold"] = settings["performance_threshold"]
+
+    alert = config.setdefault("alert_config", {})
+    if "email_alert" in settings:
+        alert["enable_email"] = settings["email_alert"]
+    if "email_address" in settings:
+        alert["email_address"] = settings["email_address"]
+    if "slack_alert" in settings:
+        alert["enable_slack"] = settings["slack_alert"]
+
+    if "log_level" in settings:
+        config.setdefault("logging", {})["level"] = settings["log_level"]
+
+    try:
+        SCHEDULE_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(SCHEDULE_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"설정 저장 실패: {e}")
+
+    return {"status": "success", "message": "설정이 저장되었습니다", "settings": _settings_view(config)}
 
 
 # ============================================
@@ -578,27 +653,31 @@ async def start_retraining(token: str = Depends(verify_token)):
 
 @app.get("/retraining/status", tags=["Retraining"])
 async def get_retraining_status(token: str = Depends(verify_token)):
-    """재학습 상태"""
+    """재학습 상태 (실측)"""
+    latest = monitor.get_latest_result()
+    next_training = monitor.estimate_next_training()
     return {
-        "status": "idle",
-        "last_training": datetime.now().isoformat(),
-        "next_training": (datetime.now() + timedelta(days=7)).isoformat()
+        "status": latest.get("status", "unknown") if latest else "no_data",
+        "last_training": latest.get("timestamp") if latest else None,
+        "next_training": next_training.get("scheduled_time") if next_training else None,
     }
 
 
 @app.get("/retraining/history", tags=["Retraining"])
 async def get_retraining_history(limit: int = 50, token: str = Depends(verify_token)):
-    """재학습 이력"""
-    history = []
-    for i in range(min(limit, 10)):
-        history.append({
-            "date": (datetime.now() - timedelta(days=i*7)).isoformat(),
-            "status": "success",
-            "r2": 0.8450 - (i * 0.003),
-            "duration_minutes": 12
-        })
-
-    return {"data": history}
+    """재학습 이력 (실측)"""
+    history = history_manager.get_history(limit=limit)
+    return {
+        "data": [
+            {
+                "date": r.get("timestamp"),
+                "status": r.get("status", "unknown"),
+                "r2": r.get("ensemble", {}).get("r2"),
+                "duration_minutes": r.get("duration_minutes"),
+            }
+            for r in reversed(history)
+        ]
+    }
 
 
 # ============================================
