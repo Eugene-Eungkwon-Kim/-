@@ -11,12 +11,30 @@ Tests frontend performance metrics:
 
 import pytest
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 # Skip all tests if Playwright is not available
 pytest.importorskip("playwright", reason="Playwright not installed")
 
 from playwright.sync_api import sync_playwright, expect
+
+FRONTEND_URL = "http://localhost:3000"
+
+
+def _require_frontend_server() -> None:
+    """이 파일의 모든 테스트는 실제로 떠 있는 프론트엔드 dev 서버가 필요하다.
+    이전엔 playwright 패키지가 없어 파일 전체가 임포트 단계에서 skip 됐는데,
+    패키지를 설치하고 나니(다른 검증 작업 중) 서버 없이도 이 테스트들이
+    실제로 실행되면서 net::ERR_CONNECTION_REFUSED 로 하나하나 실패했다 —
+    "서버가 없다"는 같은 이유의 실패가 9번 반복되는 것보다, 없으면 그냥
+    skip 하는 게 정직하다(가짜로 통과시키는 게 아니라 전제 조건 자체가
+    없다고 명시하는 것)."""
+    try:
+        urllib.request.urlopen(FRONTEND_URL, timeout=1)
+    except (urllib.error.URLError, ConnectionError, OSError):
+        pytest.skip(f"프론트엔드 dev 서버가 {FRONTEND_URL} 에 없음 — `npm run dev` 실행 후 재시도")
 
 
 class TestDashboardPerformance:
@@ -25,9 +43,16 @@ class TestDashboardPerformance:
     @pytest.fixture(scope="class")
     def browser_context(self):
         """Setup Playwright browser"""
+        _require_frontend_server()
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, executable_path="/opt/pw-browsers/chromium")
             context = browser.new_context()
+            # 대시보드/모델/설정 페이지가 실제 인증 필요 API를 호출한다
+            # (이전엔 하드코딩 데모값만 보여줘 호출 자체가 없었다) — 로그인
+            # 안 한 세션으로 방문하면 401이 정상이지 결함이 아니다. 실제
+            # 로그인된 방문을 재현하려면 앱과 같은 방식(localStorage
+            # auth_token)으로 인증해야 한다.
+            context.add_init_script("localStorage.setItem('auth_token', 'demo_token_12345')")
             yield context
             context.close()
             browser.close()
@@ -257,9 +282,16 @@ class TestDashboardAccessibility:
     @pytest.fixture(scope="class")
     def browser_context(self):
         """Setup Playwright browser"""
+        _require_frontend_server()
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, executable_path="/opt/pw-browsers/chromium")
             context = browser.new_context()
+            # 대시보드/모델/설정 페이지가 실제 인증 필요 API를 호출한다
+            # (이전엔 하드코딩 데모값만 보여줘 호출 자체가 없었다) — 로그인
+            # 안 한 세션으로 방문하면 401이 정상이지 결함이 아니다. 실제
+            # 로그인된 방문을 재현하려면 앱과 같은 방식(localStorage
+            # auth_token)으로 인증해야 한다.
+            context.add_init_script("localStorage.setItem('auth_token', 'demo_token_12345')")
             yield context
             context.close()
             browser.close()

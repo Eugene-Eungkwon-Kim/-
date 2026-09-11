@@ -6,6 +6,8 @@ import Sidebar from '@/components/layout/Sidebar'
 import Dashboard from '@/components/pages/Dashboard'
 import RealtimeMonitoring from '@/components/pages/RealtimeMonitoring'
 import DataAnalysis from '@/components/pages/DataAnalysis'
+import ModelDetails from '@/components/pages/ModelDetails'
+import Settings from '@/components/pages/Settings'
 
 export default function Home() {
   const [activePage, setActivePage] = React.useState('dashboard')
@@ -24,8 +26,9 @@ export default function Home() {
         <main className="flex-1 overflow-auto">
           {activePage === 'dashboard' && <Dashboard />}
           {activePage === 'monitoring' && <RealtimeMonitoring />}
+          {activePage === 'models' && <ModelDetails />}
           {activePage === 'data' && <DataAnalysis />}
-          {/* Other pages will be added here */}
+          {activePage === 'settings' && <Settings />}
         </main>
       </div>
     </div>
