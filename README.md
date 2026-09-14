@@ -1,12 +1,13 @@
 # 저장소 개요
 
-이 저장소에는 서로 의존하지 않는 세 프로젝트가 함께 있습니다.
+이 저장소에는 서로 의존하지 않는 네 프로젝트가 함께 있습니다.
 
 | 프로젝트 | 위치 | 설명 |
 |---|---|---|
 | 모바일 파일 정리 도구 | 루트 (`organize.py`, `migrate.py`, `iphone_migrate.py`, `phonesort/`) | 아래 "모바일 기기 데이터 마이그레이션 & 정리 도구" 참고 |
 | MAARS 플랫폼 | `src/`, `test/`, `docs/` 등 | 부동산 금융 백엔드·프론트엔드 (Node/TypeScript) |
 | AVM 프로젝트 | `avm_project/` | Loan4U 자동감정가 모델 (Python) — 상세는 [`avm_project/README.md`](./avm_project/README.md) |
+| 평가서분석 | `evaluation-report-analysis/` | 조직 내부용 평가서 분석 도구 — 착수 단계, 상세는 [`evaluation-report-analysis/README.md`](./evaluation-report-analysis/README.md) |
 
 에이전트 작업 원칙(파이썬 퍼스트, 오류 분류 규약, AVM 전용 코드 표준)은 [`CLAUDE.md`](./CLAUDE.md)를 참고하세요.
 
