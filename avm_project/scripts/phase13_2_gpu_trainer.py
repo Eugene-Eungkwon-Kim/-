@@ -1,7 +1,7 @@
 """Phase 13.2.2 - GPU-가속 국가별 모델 훈련 엔진
 
-XGBoost (gpu_hist), LightGBM (gpu), Gradient Boosting (CPU)
-병렬 훈련 및 성능 추적.
+XGBoost (gpu_hist), LightGBM (gpu), Gradient Boosting (CPU),
+Random Forest (CPU) 병렬 훈련 및 성능 추적.
 
 실행:
     python scripts/phase13_2_gpu_trainer.py --country KR --models all
@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score, mean_absolute_percentage_error
 
@@ -129,7 +129,7 @@ class GPUModelTrainer:
             num_leaves=31,
             n_jobs=-1,
         )
-        model.fit(X_train, y_train, verbose=10)
+        model.fit(X_train, y_train)
 
         r2 = model.score(X_test, y_test)
         pred = model.predict(X_test)
@@ -181,6 +181,47 @@ class GPUModelTrainer:
             'device': 'cpu',
         }
 
+    def train_random_forest(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+    ) -> Dict:
+        """Random Forest 훈련 (scikit-learn, CPU).
+
+        scikit-learn RandomForestRegressor는 GPU 학습을 지원하지 않아
+        Gradient Boosting과 동일하게 CPU에서 훈련한다.
+
+        Args:
+            X_train: 훈련 입력 데이터
+            y_train: 훈련 타겟 데이터
+            X_test: 테스트 입력 데이터
+            y_test: 테스트 타겟 데이터
+
+        Returns:
+            모델, R², MAPE 포함 딕셔너리
+        """
+        model = RandomForestRegressor(
+            n_estimators=500,
+            max_depth=12,
+            n_jobs=-1,
+            random_state=42,
+        )
+        model.fit(X_train, y_train)
+
+        r2 = model.score(X_test, y_test)
+        pred = model.predict(X_test)
+        mape = mean_absolute_percentage_error(y_test, pred)
+
+        return {
+            'model': model,
+            'r2': r2,
+            'mape': mape,
+            'type': 'random_forest',
+            'device': 'cpu',
+        }
+
     def train_all(
         self,
         X_train: np.ndarray,
@@ -226,6 +267,13 @@ class GPUModelTrainer:
                     X_test,
                     y_test,
                 ): 'gradient_boosting',
+                executor.submit(
+                    self.train_random_forest,
+                    X_train,
+                    y_train,
+                    X_test,
+                    y_test,
+                ): 'random_forest',
             }
 
             for future in as_completed(futures):

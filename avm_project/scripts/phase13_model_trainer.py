@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Loan4U Phase 13.2 - GPU Model Trainer
-Train XGBoost/LightGBM/GradientBoosting on RTX 5050, targeting R²>0.84.
+Train XGBoost/LightGBM/GradientBoosting/RandomForest on RTX 5050, targeting R²>0.84.
 """
 
 import logging
@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.metrics import mean_absolute_percentage_error, r2_score
 from sklearn.model_selection import train_test_split
 
@@ -126,8 +126,22 @@ def train_gradient_boosting(
     return evaluate_model(y_te, model.predict(X_te))
 
 
+def train_random_forest(
+    X_tr: np.ndarray,
+    y_tr: np.ndarray,
+    X_te: np.ndarray,
+    y_te: np.ndarray,
+) -> Tuple[float, float]:
+    """Train Random Forest on CPU (no native GPU support in scikit-learn)."""
+    model = RandomForestRegressor(
+        n_estimators=300, max_depth=12, n_jobs=-1, random_state=42,
+    )
+    model.fit(X_tr, y_tr)
+    return evaluate_model(y_te, model.predict(X_te))
+
+
 def train_country(country: str, df: pd.DataFrame, device_id: int) -> List[ModelResult]:
-    """Train all 3 models for one country."""
+    """Train all 4 models for one country."""
     X, y = split_features(df)
     X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42)
 
@@ -136,6 +150,7 @@ def train_country(country: str, df: pd.DataFrame, device_id: int) -> List[ModelR
         'XGBoost': lambda: train_xgboost(X_tr, y_tr, X_te, y_te, device_id),
         'LightGBM': lambda: train_lightgbm(X_tr, y_tr, X_te, y_te, device_id),
         'GradientBoosting': lambda: train_gradient_boosting(X_tr, y_tr, X_te, y_te),
+        'RandomForest': lambda: train_random_forest(X_tr, y_tr, X_te, y_te),
     }
 
     for name, fn in trainers.items():

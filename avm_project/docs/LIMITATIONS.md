@@ -698,3 +698,29 @@ skip되던 상태에서 벗어나 실제로 실행되기 시작했는데, 이 �
 완료됨을 확인. 전체 pytest 569 passed(53 skipped, 이 환경에 없는
 GPU/Playwright 등 선택 기능)로 회귀 없음 확인.
 
+## 19. GPU/NPU 파이프라인에 Random Forest 추가 (2026-09-16)
+
+`scripts/phase13_2_gpu_trainer.py`(`GPUModelTrainer`, 실제 테스트가 붙어
+있는 GPU/NPU 트랙)와 그 단순화 버전인 `scripts/phase13_model_trainer.py`가
+XGBoost/LightGBM/GradientBoosting 3개만 학습하고 Random Forest가 빠져
+있었다 — 코드·문서 어디에도 명시적으로 제외한 근거는 없었다(전세계
+9개국 스태킹 모델(`phase13_brazil_model_trainer.py`)에는 이미 RF가
+포함돼 있어 이 두 파일만 예외였다). scikit-learn `RandomForestRegressor`는
+GPU 학습을 지원하지 않으므로, 이미 CPU로 도는 `GradientBoosting`과 같은
+방식으로 `train_random_forest`를 추가했다.
+
+**부수적으로 발견·수정**: 같은 파일의 `train_lightgbm_gpu`가
+`model.fit(X, y, verbose=10)`을 호출하고 있었는데, 설치된
+`lightgbm==4.0.0`의 `LGBMRegressor.fit()`은 `verbose`를 fit-time
+인자로 받지 않아 항상 `TypeError`로 실패하고 있었다(회귀 아님 —
+Random Forest 테스트를 검증하려고 `test_phase13_2_gpu_training.py`를
+처음으로 돌려보다가 발견). `verbose=10`을 제거해 수정.
+
+**검증**: `tests/test_phase13_2_gpu_training.py` 23개 전부 통과(RF용
+2개 신규 포함). `scripts/phase13_model_trainer.py`의
+`train_random_forest`도 직접 실행해 정상 동작 확인. 전체 pytest
+569 passed 유지, 회귀 없음(`torch`는 이 저장소의 정식 의존성이
+아니라 검증 중에만 설치했다가 제거했다 — 설치 상태에서는
+tensorflow+torch+joblib 포크 충돌로 무관한 테스트 2건이 간헐적으로
+깨지는데, 이는 이 세션의 검증 환경 문제이지 코드 변경과는 무관하다).
+

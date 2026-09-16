@@ -146,6 +146,42 @@ class TestGradientBoostingTraining:
         assert result['device'] == 'cpu'
 
 
+class TestRandomForestTraining:
+    """Random Forest 훈련 테스트."""
+
+    @pytest.fixture
+    def sample_data(self) -> tuple:
+        """샘플 데이터 생성."""
+        np.random.seed(42)
+        X_train = np.random.randn(100, 5).astype(np.float32)
+        y_train = np.random.randn(100).astype(np.float32)
+        X_test = np.random.randn(20, 5).astype(np.float32)
+        y_test = np.random.randn(20).astype(np.float32)
+        return X_train, y_train, X_test, y_test
+
+    def test_rf_training_result_structure(self, sample_data: tuple) -> None:
+        """Random Forest 훈련 결과 구조."""
+        X_train, y_train, X_test, y_test = sample_data
+        trainer = GPUModelTrainer('KR')
+
+        result = trainer.train_random_forest(X_train, y_train, X_test, y_test)
+
+        assert 'model' in result
+        assert 'r2' in result
+        assert 'mape' in result
+        assert 'type' in result
+        assert result['type'] == 'random_forest'
+
+    def test_rf_cpu_device(self, sample_data: tuple) -> None:
+        """Random Forest CPU 장치 확인(scikit-learn은 GPU 학습 미지원)."""
+        X_train, y_train, X_test, y_test = sample_data
+        trainer = GPUModelTrainer('HK')
+
+        result = trainer.train_random_forest(X_train, y_train, X_test, y_test)
+
+        assert result['device'] == 'cpu'
+
+
 class TestParallelTraining:
     """병렬 훈련 테스트."""
 
