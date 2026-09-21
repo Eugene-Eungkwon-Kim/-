@@ -48,6 +48,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Debug secrets context (no secret values printed)
+        # DATAGOVKR_DECODING_KEY 가 5회 연속 빈 값으로 읽혀 원인을 좁히는
+        # 임시 진단 단계. GITHUB_TOKEN 은 등록 없이 항상 자동 주입되므로,
+        # 이것도 비어 있으면 secrets 컨텍스트 자체가 이 실행에서 깨진
+        # 것이고, 이것만 정상이면 DATAGOVKR_DECODING_KEY 등록 자체의
+        # 문제로 확정할 수 있다. 값이 아니라 길이만 출력해 유출 없음.
+        run: |
+          if [ -z "${{ secrets.GITHUB_TOKEN }}" ]; then
+            echo "GITHUB_TOKEN: EMPTY — secrets 컨텍스트 자체가 이 실행에서 비어 있음"
+          else
+            echo "GITHUB_TOKEN: OK — secrets 컨텍스트는 정상 동작"
+          fi
+          echo "DATAGOVKR_DECODING_KEY length: ${#RAW_KEY}"
+        env:
+          RAW_KEY: ${{ secrets.DATAGOVKR_DECODING_KEY }}
+
       - name: Check secret is registered
         id: check_secret
         run: |

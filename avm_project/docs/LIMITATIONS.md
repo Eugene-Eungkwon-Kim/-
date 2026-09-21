@@ -673,3 +673,54 @@ skip되던 상태에서 벗어나 실제로 실행되기 시작했는데, 이 �
 연결되지 않는 순수 UI였고, 실제로 저장되는 것처럼 남겨두는 게 더
 나쁘다고 판단했다.
 
+## 18. `requirements.txt`가 애초에 설치조차 안 되던 문제 (2026-09-14, 수정됨)
+
+`pip install -r requirements.txt`를 클린 환경에서 돌리면 두 단계에 걸쳐
+`ResolutionImpossible`로 멈췄다 — 즉 이 저장소를 새로 체크아웃한 사람은
+(CI든 신규 개발자 PC든) 지금까지 한 번도 정상적으로 개발환경을 만들 수
+없었다.
+
+1. **1차 충돌**: `lime==0.2.0`이 `pillow==5.4.1`을 강제하는데
+   `matplotlib==3.7.1`은 `pillow>=6.2.0`을 요구. 코드 전체를 검색해보니
+   `lime`은 어디서도 import되지 않았다(모델 해석은 `shap`만 실사용) —
+   그냥 제거.
+2. **2차 충돌**: `tensorflow==2.14.0`(`protobuf<5.0.0` 요구)과
+   `pymilvus==3.0.1`(`protobuf>=5.27.2` 요구)이 충돌. `tensorflow`를
+   `2.19.0`으로 올려 해결(2.18+부터 `protobuf<6.0.0dev` 범위로 완화돼
+   pymilvus 쪽 하한과 겹친다). 이 버전대는 Keras 3를 기본으로 묶는데,
+   `tensorflow`/`keras`를 쓰는 유일한 파일(`scripts/model_development.py`)의
+   `keras.Sequential` 학습 경로를 직접 실행해 정상 동작을 확인했다
+   (`input_dim` 인자 관련 deprecation 경고만 발생, 기능 영향 없음).
+   같이 올라간 `numpy==1.26.4`는 `tensorflow==2.19.0`(`numpy>=1.26.0`)과
+   `scikit-learn`(`numpy<2.0`)의 교집합.
+
+**검증**: 클린 `pip install -r requirements.txt`가 충돌 없이 끝까지
+완료됨을 확인. 전체 pytest 569 passed(53 skipped, 이 환경에 없는
+GPU/Playwright 등 선택 기능)로 회귀 없음 확인.
+
+## 19. GPU/NPU 파이프라인에 Random Forest 추가 (2026-09-16)
+
+`scripts/phase13_2_gpu_trainer.py`(`GPUModelTrainer`, 실제 테스트가 붙어
+있는 GPU/NPU 트랙)와 그 단순화 버전인 `scripts/phase13_model_trainer.py`가
+XGBoost/LightGBM/GradientBoosting 3개만 학습하고 Random Forest가 빠져
+있었다 — 코드·문서 어디에도 명시적으로 제외한 근거는 없었다(전세계
+9개국 스태킹 모델(`phase13_brazil_model_trainer.py`)에는 이미 RF가
+포함돼 있어 이 두 파일만 예외였다). scikit-learn `RandomForestRegressor`는
+GPU 학습을 지원하지 않으므로, 이미 CPU로 도는 `GradientBoosting`과 같은
+방식으로 `train_random_forest`를 추가했다.
+
+**부수적으로 발견·수정**: 같은 파일의 `train_lightgbm_gpu`가
+`model.fit(X, y, verbose=10)`을 호출하고 있었는데, 설치된
+`lightgbm==4.0.0`의 `LGBMRegressor.fit()`은 `verbose`를 fit-time
+인자로 받지 않아 항상 `TypeError`로 실패하고 있었다(회귀 아님 —
+Random Forest 테스트를 검증하려고 `test_phase13_2_gpu_training.py`를
+처음으로 돌려보다가 발견). `verbose=10`을 제거해 수정.
+
+**검증**: `tests/test_phase13_2_gpu_training.py` 23개 전부 통과(RF용
+2개 신규 포함). `scripts/phase13_model_trainer.py`의
+`train_random_forest`도 직접 실행해 정상 동작 확인. 전체 pytest
+569 passed 유지, 회귀 없음(`torch`는 이 저장소의 정식 의존성이
+아니라 검증 중에만 설치했다가 제거했다 — 설치 상태에서는
+tensorflow+torch+joblib 포크 충돌로 무관한 테스트 2건이 간헐적으로
+깨지는데, 이는 이 세션의 검증 환경 문제이지 코드 변경과는 무관하다).
+
