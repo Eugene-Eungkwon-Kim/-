@@ -61,8 +61,10 @@ jobs:
             echo "GITHUB_TOKEN: OK — secrets 컨텍스트는 정상 동작"
           fi
           echo "DATAGOVKR_DECODING_KEY length: ${#RAW_KEY}"
+          echo "TEST_KEY_123 length: ${#TEST_KEY}"
         env:
           RAW_KEY: ${{ secrets.DATAGOVKR_DECODING_KEY }}
+          TEST_KEY: ${{ secrets.TEST_KEY_123 }}
 
       - name: Check secret is registered
         id: check_secret
