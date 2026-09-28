@@ -1,0 +1,3 @@
+# 평가서 분석 — 런타임 의존성
+pdfplumber>=0.10
+python-docx>=1.0
