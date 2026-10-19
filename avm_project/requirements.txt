@@ -43,7 +43,12 @@ sqlalchemy==2.0.23
 # Vector search (RAG). pymilvus[milvus_lite] runs embedded — no separate
 # Milvus server needed for local/dev use. Point MILVUS_URI at a real server
 # ("http://host:19530") for production without code changes.
+# milvus-lite pinned explicitly: pymilvus's own resolution otherwise picks
+# milvus-lite>=3.x, whose bundled pyarrow build requires numpy>=2.0 and
+# fails to import against this file's numpy==1.26.4 pin (RAGPipeline then
+# silently falls back to DB-only search). 2.4.x's bundled pyarrow works.
 pymilvus[milvus_lite]==3.0.1
+milvus-lite==2.4.12
 
 # Optional: only used if OPENAI_API_KEY is set (app/avm/rag_pipeline.py).
 # Falls back to a deterministic template explanation when absent.
