@@ -724,3 +724,29 @@ Random Forest 테스트를 검증하려고 `test_phase13_2_gpu_training.py`를
 tensorflow+torch+joblib 포크 충돌로 무관한 테스트 2건이 간헐적으로
 깨지는데, 이는 이 세션의 검증 환경 문제이지 코드 변경과는 무관하다).
 
+## 20. RAG 벡터 검색이 클린 설치에서 조용히 DB 폴백으로 빠지던 문제 (2026-10-19, 수정됨)
+
+클린 환경에서 `pip install -r requirements.txt` 후 전체 테스트를 돌려보니
+`test_app_rag_pipeline.py`의 Milvus 관련 테스트 2건이 실패했다:
+
+```
+ImportError: pyarrow requires NumPy 2.0 or newer, found 1.26.4
+```
+
+원인: `requirements.txt`가 `pymilvus[milvus_lite]==3.0.1`만 고정하고
+`milvus-lite` 자체 버전은 pip 해석기에 맡겨뒀는데, 그 결과 최신
+`milvus-lite==3.2.2`가 선택되고, 이게 내장한 `pyarrow` 빌드가
+`numpy>=2.0`을 요구한다 — `tensorflow==2.19.0`·`scikit-learn==1.3.2`와의
+교집합으로 고정해둔 `numpy==1.26.4`와 충돌. 그 결과
+`app/avm/rag_pipeline.py`가 `[RAG] Milvus 연결 실패, DB 기반 검색으로
+대체` 경고만 남기고 조용히 DB 전용 검색으로 빠지는데, 이 폴백 경로
+자체도 `search_similar`가 `None` 클라이언트를 받아 `AttributeError`로
+깨지는 상태였다 — 즉 RAG 벡터 검색이 클린 설치에서는 전혀 동작하지
+않고 있었다.
+
+**수정**: `milvus-lite==2.4.12`(2.4.x대, numpy 1.x와 호환되는 내장
+pyarrow 빌드)를 `requirements.txt`에 명시적으로 고정.
+
+**검증**: 클린 재설치 후 `test_app_rag_pipeline.py` 16개 전부 통과,
+전체 테스트 569 passed 유지.
+
