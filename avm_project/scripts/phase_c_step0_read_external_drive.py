@@ -6,65 +6,20 @@ Step 0: 외장하드에서 데이터 읽기 (필수 단계)
 - 프로젝트 폴더로 복사
 """
 
-import os
 import shutil
 from pathlib import Path
-import subprocess
 import sys
 
-def detect_external_drives():
-    """외장하드 자동 감지"""
+try:
+    from .data_locator import resolve_data_root
+except ImportError:
+    from data_locator import resolve_data_root
 
-    print("=" * 100)
-    print("🔍 외장하드 자동 감지")
-    print("=" * 100)
+def detect_external_drives() -> list[dict[str, str]]:
+    root = resolve_data_root().root
+    return [{"path": str(root)}]
 
-    # Windows
-    if sys.platform == "win32":
-        print("\n🪟 Windows 환경")
-        print("-" * 100)
 
-        drives = []
-        for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
-            drive_path = f"{letter}:\\"
-            if os.path.exists(drive_path):
-                try:
-                    total, used, free = shutil.disk_usage(drive_path)
-                    drives.append({
-                        'path': drive_path,
-                        'total_gb': total / (1024**3),
-                        'free_gb': free / (1024**3),
-                    })
-                except:
-                    pass
-
-        if drives:
-            print(f"\n✅ 감지된 드라이브 ({len(drives)}개):\n")
-            for i, drive in enumerate(drives, 1):
-                print(f"  {i}. {drive['path']}")
-                print(f"     용량: {drive['total_gb']:.1f}GB  여유: {drive['free_gb']:.1f}GB")
-        else:
-            print("\n❌ 외장하드 감지 안 됨")
-            print("   → 외장하드가 연결되어 있는지 확인하세요")
-            return None
-
-    # macOS/Linux
-    else:
-        print("\n🐧 macOS/Linux 환경")
-        print("-" * 100)
-
-        try:
-            result = subprocess.run(['df', '-h'], capture_output=True, text=True)
-            print("\n✅ 마운트된 드라이브:\n")
-            print(result.stdout)
-            print("\n💡 외장하드 경로 예시:")
-            print("   macOS: /Volumes/드라이브명")
-            print("   Linux: /mnt/드라이브명 또는 /media/사용자명/드라이브명")
-        except:
-            print("\n❌ 드라이브 정보 조회 실패")
-            return None
-
-    return drives if sys.platform == "win32" else None
 
 def search_csv_files(search_path):
     """CSV 파일 재귀 검색"""
@@ -155,6 +110,10 @@ def select_and_copy_file(csv_files):
 
 def main():
     """메인 프로세스"""
+
+    if sys.platform == "win32":
+        print("BLOCKED_OPERATIONAL_ADMISSION_REQUIRED: use the approved E: ingestion runner")
+        return False
 
     print("\n")
     print("=" * 100)

@@ -22,6 +22,11 @@ import sqlite3
 import sys
 from pathlib import Path
 
+try:
+    from .data_locator import candidate_roots, resolve_data_root
+except ImportError:
+    from data_locator import candidate_roots, resolve_data_root
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # phase7_grounded_avm.py 에서 확인된 실제 경로 — 드라이브 문자만 바뀐다.
@@ -43,16 +48,7 @@ ONBID_QUERY = """
 
 
 def _candidate_roots(explicit_root: str | None) -> list[Path]:
-    if explicit_root:
-        return [Path(explicit_root)]
-    if sys.platform == "win32":
-        return [Path(f"{letter}:/") for letter in "DEFGHIJKLMNOPQRSTUVWXYZ"]
-    # macOS/Linux: 일반적인 마운트 위치를 훑는다.
-    roots = []
-    for base in (Path("/Volumes"), Path("/mnt"), Path("/media")):
-        if base.exists():
-            roots.extend(p for p in base.iterdir() if p.is_dir())
-    return roots
+    return candidate_roots(explicit_root)
 
 
 def find_file(roots: list[Path], suffixes: list[Path]) -> Path | None:
@@ -120,7 +116,11 @@ def main() -> int:
     parser.add_argument("--root", help="드라이브를 직접 지정 (예: F:/ 또는 /Volumes/외장하드)")
     args = parser.parse_args()
 
-    roots = _candidate_roots(args.root)
+    if sys.platform == "win32":
+        print("BLOCKED_OPERATIONAL_ADMISSION_REQUIRED: repo-local data sync is not an E: ingest path")
+        return 75
+
+    roots = [resolve_data_root(args.root).root]
     print(f"탐색 대상: {len(roots)}개 경로")
 
     db_path = find_file(roots, [NPL_DB_SUFFIX])
