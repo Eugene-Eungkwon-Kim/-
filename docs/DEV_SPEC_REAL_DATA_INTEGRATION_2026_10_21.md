@@ -31,21 +31,29 @@
 **[목표]** 외장하드 드라이브 문자가 바뀌어도(D: → E: 등) 코드 수정 없이 실데이터 위치를 찾고, 어느 경로가 어떤 근거로 선택됐는지 로그에 남긴다.
 
 **[현황 문제]** 같은 목적의 탐색 로직이 3곳에 흩어져 있고(`avm_paths.py`, `sync_from_external_drive.py`, `phase_c_step0_read_external_drive.py`), 경로 하드코딩은 두 종류입니다.
-- `avm_paths.py`가 `D:\loan4u_avm_data\...`를 기본값으로 가지며, 이를 임포트하는 파일이 7개입니다: `vworld_layer1/2_3/8_10/11_14_collector.py`(4), `address_to_pnu_converter.py`, `tier2_monitoring.py`, `vworld_api_key_validator.py`
+- `avm_paths.py`가 `D:\loan4u_avm_data\vworld_wfs_multi_layer`를 기본값으로 가지며, 이를 임포트하는 파일이 7개입니다: `vworld_layer1/2_3/8_10/11_14_collector.py`(4), `address_to_pnu_converter.py`, `tier2_monitoring.py`, `vworld_api_key_validator.py`
 - `avm_paths`를 거치지 않고 **`F:/loan4u_avm_data/loan4u_working_db/db/loan4u_rtms_comparable_mart.duckdb`를 직접 박은 파일 3개**: `phase7_grounded_avm.py:26`, `phase7_match_engine.py:27`, `phase7_c_address_parser_v2.py:21`. 같은 데이터가 D:와 F:로 서로 다르게 적혀 있어 드라이브 문자 혼선이 이미 코드에 드러나 있습니다
 
-**[공개 인터페이스]**
+### 환경변수 (중요 — 이전 초안 정정)
+| 변수 | 의미 | 처리 |
+|---|---|---|
+| `AVM_DATA_PATH` | **기존.** `loan4u_avm_data` 전체가 아니라 그 하위 `vworld_wfs_multi_layer` 폴더를 가리킴 (`avm_paths.py:17`, `.env.example:21`) | **의미 변경 금지.** 설정돼 있으면 `avm_paths`는 예전처럼 그 값을 그대로 사용하고 스캔하지 않음 |
+| `AVM_DATA_ROOT` | **신규.** `loan4u_avm_data` 폴더 자체 | `data_locator`가 읽음 |
+
+초안은 `AVM_DATA_PATH`를 상위 루트로 재해석하려 했으나, 이미 이 변수를 설정한 환경(예: `/mnt/avm_data`)이 깨지므로 폐기합니다.
+
+### 공개 인터페이스
 ```python
 MARKER_DIRNAME = "loan4u_avm_data"
-ENV_VAR = "AVM_DATA_PATH"
+ENV_VAR = "AVM_DATA_ROOT"
 
 @dataclass(frozen=True)
 class Resolution:
     root: Path
     source: str          # "arg" | "env" | "scan"
-    drive: str | None    # 스캔으로 찾은 경우의 드라이브 문자
+    drive: str | None    # 스캔으로 찾은 경우의 드라이브 문자 (Windows)
 
-class DataRootNotFoundError(DataProcessingError): ...
+class DataRootNotFoundError(DataProcessingError): ...   # scripts/exceptions.py 에 추가
 
 def candidate_roots(explicit: str | None = None) -> list[Path]: ...
 def is_data_root(path: Path) -> bool: ...
@@ -53,26 +61,65 @@ def resolve_data_root(explicit: str | None = None,
                       roots: Iterable[Path] | None = None) -> Resolution: ...
 ```
 
-**[동작 규칙]**
-1. 우선순위: 명시 인자 → 환경변수 `AVM_DATA_PATH` → 드라이브 스캔 (명시/환경변수 값이 존재하지 않으면 **조용히 넘어가지 않고** 예외, 오타를 스캔이 가려 버리는 것을 막음)
-2. `is_data_root`: 폴더 이름이 `MARKER_DIRNAME`이고 비어 있지 않을 것. 매니페스트 파일명이 확인되면 그 파일 존재 조건을 추가 (§6 질문 1)
-3. 스캔은 기존 `_candidate_roots`와 같은 범위(Windows: D~Z, 그 외: /Volumes, /mnt, /media). 후보가 둘 이상이면 **마지막 수정 시각이 최신인 것**을 선택하고 나머지를 경고 로그로 남김 (WP-1에서 사본이 여럿일 때를 대비)
-4. 스캔 대상 `roots`를 인자로 주입할 수 있게 해 테스트에서 실제 드라이브에 의존하지 않음
+### 함수별 설계
+| 함수 | 책임 | 동작 | 예상 줄 수 |
+|---|---|---|---|
+| `candidate_roots(explicit)` | 스캔 대상 목록 | `explicit`이 있으면 `[Path(explicit)]`. Windows면 `D:/`~`Z:/`(C: 제외, 기존 `_candidate_roots`와 동일, **존재 확인 안 함**), 그 외는 `/Volumes`·`/mnt`·`/media` 하위 폴더. 기존 `sync_from_external_drive._candidate_roots`를 그대로 옮김 | ~15 |
+| `is_data_root(path)` | 마커 판정 | `path.name == MARKER_DIRNAME` 이고 디렉터리이며 비어 있지 않을 것. 매니페스트 파일명이 확정되면 그 파일 존재 조건 추가(§6 질문 1) | ~8 |
+| `_scan(roots)` | 스캔 | 각 `root / MARKER_DIRNAME`을 `is_data_root`로 검사(드라이브 루트 **바로 아래만**, 재귀 없음 — 기존 코드와 같은 깊이). 후보 목록 반환 | ~10 |
+| `_pick_newest(found)` | 다중 후보 선택 | 폴더 최종 수정 시각이 최신인 것 선택, 나머지는 `logging.warning`으로 경로와 수정일 기록 | ~12 |
+| `resolve_data_root(...)` | 우선순위 조합 | ① 인자 ② `AVM_DATA_ROOT` ③ 스캔. ①②는 값이 있는데 `is_data_root`가 아니면 **예외**(오타가 스캔에 가려지지 않게). ③에서 0개면 `DataRootNotFoundError`(시도한 후보 목록을 메시지에 포함) | ~25 |
 
-**[변경 대상]**
-- `avm_paths.py`: `DATA_ROOT`/`DB_PATH`/`LEDGER_PATH` 이름은 **그대로 유지**(수집기 4종 임포트 호환). 값은 `resolve_data_root()`로 얻되, 못 찾으면 기존 기본값으로 대체해 임포트가 실패하지 않게 함
-- `sync_from_external_drive.py`, `phase_c_step0_read_external_drive.py`: 자체 탐색을 `candidate_roots`/`resolve_data_root` 호출로 교체 (동작 동일, 코드 감소)
-- `phase7_grounded_avm.py`, `phase7_match_engine.py`, `phase7_c_address_parser_v2.py`: `RTMS_DUCKDB`를 `resolve_data_root().root / "loan4u_working_db/db/loan4u_rtms_comparable_mart.duckdb"`로 교체. 이 3개는 현재 운영 경로와 무관한 Phase 7 코드일 수 있어, 교체 전에 **아직 쓰는 파일인지** 확인하고 안 쓰면 제외 (§6 질문 7)
+모든 함수 타입 힌트, 50줄 이하. 로그는 `print`가 아닌 `logging`(`scripts/logging_config.py` 존재 — 사용 방식 확인 후 맞춤).
 
-**[테스트]** `tests/test_data_locator.py`
-- 환경변수가 스캔보다 우선 / 존재하지 않는 환경변수는 예외
-- 가짜 드라이브 둘(`E`, `F`)에 마커 폴더 → 최신 수정 시각 쪽 선택 + 경고
-- 마커 없음 → `DataRootNotFoundError`
-- `avm_paths` 임포트 시 못 찾아도 예외 없음
+### `avm_paths.py` 변경 (이름 유지)
+`DATA_ROOT`, `DB_PATH`, `LEDGER_PATH`는 그대로 두고 값 결정만 바꿉니다. 임포트 시점에 실행되므로 **절대 예외를 던지지 않아야 합니다.**
+```
+1. AVM_DATA_PATH 가 설정됨           → DATA_ROOT = Path(AVM_DATA_PATH)        (기존 동작, 스캔 안 함)
+2. 아니면 resolve_data_root() 성공   → DATA_ROOT = root / "vworld_wfs_multi_layer"
+3. 둘 다 실패 (DataRootNotFoundError) → DATA_ROOT = Path(r"D:\loan4u_avm_data\vworld_wfs_multi_layer")  (기존 기본값)
+```
+- 2번은 마커 폴더는 찾았지만 `vworld_wfs_multi_layer` 하위 폴더가 없을 수 있으므로, 없으면 3번으로 내려갑니다(`.exists()` 확인).
+- 임포트마다 드라이브를 스캔하면 느려질 수 있어, 결과는 모듈 수준에서 한 번만 계산합니다.
 
-**[완료 기준]** 신규 테스트 통과, 기존 테스트 무회귀, `grep -rnE "[A-Z]:[/\\\\]loan4u_avm_data" --include=*.py avm_project`가 `data_locator.py`(기본 후보 설명)와 테스트 외 0건
-**[추정]** 0.5일
-**[위험]** Windows에서 연결 끊긴 네트워크 드라이브를 `exists()`로 확인할 때 지연될 수 있음 → 후보 확인에 짧은 타임아웃(스레드) 적용 여부를 구현 시 측정해 결정
+### 나머지 변경 대상
+- `sync_from_external_drive.py`: `_candidate_roots` 삭제 후 `data_locator.candidate_roots` 임포트. `find_file`, `NPL전례/...`, `loan4u_avm_data/models/...` 탐색은 **그대로 유지**(마커가 `NPL전례`로 달라 이 스크립트 고유 로직). 기존 테스트 4건이 그대로 통과해야 함
+- `phase_c_step0_read_external_drive.py`: Windows 분기의 `for letter in "DEFG..."` 반복을 `for root in candidate_roots() if root.exists()`로 교체. 출력 형식과 비-Windows 분기는 변경하지 않음
+- `phase7_grounded_avm.py`, `phase7_match_engine.py`, `phase7_c_address_parser_v2.py`: `RTMS_DUCKDB`를 `resolve_data_root().root / "loan4u_working_db/db/loan4u_rtms_comparable_mart.duckdb"`로 교체. **아직 쓰는 파일인지 확인 전에는 건드리지 않음**(§6 질문 7)
+
+### 테스트 — `tests/test_data_locator.py`
+| 테스트 | 검증 |
+|---|---|
+| 인자 우선 | 인자와 환경변수가 모두 있으면 인자 사용, `source == "arg"` |
+| 환경변수 우선 | `AVM_DATA_ROOT`가 스캔보다 우선, `source == "env"` |
+| 잘못된 환경변수 | 존재하지 않거나 마커가 아닌 값 → 예외 (스캔으로 넘어가지 않음) |
+| 스캔 성공 | 가짜 드라이브 `E/loan4u_avm_data/`(내용 있음) → 찾음, `drive == "E"` |
+| 다중 후보 | `E`·`F` 둘 다 있고 수정 시각이 다름 → 최신 선택 + 경고 로그(`caplog`) |
+| 빈 마커 폴더 | 비어 있으면 후보에서 제외 |
+| 못 찾음 | `DataRootNotFoundError`, 메시지에 시도한 후보 포함 |
+| `candidate_roots` | `sys.platform` 패치로 Windows면 `D:/`~`Z:/`(C: 없음), 아니면 마운트 하위 폴더 |
+| `avm_paths` 호환 | `AVM_DATA_PATH` 설정 시 스캔 없이 그대로 사용 / 아무것도 없으면 기존 기본값 / 어떤 경우에도 임포트 예외 없음 (`importlib.reload`) |
+| 기존 회귀 | `tests/test_sync_from_external_drive.py` 4건 통과 |
+
+실제 드라이브에 의존하지 않도록 모든 스캔 테스트는 `roots=[tmp_path/...]`를 주입합니다.
+
+### 기존 테스트 실패에 대한 정정
+이전에 "기존 실패 2건"이라고 했던 `test_sync_from_external_drive.py`의 `TestSyncOnbid`는 코드 문제가 아니라 **`sqlalchemy` 미설치** 때문이었습니다(`requirements.txt:41`에 `sqlalchemy==2.0.23`이 있음). 설치 후 4건 모두 통과합니다. PC에서는 `pip install -r avm_project/requirements.txt`가 되어 있으면 재현되지 않습니다.
+
+### 커밋 단위 (1작업 1커밋)
+1. `data_locator.py` + `DataRootNotFoundError` + `test_data_locator.py` (신규 파일만, 기존 동작 변경 없음)
+2. `avm_paths.py` 호환 변경 + 호환 테스트
+3. `sync_from_external_drive.py` / `phase_c_step0_read_external_drive.py` 교체
+4. (질문 7 확인 후) `phase7_*.py` 3개 교체
+
+### 완료 기준
+- 신규 테스트 통과, 기존 AVM 테스트 무회귀
+- 검증 명령 `grep -rnE "[A-Z]:[/\\\\]loan4u_avm_data" --include=*.py avm_project` 결과가 `avm_paths.py`의 기본값 1곳, 테스트, (질문 7 결과에 따라) `phase7_*.py` 외 0건
+- 드라이브 문자를 바꿔도(가짜 E→F) 코드 수정 없이 같은 결과가 나오는 테스트 1건
+- PC에서 실제 외장하드로 `python -c "from scripts.data_locator import resolve_data_root; print(resolve_data_root())"` 1회 실행해 선택된 경로와 `source` 확인
+
+**[추정]** 0.5일 (코드 약 80줄 + 테스트 약 120줄)
+**[위험]** Windows에서 연결 끊긴 네트워크 드라이브의 `exists()`가 수 초 걸릴 수 있음 → PC에서 실측 후, 느리면 스레드 타임아웃 적용. 클라우드(Linux)에서는 측정 불가
 
 ---
 
@@ -223,7 +270,7 @@ DEV-4 는 §6 답변 후 독립 진행
 
 ## 6. 결정·자료가 필요한 사항
 
-1. **Manifest 파일의 이름과 형식**(JSON/CSV/SQLite?) 샘플 1개, **Runbook의 검증 규칙** 부분 — DEV-1의 마커 조건과 DEV-2 매핑·규칙에 필요
+1. **Manifest 파일의 이름과 형식**(JSON/CSV/SQLite?) 샘플 1개, **Runbook의 검증 규칙** 부분 — DEV-1 마커 조건(선택)과 DEV-2 매핑·규칙에 필요
 2. **kreri.re.kr/32의 자료 종류**와 **학습 데이터 용도** — DEV-4 설계의 전제
 3. **실데이터의 타깃 컬럼, 시간 컬럼, 단지/필지 키 컬럼** 이름 — DEV-3의 `run()` 인자
 4. 보고서형 자료를 다룰 경우 `evaluation-report-analysis`의 추출 코드를 **공용 모듈로 이동**해도 됩니까?
@@ -235,7 +282,7 @@ DEV-4 는 §6 답변 후 독립 진행
 
 | 위험 | 대응 |
 |---|---|
-| 스캔이 오래된 사본을 선택 | 마지막 수정 시각이 최신인 후보 선택 + 다중 후보 경고 + `AVM_DATA_PATH`로 명시 지정 가능 |
+| 스캔이 오래된 사본을 선택 | 마지막 수정 시각이 최신인 후보 선택 + 다중 후보 경고 + `AVM_DATA_ROOT`로 명시 지정 가능 |
 | 드라이브 스캔 지연(끊긴 네트워크 드라이브) | 구현 시 실측 후 타임아웃 적용 |
 | 기본 검증 규칙이 실데이터와 맞지 않음 | 임시 규칙임을 보고서에 표시, Runbook 수령 후 교체, 위반 건수만 보고하고 자동 삭제는 하지 않음 |
 | 실데이터 성능이 PoC보다 크게 낮음 | 정상적인 결과일 수 있음. 누수 감사 결과와 함께 보고하고 PoC 수치는 계속 "참고용"으로 표기 |
