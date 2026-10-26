@@ -69,6 +69,16 @@ def test_main_writes_reports_and_exit_codes(tmp_path: Path) -> None:
     out = tmp_path / "out"
     assert fd.main([str(tmp_path / "C"), str(tmp_path / "E"), "--out", str(out)]) == 0
     assert {p.name for p in out.iterdir()} == {
-        "report.md", "duplicates.csv", "copied_folders.csv", "git_repos.csv", "summary.json"}
+        "report.md", "duplicates.csv", "copied_folders.csv", "git_repos.csv", "summary.json", "scope.json"}
     assert "avm_project" in (out / "copied_folders.csv").read_text(encoding="utf-8-sig")
     assert fd.main([str(tmp_path / "missing")]) == 1
+
+
+def test_code_scope_excludes_large_files_and_databases(tmp_path: Path) -> None:
+    _write(tmp_path / "main.py", b"small")
+    _write(tmp_path / "big.py", b"x" * 30)
+    _write(tmp_path / "production.db", b"small")
+    args = fd.parse_args([str(tmp_path), "--extensions", ".py", "--max-size", "10"])
+    result = fd.ScanResult()
+    fd.scan_root(str(tmp_path), fd.build_options(args), result)
+    assert [Path(item.path).name for item in result.entries] == ["main.py"]

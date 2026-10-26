@@ -85,6 +85,8 @@ class ScanOptions:
     min_size: int
     top_excludes: frozenset[str]
     any_excludes: frozenset[str]
+    max_size: int | None = None
+    extensions: frozenset[str] = frozenset()
 
 
 # ── 경로 유틸 ───────────────────────────────────────────────────────────────
@@ -137,8 +139,12 @@ def _is_link(entry: os.DirEntry) -> bool:
 
 
 def _record_file(entry: os.DirEntry, root: str, opts: ScanOptions, result: ScanResult) -> None:
+    if opts.extensions and Path(entry.name).suffix.lower() not in opts.extensions:
+        return
     st = entry.stat(follow_symlinks=False)
     if st.st_size < opts.min_size:
+        return
+    if opts.max_size is not None and st.st_size > opts.max_size:
         return
     if getattr(st, "st_file_attributes", 0) & CLOUD_ONLY_ATTRS:
         result.cloud_only += 1
@@ -482,6 +488,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("roots", nargs="+", help="검색할 드라이브나 폴더 (예: C:\\ D:\\ E:\\)")
     parser.add_argument("--out", help="결과 폴더 (기본: ./drive_audit_report_날짜_시각)")
     parser.add_argument("--min-size", type=int, default=1, help="이 크기(bytes) 미만 파일 무시 (기본 1 = 빈 파일만 제외)")
+    parser.add_argument("--max-size", type=int, help="Maximum file size in bytes")
+    parser.add_argument("--extensions", nargs="*", default=[], help="File extensions to hash, for example .py .md")
     parser.add_argument("--exclude", action="append", default=[], metavar="폴더이름",
                         help="추가로 제외할 폴더 이름 (여러 번 지정 가능)")
     parser.add_argument("--include-system", action="store_true",
@@ -494,7 +502,8 @@ def build_options(args: argparse.Namespace) -> ScanOptions:
     extra = {name.lower() for name in args.exclude}
     top = set() if args.include_system else TOP_LEVEL_EXCLUDES
     anywhere = set() if args.include_system else ANYWHERE_EXCLUDES
-    return ScanOptions(args.min_size, frozenset(top), frozenset(anywhere | extra))
+    extensions = frozenset("." + ext.lower().lstrip(".") for ext in args.extensions)
+    return ScanOptions(args.min_size, frozenset(top), frozenset(anywhere | extra), args.max_size, extensions)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -514,6 +523,10 @@ def main(argv: list[str] | None = None) -> int:
     repo_groups = group_repos([repo_info(r) for r in result.repos])
     out = Path(args.out or f"drive_audit_report_{datetime.now():%Y%m%d_%H%M}").resolve()
     report = write_outputs(out, roots, result, groups, trees, repo_groups, args.top)
+    scope = {"roots": roots, "min_size": opts.min_size, "max_size": opts.max_size,
+             "extensions": sorted(opts.extensions), "excluded_directories": sorted(opts.any_excludes),
+             "full_drive_audit": False, "data_canonical_verified": False}
+    (out / "scope.json").write_text(json.dumps(scope, ensure_ascii=False, indent=2), encoding="utf-8")
     wasted = sum(g.wasted for g in groups)
     print(f"\n완료: 중복 그룹 {len(groups):,}개 | 회수 가능 {human(wasted)} | 오류 {result.errors:,}건")
     print(f"보고서: {report}")
