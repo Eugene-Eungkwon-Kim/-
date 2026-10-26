@@ -10,6 +10,7 @@ R² ≥ 0.95 목표 추진 시 "진짜 성능 vs 누수"를 구별하는 핵심 
 """
 
 import argparse
+from typing import Sequence
 import json
 from pathlib import Path
 from datetime import datetime
@@ -24,6 +25,22 @@ from sklearn.model_selection import KFold, cross_val_score
 CORR_THRESHOLD = 0.95          # 특성-타겟 상관 0.95 초과 = 누수 의심
 DROP_R2_THRESHOLD = 0.10       # 단일 특성 제거 시 R² 0.10 이상 급락 = 누수 의존
 SPLIT_GAP_THRESHOLD = 0.10     # 랜덤-시간 분할 R² 격차 0.10 초과 = 누수 의심
+
+
+def audit_group_overlap(train: pd.DataFrame, test: pd.DataFrame,
+                        key_cols: Sequence[str], threshold: float = 0.30) -> list[dict]:
+    """Measure held-out rows whose full group key occurs in training."""
+    if not key_cols or not 0 <= threshold <= 1:
+        raise ValueError("Group keys and a threshold in [0, 1] are required")
+    if train[list(key_cols)].isna().any().any() or test[list(key_cols)].isna().any().any():
+        raise ValueError("Group keys must not contain missing values")
+    known = set(train[list(key_cols)].itertuples(index=False, name=None))
+    overlap = sum(key in known for key in test[list(key_cols)].itertuples(index=False, name=None))
+    ratio = overlap / len(test) if len(test) else 0.0
+    if ratio <= threshold:
+        return []
+    return [{"check": "group_overlap", "key_cols": list(key_cols), "value": ratio,
+             "overlap_rows": overlap, "test_rows": len(test)}]
 
 
 def audit_correlations(df: pd.DataFrame, target: str) -> list:

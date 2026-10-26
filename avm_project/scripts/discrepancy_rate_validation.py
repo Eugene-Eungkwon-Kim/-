@@ -20,6 +20,11 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from xgboost import XGBRegressor
 import joblib
 
+try:
+    from .prediction_metrics import relative_errors_pct
+except ImportError:
+    from prediction_metrics import relative_errors_pct
+
 warnings.filterwarnings("ignore")
 
 SCRIPT_DIR = Path(__file__).parent.absolute()
@@ -139,7 +144,7 @@ def analyze_discrepancy_rate(model_name, y_true, y_pred):
     absolute_error = np.abs(y_true - y_pred)
 
     # 상대 오차 (%)
-    relative_error = (absolute_error / y_true) * 100
+    relative_error = relative_errors_pct(y_true, y_pred)
 
     # 기본 통계
     print(f"📈 기본 통계:")

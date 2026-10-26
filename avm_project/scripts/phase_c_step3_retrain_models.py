@@ -10,7 +10,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 import joblib
-from sklearn.model_selection import train_test_split
+try:
+    from .temporal_split import temporal_split
+except ImportError:
+    from temporal_split import temporal_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.tree import DecisionTreeRegressor
@@ -28,14 +31,6 @@ try:
     HAS_LIGHTGBM = True
 except ImportError:
     HAS_LIGHTGBM = False
-
-def temporal_split(df, time_col, ratios=(0.7, 0.15, 0.15)):
-    """시간순 분할 (미래 누수 방지)"""
-    df = df.sort_values(time_col).reset_index(drop=True)
-    n = len(df)
-    a = int(n * ratios[0])
-    b = int(n * (ratios[0] + ratios[1]))
-    return df.iloc[:a], df.iloc[a:b], df.iloc[b:]
 
 def retrain_models(data_path, target_col, time_col):
     """
