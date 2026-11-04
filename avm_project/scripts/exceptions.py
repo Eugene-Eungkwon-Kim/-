@@ -44,3 +44,7 @@ class IndexingError(DataProcessingError):
 
 class MigrationError(AVMException):
     pass
+
+
+class DataRootNotFoundError(DataProcessingError):
+    pass

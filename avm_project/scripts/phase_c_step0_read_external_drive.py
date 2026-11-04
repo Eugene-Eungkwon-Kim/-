@@ -12,6 +12,9 @@ from pathlib import Path
 import subprocess
 import sys
 
+sys.path.insert(0, str(Path(__file__).parent))
+from data_locator import candidate_roots  # noqa: E402
+
 def detect_external_drives():
     """외장하드 자동 감지"""
 
@@ -25,8 +28,8 @@ def detect_external_drives():
         print("-" * 100)
 
         drives = []
-        for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
-            drive_path = f"{letter}:\\"
+        for root in candidate_roots():
+            drive_path = str(root)
             if os.path.exists(drive_path):
                 try:
                     total, used, free = shutil.disk_usage(drive_path)
