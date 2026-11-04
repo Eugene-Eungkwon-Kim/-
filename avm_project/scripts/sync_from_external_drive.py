@@ -23,6 +23,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
+
+from data_locator import candidate_roots as _candidate_roots  # noqa: E402
 
 # phase7_grounded_avm.py 에서 확인된 실제 경로 — 드라이브 문자만 바뀐다.
 NPL_DB_SUFFIX = Path("NPL전례") / "avm_project" / "data" / "npl_avm.db"
@@ -40,19 +43,6 @@ ONBID_QUERY = """
            appraisal_amount, hammer_price, hammer_rate, asset_type_norm
     FROM onbid_auction_results
 """
-
-
-def _candidate_roots(explicit_root: str | None) -> list[Path]:
-    if explicit_root:
-        return [Path(explicit_root)]
-    if sys.platform == "win32":
-        return [Path(f"{letter}:/") for letter in "DEFGHIJKLMNOPQRSTUVWXYZ"]
-    # macOS/Linux: 일반적인 마운트 위치를 훑는다.
-    roots = []
-    for base in (Path("/Volumes"), Path("/mnt"), Path("/media")):
-        if base.exists():
-            roots.extend(p for p in base.iterdir() if p.is_dir())
-    return roots
 
 
 def find_file(roots: list[Path], suffixes: list[Path]) -> Path | None:

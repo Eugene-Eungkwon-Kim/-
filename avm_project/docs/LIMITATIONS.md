@@ -750,3 +750,45 @@ pyarrow 빌드)를 `requirements.txt`에 명시적으로 고정.
 **검증**: 클린 재설치 후 `test_app_rag_pipeline.py` 16개 전부 통과,
 전체 테스트 569 passed 유지.
 
+## 21. 외장하드 데이터 루트 탐색 로직 통합 — `scripts/data_locator.py` 신설 (2026-11-04, DEV-1)
+
+같은 "드라이브 문자가 세션마다 D:/E:/F:로 바뀐다"는 문제를 해결하는
+탐색 로직이 `avm_paths.py`·`sync_from_external_drive.py`·
+`phase_c_step0_read_external_drive.py` 세 곳에 중복 구현돼 있었고,
+데이터 루트 경로 하드코딩도 두 갈래였다 — `avm_paths.py`는
+`D:\loan4u_avm_data\vworld_wfs_multi_layer`를 기본값으로 쓰는데,
+`phase7_grounded_avm.py` 등 3개 파일은 `F:/loan4u_avm_data/...`를
+직접 박아뒀다. 같은 외장하드를 가리키는 경로가 코드에 D:/F: 두 가지로
+적혀 있었던 셈이다(다른 세션의 PR #16 분석으로 발견).
+
+**추가**: `scripts/data_locator.py` — `loan4u_avm_data`라는 마커
+디렉터리를 인자 > `AVM_DATA_ROOT` 환경변수 > 드라이브 스캔(D:~Z:,
+C: 제외 / macOS·Linux는 `/Volumes`·`/mnt`·`/media`) 순으로 찾는
+`resolve_data_root()`. 다중 후보가 있으면 최종 수정 시각이 최신인
+것을 선택하고 나머지는 경고 로그로 남긴다. `DataRootNotFoundError`
+(`scripts/exceptions.py`)를 신설.
+
+**기존 코드 변경**:
+- `avm_paths.py`: `AVM_DATA_PATH`가 설정돼 있으면 기존처럼 스캔 없이
+  그대로 사용(의미 변경 없음). 없으면 `resolve_data_root()`로 찾은
+  루트의 `vworld_wfs_multi_layer` 하위 폴더를 사용하고, 그마저 없거나
+  스캔이 실패하면 기존 기본값(`D:\...`)으로 폴백 — 임포트 시점에
+  절대 예외를 던지지 않는다
+- `sync_from_external_drive.py`: 자체 `_candidate_roots` 구현 제거,
+  `data_locator.candidate_roots`를 그대로 가져다 씀. `NPL전례/...`
+  마커 탐색(이 스크립트 고유 로직)은 그대로 유지 — `data_locator`의
+  마커(`loan4u_avm_data`)와 다르다
+- `phase_c_step0_read_external_drive.py`: Windows 드라이브 문자 순회를
+  `candidate_roots()` 호출로 교체(출력 형식 동일 유지)
+
+**손대지 않은 것**: `phase7_grounded_avm.py`/`phase7_match_engine.py`/
+`phase7_c_address_parser_v2.py`의 `F:/...` 하드코딩 3곳 — 지금도 쓰는
+코드인지 과거 단계 잔재인지 미확인 상태라 PR #16 명세(§6 질문 7)대로
+보류.
+
+**검증**: 신규 테스트 14건(`test_data_locator.py`) + 기존
+`test_sync_from_external_drive.py` 4건 전부 통과. 전체 스위트 583
+passed, 회귀 없음. `grep -rnE "[A-Z]:[/\\]loan4u_avm_data"
+--include=*.py avm_project` 결과가 `avm_paths.py` 기본값 1곳 +
+보류된 `phase7_*.py` 3곳으로, 예상과 정확히 일치.
+
