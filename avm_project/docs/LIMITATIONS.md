@@ -792,3 +792,40 @@ passed, 회귀 없음. `grep -rnE "[A-Z]:[/\\]loan4u_avm_data"
 --include=*.py avm_project` 결과가 `avm_paths.py` 기본값 1곳 +
 보류된 `phase7_*.py` 3곳으로, 예상과 정확히 일치.
 
+## 22. 실데이터 평가 하네스 — 합성 데이터로 테스트 가능한 범위만 구현 (2026-11-04, DEV-3 일부)
+
+PR #16 명세의 DEV-3(실데이터 평가 하네스) 중, 실데이터·Manifest 없이도
+지금 구현·검증 가능한 부분만 먼저 들어갔다. 전체 파이프라인
+`real_data_eval.run()`(로드→검증→분할→누수감사→7개 모델 학습·평가→
+보고서)은 DEV-2(`real_data_contract.py`, Manifest 형식 미확인으로
+아직 미구현)에 의존해 **이번에 구현하지 않았다** — 미완성 상태로
+반쪽만 만들어두지 않기 위함.
+
+**추가한 것**:
+- `scripts/leakage_audit.py`에 `audit_group_overlap()` 추가(검사 4) —
+  시간순 분할이어도 같은 단지/필지 키가 train/test 양쪽에 있으면
+  "동네를 외운" 결과일 수 있어 그 중복 비율을 본다. 기존 3종 검사와
+  같은 `{"check": ..., ...}` 플래그 규약을 따른다
+- `scripts/real_data_eval.py` 신설 — `evaluate_model()`(R²/MAPE/MAE),
+  `gate()`(`CLAUDE.md` 합격선 R²>0.84·MAPE<10.5% 미달 사유 목록) 두
+  순수 함수만. `run()`은 DEV-2 완료 후 추가 예정
+
+**괴리율(discrepancy) 관련 변경 — 명세와 다르게 처리한 이유**: 명세는
+기존 `discrepancy_rate_validation.py`의 정의를 재사용하라고 했지만,
+확인해보니 그 파일은 임포트 시점에 고정 데이터 파일을 읽어 5개 모델을
+학습하는 최상위 스크립트고 `if __name__` 가드가 없다 — 그대로
+임포트하면 부작용이 발생해 지금은 재사용할 수 없다. `evaluate_model()`
+에는 괴리율을 넣지 않았고, `run()` 구현 시 그 스크립트를 먼저 함수로
+분리한 뒤 추가한다.
+
+**정리 작업**: `phase_c_step3_retrain_models.py`가 `scripts/
+temporal_split.py`와 글자 하나 다르지 않게 중복 정의하고 있던
+`temporal_split()`을 제거하고 그 모듈을 임포트하도록 교체. 미사용
+`train_test_split` 임포트도 제거.
+
+**검증**: 신규 테스트 17건(`test_leakage_audit_group_overlap.py` 7,
+`test_real_data_eval.py` 8, `test_phase_c_step3_temporal_split_import.py`
+2 — 임포트 교체 후에도 `phase_c_step3_retrain_models.temporal_split`이
+`temporal_split.temporal_split`과 동일 객체이고 분할 결과도 동일함을
+확인) 전부 통과. 전체 스위트 600 passed, 회귀 없음.
+

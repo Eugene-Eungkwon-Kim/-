@@ -24,6 +24,7 @@ from sklearn.model_selection import KFold, cross_val_score
 CORR_THRESHOLD = 0.95          # 특성-타겟 상관 0.95 초과 = 누수 의심
 DROP_R2_THRESHOLD = 0.10       # 단일 특성 제거 시 R² 0.10 이상 급락 = 누수 의존
 SPLIT_GAP_THRESHOLD = 0.10     # 랜덤-시간 분할 R² 격차 0.10 초과 = 누수 의심
+GROUP_OVERLAP_THRESHOLD = 0.30  # 검증 구간 단지/필지 중복 비율 0.30 초과 = 누수 의심
 
 
 def audit_correlations(df: pd.DataFrame, target: str) -> list:
@@ -98,6 +99,38 @@ def audit_split_gap(df: pd.DataFrame, X: pd.DataFrame, y: pd.Series, time_col: s
     else:
         print(f"   ⚠️  시간 컬럼('{time_col}') 없음 — 시간 분할 검사 생략")
         print("       (실데이터에서는 거래일 컬럼으로 반드시 재실행 권장)")
+    return flags
+
+
+def audit_group_overlap(
+    train: pd.DataFrame,
+    test: pd.DataFrame,
+    key_cols: list,
+    threshold: float = GROUP_OVERLAP_THRESHOLD,
+) -> list:
+    """검사 4: 시간순 분할이어도 같은 단지/필지가 학습·검증 양쪽에 있으면
+    "동네를 외운" 결과일 수 있어, 검증 구간 키의 중복 비율을 본다."""
+    print("\n[검사 4] 검증 구간 단지/필지 중복 (그룹 누수)")
+    print("-" * 60)
+    flags = []
+    if not key_cols or not all(c in train.columns and c in test.columns for c in key_cols):
+        print(f"   ⚠️  키 컬럼 {key_cols} 없음 — 그룹 중복 검사 생략")
+        return flags
+
+    train_keys = set(train[key_cols].itertuples(index=False, name=None))
+    test_rows = list(test[key_cols].itertuples(index=False, name=None))
+    if not test_rows:
+        print("   ⚠️  검증 구간이 비어 있음 — 그룹 중복 검사 생략")
+        return flags
+
+    overlap = sum(1 for k in test_rows if k in train_keys)
+    ratio = overlap / len(test_rows)
+    print(f"   검증 구간 {len(test_rows)}건 중 학습 구간과 겹치는 키: {overlap}건 ({ratio:.1%})")
+    if ratio > threshold:
+        print(f"   🚨 중복 비율 {threshold:.0%} 초과 — 같은 단지를 학습·검증에서 모두 본 것일 수 있음")
+        flags.append({"check": "group_overlap", "ratio": float(ratio), "overlap_count": overlap})
+    else:
+        print("   ✅ 중복 비율 허용 범위")
     return flags
 
 
